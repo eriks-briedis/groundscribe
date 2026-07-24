@@ -79,9 +79,7 @@ class SnapshotStore:
 
     def children_of(self, parent: ArtifactSnapshot) -> list[ArtifactSnapshot]:
         """All snapshots that fork directly from ``parent`` (both branches)."""
-        stmt = select(ArtifactSnapshot).where(
-            ArtifactSnapshot.parent_snapshot_id == parent.id
-        )
+        stmt = select(ArtifactSnapshot).where(ArtifactSnapshot.parent_snapshot_id == parent.id)
         return list(self._session.execute(stmt).scalars())
 
     def read(self, snapshot: ArtifactSnapshot) -> bytes:

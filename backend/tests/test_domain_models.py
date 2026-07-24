@@ -196,9 +196,7 @@ def test_snapshot_content_is_immutable_supersession_forks_a_child(
     assert not hasattr(store, "update")
 
 
-def test_snapshot_lineage_supports_multiple_children(
-    db_session: Session, tmp_path: Path
-) -> None:
+def test_snapshot_lineage_supports_multiple_children(db_session: Session, tmp_path: Path) -> None:
     """One parent draft can fork into two rewrites; both are its children."""
     store = SnapshotStore(db_session, BlobStore(tmp_path))
     parent = store.write(artifact_type=ArtifactType.ARTICLE_VERSION, content=b"base draft")
