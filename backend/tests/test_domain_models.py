@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -110,7 +111,7 @@ def _seed_connected_graph(session: Session) -> dict[str, schemas._Entity]:
     return originals
 
 
-SCHEMA_FOR = {
+SCHEMA_FOR: dict[str, type[BaseModel]] = {
     "User": schemas.User,
     "Project": schemas.Project,
     "SourceDocument": schemas.SourceDocument,

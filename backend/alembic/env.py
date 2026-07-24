@@ -13,6 +13,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import Connection
 
+import groundscribe.domain.models  # noqa: F401  (side effect: register ORM models)
 from groundscribe.db import DEFAULT_URL, Base, create_engine
 
 config = context.config

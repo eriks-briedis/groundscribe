@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+import groundscribe.domain.models  # noqa: F401  (side effect: register ORM models)
 from groundscribe.db import Base, create_engine
 
 

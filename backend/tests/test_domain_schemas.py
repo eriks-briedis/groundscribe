@@ -14,7 +14,7 @@ separately in ``test_domain_models``.
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from groundscribe.domain import schemas
 from groundscribe.domain.enums import BranchStatus, ClaimClassification, SelectionStatus
@@ -57,7 +57,7 @@ def test_all_seventeen_editorial_entities_are_modelled() -> None:
 
 
 @pytest.mark.parametrize("schema", ALL_ENTITY_SCHEMAS)
-def test_every_entity_records_a_schema_version(schema: type) -> None:
+def test_every_entity_records_a_schema_version(schema: type[BaseModel]) -> None:
     """Versioning is first-class: every entity carries a defaulted schema_version."""
     fields = schema.model_fields
     assert "schema_version" in fields
@@ -80,7 +80,7 @@ def test_source_claim_carries_exactly_one_classification_and_keeps_segments() ->
 def test_source_claim_classification_is_required() -> None:
     """Classification cannot be omitted — every claim must be classified."""
     with pytest.raises(ValidationError):
-        schemas.SourceClaim(id="c1", project_id="p1", text="x", segment_ids=[])
+        schemas.SourceClaim(id="c1", project_id="p1", text="x", segment_ids=[])  # type: ignore[call-arg]
 
 
 def test_source_claim_rejects_non_enum_classification() -> None:
@@ -96,7 +96,7 @@ def test_source_claim_rejects_non_enum_classification() -> None:
 
 
 @pytest.mark.parametrize("schema", LINEAGE_SCHEMAS)
-def test_branching_artefacts_default_to_active_pending_lineage(schema: type) -> None:
+def test_branching_artefacts_default_to_active_pending_lineage(schema: type[BaseModel]) -> None:
     """Lineage-bearing artefacts start as an active, not-yet-selected branch."""
     fields = schema.model_fields
     assert fields["parent_id"].default is None
