@@ -9,18 +9,51 @@ and migration stays trivial.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Engine, event
+from sqlalchemy import DateTime, Dialect, Engine, event
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.types import TypeDecorator
 
 DEFAULT_URL = "sqlite+pysqlite:///:memory:"
 
 
 class Base(DeclarativeBase):
     """Declarative base shared by every ORM model in the project."""
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """A timestamp column that stores and returns aware UTC instants everywhere.
+
+    SQLite's DATETIME drops ``tzinfo`` on the way in and returns a naive value on
+    the way out; PostgreSQL's TIMESTAMPTZ does neither. Provenance is a timeline
+    compared across runs, so that divergence would make the same code record
+    different instants on the two backends the spec treats as interchangeable.
+
+    Naive input is rejected rather than assumed to be UTC: a caller that lost the
+    zone has lost the instant, and quietly inventing one corrupts the record we
+    exist to be trusted on.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("provenance timestamps must be timezone-aware")
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        # SQLite hands back a naive value; it is UTC by construction of the bind
+        # side, so re-attaching the zone restores the instant losslessly.
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _is_sqlite(url: str) -> bool:

@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import Column, MetaData, String, Table, insert, select
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+from sqlalchemy.exc import StatementError
 
 from groundscribe.db import UTCDateTime, create_engine
 
@@ -36,7 +38,8 @@ def _round_trip(value: datetime | None) -> datetime | None:
     try:
         with engine.begin() as conn:
             conn.execute(insert(_stamps).values(id="probe", at=value))
-            return conn.execute(select(_stamps.c.at)).scalar_one()
+            loaded: datetime | None = conn.execute(select(_stamps.c.at)).scalar_one()
+            return loaded
     finally:
         engine.dispose()
 
@@ -59,8 +62,18 @@ def test_non_utc_input_is_normalised_to_the_same_instant_in_utc() -> None:
 
 
 def test_naive_datetimes_are_rejected_rather_than_guessed() -> None:
-    """A naive timestamp has no defined instant; guessing one corrupts the timeline."""
+    """A naive timestamp has no defined instant; guessing one corrupts the timeline.
+
+    Asserted at the type boundary because that is where the contract lives — the
+    DB layer only ever re-raises it wrapped in a ``StatementError``.
+    """
     with pytest.raises(ValueError, match="timezone-aware"):
+        UTCDateTime().process_bind_param(datetime(2026, 7, 25, 14, 30), sqlite_dialect())
+
+
+def test_naive_datetimes_are_rejected_on_the_way_into_the_database() -> None:
+    """The rejection is not merely advisory: the INSERT itself fails."""
+    with pytest.raises(StatementError, match="timezone-aware"):
         _round_trip(datetime(2026, 7, 25, 14, 30))
 
 
