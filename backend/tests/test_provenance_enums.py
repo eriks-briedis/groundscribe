@@ -15,11 +15,49 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from groundscribe.domain.enums import ArtifactType
 from groundscribe.provenance import enums
+
+#: The editorial artefact kinds pinned by phase 02.
+EDITORIAL_ARTIFACT_TYPES = {
+    "source_document",
+    "source_model",
+    "content_architecture",
+    "article_concept",
+    "article_brief",
+    "article_version",
+    "review",
+    "revision_plan",
+    "voice_profile",
+    "validation_report",
+}
+
+#: The provenance payloads phase 03 stores as content-addressed snapshots.
+PROVENANCE_ARTIFACT_TYPES = {
+    "effective_request",
+    "raw_response",
+    "parsed_response",
+    "validated_response",
+}
 
 
 def _values(enum_cls: type[StrEnum]) -> set[str]:
     return {member.value for member in enum_cls}
+
+
+def test_provenance_payloads_are_snapshotted_artifact_types() -> None:
+    """The effective request and each response form are content-addressed artefacts.
+
+    plan/03 requires raw, parsed and validated responses to be stored as
+    *separate snapshots*, which means the snapshot store's type vocabulary has to
+    name them.
+    """
+    assert PROVENANCE_ARTIFACT_TYPES <= _values(ArtifactType)
+
+
+def test_artifact_type_is_exactly_the_editorial_plus_provenance_kinds() -> None:
+    """One enum, two groups, nothing stray: total membership is pinned here."""
+    assert _values(ArtifactType) == EDITORIAL_ARTIFACT_TYPES | PROVENANCE_ARTIFACT_TYPES
 
 
 def test_retry_types_cover_exactly_the_eight_named_kinds() -> None:

@@ -45,9 +45,14 @@ def test_branch_and_selection_status_members() -> None:
 
 
 def test_artifact_type_covers_snapshotted_artefacts() -> None:
-    """Every artefact that gets content-addressed has an ``ArtifactType``."""
+    """Every editorial artefact that gets content-addressed has an ``ArtifactType``.
+
+    Membership, not equality: phase 03 adds provenance payload types to the same
+    enum because they share the one content-addressed snapshot store. The total
+    membership is pinned in ``test_provenance_enums``.
+    """
     assert issubclass(ArtifactType, StrEnum)
-    assert {a.value for a in ArtifactType} == {
+    assert {a.value for a in ArtifactType} >= {
         "source_document",
         "source_model",
         "content_architecture",
