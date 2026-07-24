@@ -1,0 +1,97 @@
+[project]
+name = "groundscribe"
+version = "0.1.0"
+description = "Technical Writer Pipeline — a local-first, inspectable editorial workflow system."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Eriks Briedis", email = "eriks.briedis@gmail.com" }]
+dependencies = [
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13.0",
+    "pydantic>=2.7.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "hypothesis>=6.100.0",
+    "mypy>=1.10.0",
+    "ruff>=0.5.0",
+    "pre-commit>=3.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/src/groundscribe"]
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["backend/src", "backend/tests", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["groundscribe"]
+
+# ---------------------------------------------------------------------------
+# mypy — strict typing across source and tests
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "backend/src"
+# Root ``tests/`` (cross-cutting) rejoins this list in phase 09 when it holds real
+# modules; kept out now to avoid a duplicate top-level ``conftest`` module clash.
+files = ["backend/src", "backend/tests", "scripts"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# ---------------------------------------------------------------------------
+# pytest + coverage
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["backend/src"]
+testpaths = ["backend/tests", "tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=groundscribe",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["groundscribe"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
