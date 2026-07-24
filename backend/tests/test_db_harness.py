@@ -10,13 +10,24 @@ These prove the harness itself is trustworthy before any domain model relies on 
 from __future__ import annotations
 
 from sqlalchemy import inspect, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from groundscribe.db import Base, create_engine, session_factory
+from groundscribe.db import create_engine, session_factory
+from groundscribe.domain.models import User
 
 
-class Widget(Base):
-    """Trivial model used only to exercise the harness."""
+class _HarnessBase(DeclarativeBase):
+    """A registry of its own, deliberately separate from the application's ``Base``.
+
+    A throwaway test model must not land on the metadata the app migrates and
+    creates: it would ship in ``create_all``, and it would leave an unclassified
+    table in the editorial/execution/evaluation partition asserted by
+    ``test_record_categories``.
+    """
+
+
+class Widget(_HarnessBase):
+    """Trivial model used only to exercise the engine factory."""
 
     __tablename__ = "widget_harness"
 
@@ -27,7 +38,7 @@ class Widget(Base):
 def test_engine_factory_round_trips_a_trivial_model() -> None:
     """The engine factory yields a working session that persists and reads back a row."""
     engine = create_engine()
-    Base.metadata.create_all(engine)
+    _HarnessBase.metadata.create_all(engine)
     try:
         factory = session_factory(engine)
         with factory() as session:
@@ -41,18 +52,22 @@ def test_engine_factory_round_trips_a_trivial_model() -> None:
 
 
 def test_schema_is_created_for_the_fixture(db_session: Session) -> None:
-    """The fixture materialises the mapped schema (the widget table exists)."""
+    """The fixture materialises the real mapped schema, editorial and provenance alike."""
     table_names = set(inspect(db_session.get_bind()).get_table_names())
-    assert "widget_harness" in table_names
+    assert {"users", "artifact_snapshots", "stage_executions"} <= table_names
 
 
 def _insert_and_count(session: Session) -> int:
-    """Insert one widget after asserting the table started empty, return the new count."""
-    starting = session.scalars(select(Widget)).all()
+    """Insert one row after asserting the table started empty, return the new count.
+
+    Uses a real mapped entity rather than a throwaway one, so the isolation being
+    proved is isolation of the schema the tests actually run against.
+    """
+    starting = session.scalars(select(User)).all()
     assert starting == [], "fixture leaked rows from a previous test — isolation broken"
-    session.add(Widget(name="ephemeral"))
+    session.add(User(id="harness-user", name="Ephemeral", email="e@example.com"))
     session.commit()
-    return len(session.scalars(select(Widget)).all())
+    return len(session.scalars(select(User)).all())
 
 
 def test_isolation_first_writer(db_session: Session) -> None:
