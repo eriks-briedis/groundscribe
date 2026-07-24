@@ -44,6 +44,61 @@ class _Record(BaseModel):
     schema_version: int = 1
 
 
+class Message(BaseModel):
+    """One message in the sequence sent to a model, with its role."""
+
+    model_config = ConfigDict(frozen=True)
+
+    role: str
+    content: str
+
+
+class ToolDefinition(BaseModel):
+    """A tool as *offered* to the model, versioned.
+
+    Recorded even when the model never calls it: the set of tools on offer
+    changes what the model does, so a request without them is not the request
+    that was sent.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    version: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class EffectiveRequest(BaseModel):
+    """Everything needed to reissue a model call exactly as it was made.
+
+    plan/03 → *exact effective request*: template id and version, the rendered
+    prompt, the full message sequence with roles, the tool definitions supplied,
+    the structured-output schema, and provider-specific request config.
+
+    ``redacted`` marks the persisted form. It is not decoration: a reader must be
+    able to tell a stored request (secrets removed) from the live one, rather
+    than assuming byte-identity with what crossed the wire.
+    """
+
+    template_id: str
+    template_version: str
+    rendered_prompt: str
+    messages: list[Message] = Field(default_factory=list)
+    tool_definitions: list[ToolDefinition] = Field(default_factory=list)
+    output_schema: dict[str, Any] | None = None
+    provider_config: dict[str, Any] = Field(default_factory=dict)
+    redacted: bool = False
+
+
+class ContextCandidate(BaseModel):
+    """A candidate offered to context selection, and what became of it."""
+
+    reference: str
+    disposition: ContextDisposition
+    reason: str = ""
+    score: float | None = None
+
+
 class PipelineRun(_Record):
     """One end-to-end execution of the editorial pipeline for a project.
 
