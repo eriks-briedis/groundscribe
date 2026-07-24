@@ -1,0 +1,7 @@
+# Compose stack for groundscribe.
+#
+# Real services (API, worker, Postgres) are wired up in later phases (09 jobs/worker,
+# 14 deployment). This file is an intentional placeholder in phase 01 so the monorepo
+# layout matches plan/00-overview.md; adding services here without their implementation
+# would violate the phase's non-goals.
+services: {}
