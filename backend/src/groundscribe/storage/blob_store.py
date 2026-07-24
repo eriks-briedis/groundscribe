@@ -73,9 +73,6 @@ class BlobStore:
             raise KeyError(content_hash)
         return path.read_bytes()
 
-    def exists(self, content_hash: str) -> bool:
-        return (self._root / _location_for(content_hash)).exists()
-
     def verify(self, content_hash: str) -> bool:
         """True iff the stored bytes still hash to ``content_hash``.
 

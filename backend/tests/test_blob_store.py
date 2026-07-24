@@ -78,6 +78,12 @@ def test_get_missing_hash_raises(tmp_path: Path) -> None:
         store.get("0" * 64)
 
 
+def test_verify_unknown_hash_is_false(tmp_path: Path) -> None:
+    """Verifying a hash that was never stored is a clean False, not an error."""
+    store = BlobStore(tmp_path)
+    assert store.verify("0" * 64) is False
+
+
 def test_put_is_write_once_and_does_not_rewrite(tmp_path: Path) -> None:
     """Re-putting identical content leaves the existing blob byte-for-byte intact."""
     store = BlobStore(tmp_path)
