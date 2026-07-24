@@ -74,6 +74,11 @@ def test_tool_initiator_distinguishes_model_choice_from_pipeline_mandate() -> No
     assert _values(enums.ToolInitiator) == {"model_selected", "pipeline_mandated"}
 
 
+def test_artifact_direction_distinguishes_consumed_from_produced() -> None:
+    """One execution-artefact table serves both directions, so the value carries them."""
+    assert _values(enums.ArtifactDirection) == {"input", "output"}
+
+
 def test_context_dispositions_cover_selected_excluded_and_truncated() -> None:
     """Every context candidate ends up in exactly one of these three states."""
     assert _values(enums.ContextDisposition) == {"selected", "excluded", "truncated"}
@@ -97,6 +102,7 @@ def test_enum_members_are_stable_strings() -> None:
         enums.InvocationOutcome,
         enums.ExecutionStatus,
         enums.ActorType,
+        enums.ArtifactDirection,
         enums.ToolInitiator,
         enums.ContextDisposition,
         enums.InterventionType,
