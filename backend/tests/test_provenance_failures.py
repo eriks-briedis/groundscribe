@@ -148,15 +148,18 @@ def test_nothing_is_lost_when_the_session_is_reopened(
     run, execution = _stage_that_went_wrong(recorder)
     recorder.fail_stage(execution, error_type="ProviderError", error_message="connection reset")
     db_session.commit()
+    # Ids are captured before the identity map is dropped, so the assertions
+    # below can only be satisfied by rows that are genuinely on disk.
+    execution_id, correlation_id = execution.id, run.correlation_id
     db_session.expunge_all()
 
     invocations = db_session.execute(
         select(models.ModelInvocation).where(
-            models.ModelInvocation.stage_execution_id == execution.id
+            models.ModelInvocation.stage_execution_id == execution_id
         )
     ).scalars()
     assert len({i.id for i in invocations}) == 2
-    assert queries.timeline(db_session, run.correlation_id)
+    assert queries.timeline(db_session, correlation_id)
 
 
 def test_comparing_two_branches_references_each_side_s_true_parent(

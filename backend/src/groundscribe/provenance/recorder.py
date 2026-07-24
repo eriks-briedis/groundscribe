@@ -135,6 +135,101 @@ class ProvenanceRecorder:
         )
         return execution
 
+    def complete_stage(self, execution: models.StageExecution) -> models.StageExecution:
+        """Mark a stage succeeded and stamp its end."""
+        return self._finish_stage(execution, ExecutionStatus.SUCCEEDED, "stage.completed", {})
+
+    def fail_stage(
+        self,
+        execution: models.StageExecution,
+        *,
+        error_type: str,
+        error_message: str,
+    ) -> models.StageExecution:
+        """Mark a stage failed, keeping everything recorded so far.
+
+        Deliberately a *write*, never a rollback. The obvious implementation of
+        "the stage failed" discards the transaction, and with it the invocations
+        and events that are the only explanation of the failure (plan/03 →
+        *Failure handling*, partial data preserved).
+        """
+        execution.error_type = error_type
+        execution.error_message = self._redactor.redact_text(error_message)
+        return self._finish_stage(
+            execution,
+            ExecutionStatus.FAILED,
+            "stage.failed",
+            {"error_type": error_type},
+        )
+
+    def cancel_stage(
+        self, execution: models.StageExecution, *, reason: str = ""
+    ) -> models.StageExecution:
+        """Mark a stage cancelled, keeping its partial work.
+
+        Distinct from failure: a human stopping the work and the system giving up
+        mean different things to whoever reads the run afterwards.
+        """
+        execution.error_message = self._redactor.redact_text(reason) or None
+        return self._finish_stage(
+            execution,
+            ExecutionStatus.CANCELLED,
+            "stage.cancelled",
+            {"reason": self._redactor.redact_text(reason)},
+        )
+
+    def complete_run(self, run: models.PipelineRun) -> models.PipelineRun:
+        """Mark a run succeeded and stamp its end."""
+        return self._finish_run(run, ExecutionStatus.SUCCEEDED, "run.completed", {})
+
+    def fail_run(
+        self, run: models.PipelineRun, *, error_type: str, error_message: str
+    ) -> models.PipelineRun:
+        """Mark a run failed without disturbing the stages recorded beneath it."""
+        run.error_type = error_type
+        run.error_message = self._redactor.redact_text(error_message)
+        return self._finish_run(
+            run, ExecutionStatus.FAILED, "run.failed", {"error_type": error_type}
+        )
+
+    def _finish_stage(
+        self,
+        execution: models.StageExecution,
+        status: ExecutionStatus,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> models.StageExecution:
+        execution.status = status
+        execution.completed_at = self._clock()
+        self._session.flush()
+        self.emit(
+            event_type=event_type,
+            actor_type=ActorType.SYSTEM,
+            actor_id="pipeline",
+            execution=execution,
+            payload={"stage": execution.stage, **payload},
+        )
+        return execution
+
+    def _finish_run(
+        self,
+        run: models.PipelineRun,
+        status: ExecutionStatus,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> models.PipelineRun:
+        run.status = status
+        run.completed_at = self._clock()
+        self._session.flush()
+        self.emit(
+            event_type=event_type,
+            actor_type=ActorType.SYSTEM,
+            actor_id="pipeline",
+            run=run,
+            payload=payload,
+        )
+        return run
+
     # ------------------------------------------------------------------
     # Model calls
     # ------------------------------------------------------------------
