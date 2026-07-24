@@ -12,6 +12,8 @@ This is the harness later phases test against; it is intentionally minimal
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from groundscribe.llm import (
@@ -23,8 +25,8 @@ from groundscribe.llm import (
 )
 
 
-def _request(call_key: str, **kw: object) -> LLMRequest:
-    return LLMRequest(call_key=call_key, **kw)  # type: ignore[arg-type]
+def _request(call_key: str, **kw: Any) -> LLMRequest:
+    return LLMRequest(call_key=call_key, **kw)
 
 
 async def test_returns_scripted_structured_output_for_call_key() -> None:
