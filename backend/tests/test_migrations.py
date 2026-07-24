@@ -14,8 +14,9 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import Engine, create_engine, inspect
 
 ALEMBIC_DIR = Path(__file__).resolve().parents[1] / "alembic"
 
@@ -25,6 +26,11 @@ def _make_config(db_url: str) -> Config:
     cfg.set_main_option("script_location", str(ALEMBIC_DIR))
     cfg.set_main_option("sqlalchemy.url", db_url)
     return cfg
+
+
+def _current_revision(engine: Engine) -> str | None:
+    with engine.connect() as connection:
+        return MigrationContext.configure(connection).get_current_revision()
 
 
 def test_upgrade_then_downgrade_round_trips(tmp_path: Path) -> None:
@@ -37,14 +43,15 @@ def test_upgrade_then_downgrade_round_trips(tmp_path: Path) -> None:
     engine = create_engine(db_url)
     try:
         assert "alembic_version" in inspect(engine).get_table_names()
+        assert _current_revision(engine) == "0001_baseline"
     finally:
         engine.dispose()
 
     command.downgrade(cfg, "base")
     engine = create_engine(db_url)
     try:
-        # downgrading to base clears alembic's version bookkeeping.
-        assert "alembic_version" not in inspect(engine).get_table_names()
+        # Downgrading to base leaves the empty bookkeeping table but no current revision.
+        assert _current_revision(engine) is None
     finally:
         engine.dispose()
 
