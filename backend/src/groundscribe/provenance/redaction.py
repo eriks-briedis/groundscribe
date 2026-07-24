@@ -39,30 +39,80 @@ PLACEHOLDER = "[REDACTED:{label}]"
 CONFIDENTIAL_OPEN = "[[CONFIDENTIAL]]"
 CONFIDENTIAL_CLOSE = "[[/CONFIDENTIAL]]"
 
-#: Fragment matching key names that denote a credential. Used both for text
-#: assignments (``api_key=...``) and for mapping keys (``{"api_key": ...}``);
-#: keeping one definition means the two rules cannot drift apart.
-_SECRET_KEY_FRAGMENT = (
-    r"password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token"
-    r"|token|credential|authorization|private[_-]?key"
+#: Words that make a key a credential on their own.
+#:
+#: Matched against the key's *words*, not as substrings. Substring matching
+#: cannot tell ``max_tokens`` from ``access_token``, and a redactor that silently
+#: eats a sampling parameter destroys the reproducibility the record exists for.
+_SECRET_KEY_WORDS = frozenset(
+    {
+        "password",
+        "passwd",
+        "passphrase",
+        "secret",
+        "secrets",
+        "credential",
+        "credentials",
+        "authorization",
+        "token",
+        "apikey",
+    }
 )
 
-_SENSITIVE_KEY_RE = re.compile(_SECRET_KEY_FRAGMENT, re.IGNORECASE)
+#: Adjacent word pairs that make a key a credential. ``key`` alone is far too
+#: common to treat as secret; ``api key`` and ``private key`` are not.
+_SECRET_KEY_PAIRS = frozenset(
+    {
+        ("api", "key"),
+        ("private", "key"),
+        ("secret", "key"),
+        ("signing", "key"),
+        ("encryption", "key"),
+        ("ssh", "key"),
+        ("client", "secret"),
+    }
+)
+
+#: Words that turn a credential-sounding key into a *measurement* of one.
+#:
+#: ``token_budget`` and ``max_tokens`` are provider/selection parameters whose
+#: values a replay depends on; ``access_token`` is a secret. The exemption is
+#: narrow and explicit precisely because the default leans the other way — an
+#: unknown key that mentions a credential word is redacted.
+_MEASUREMENT_WORDS = frozenset(
+    {
+        "budget",
+        "count",
+        "limit",
+        "usage",
+        "used",
+        "size",
+        "length",
+        "max",
+        "min",
+        "total",
+        "window",
+        "estimate",
+    }
+)
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
 
 # Value characters for an assignment match. Brackets are excluded so a
 # placeholder can never itself be matched — that is what makes redaction
 # idempotent (see the idempotence test).
 _ASSIGNMENT_VALUE = r"[^\s\"',;}\]\[]+"
 
+# Deliberately matches *any* ``key = value``; whether the key is a credential is
+# decided by the same word rule the mapping path uses, so the two cannot drift.
 _ASSIGNMENT_RE = re.compile(
-    r"(?P<key>[\w.-]*(?:" + _SECRET_KEY_FRAGMENT + r"))"
+    r"(?P<key>[A-Za-z][\w.-]*)"
     # The separator absorbs a closing key quote so JSON-shaped text
     # (``"api_key": "..."``) matches as readily as a bare ``api_key=...``.
     r"(?P<sep>[\"']?\s*[=:]\s*)"
     r"(?P<quote>[\"']?)"
     r"(?P<value>" + _ASSIGNMENT_VALUE + r")"
-    r"(?P=quote)",
-    re.IGNORECASE,
+    r"(?P=quote)"
 )
 
 #: Shape-based rules, applied in order. PEM blocks come first so their inner
@@ -88,6 +138,27 @@ _CONFIDENTIAL_RE = re.compile(
 
 def _placeholder(label: str) -> str:
     return PLACEHOLDER.format(label=label)
+
+
+def is_sensitive_key(key: str) -> bool:
+    """True if ``key`` names a credential.
+
+    Word-based, not substring-based: ``max_tokens`` and ``token_budget`` are
+    provider parameters whose values are provenance, while ``access_token`` is a
+    secret. A substring rule cannot separate them, and quietly deleting the
+    settings a replay depends on leaves records that look complete and reproduce
+    nothing.
+
+    The default still leans towards redaction — an unfamiliar key mentioning a
+    credential word is treated as one — with a narrow, explicit exemption for
+    keys that measure a credential rather than carry it.
+    """
+    words = _WORD_RE.findall(key.lower())
+    if any(word in _MEASUREMENT_WORDS for word in words):
+        return False
+    if any(word in _SECRET_KEY_WORDS for word in words):
+        return True
+    return any(pair in _SECRET_KEY_PAIRS for pair in zip(words, words[1:], strict=False))
 
 
 def _label_for_key(key: str) -> str:
@@ -132,7 +203,7 @@ class Redactor:
 
     def _redact_member(self, key: str, value: Any) -> Any:
         """Redact one mapping entry, by key name first and by value shape second."""
-        if _SENSITIVE_KEY_RE.search(key):
+        if is_sensitive_key(key):
             return _placeholder(_label_for_key(key))
         return self._redact_value(value)
 
@@ -151,8 +222,14 @@ class Redactor:
 def _mask_assignment(match: re.Match[str]) -> str:
     """Replace the value of a ``key=value`` credential, keeping the key visible.
 
+    Non-credential assignments are returned untouched — the pattern matches every
+    ``key = value`` and this function, not the regex, decides what is secret, so
+    the text rule and the mapping rule share one definition.
+
     The key is retained because knowing *that* an API key was supplied is
     provenance; knowing its value is a leak.
     """
+    if not is_sensitive_key(match.group("key")):
+        return match.group(0)
     quote = match.group("quote")
     return f"{match.group('key')}{match.group('sep')}{quote}{_placeholder('credential')}{quote}"

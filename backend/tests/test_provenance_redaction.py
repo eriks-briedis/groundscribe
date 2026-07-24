@@ -139,6 +139,29 @@ def test_redaction_is_idempotent(redactor: Redactor) -> None:
     assert redactor.redact_text(once) == once
 
 
+@pytest.mark.parametrize("key", ["max_tokens", "token_budget", "tokens_used", "key", "keyword"])
+def test_provider_parameters_that_merely_mention_a_secret_word_survive(
+    redactor: Redactor, key: str
+) -> None:
+    """Over-redaction is a failure mode too, and a quiet one.
+
+    ``max_tokens`` is a sampling parameter whose value is exactly the kind of
+    thing a replay needs. A substring rule would eat it — and eat
+    ``token_budget`` in every context-selection record with it — leaving records
+    that look complete and cannot reproduce anything.
+    """
+    assert redactor.redact_payload({key: 2048}) == {key: 2048}
+    assert redactor.redact_text(f"{key}=2048") == f"{key}=2048"
+
+
+@pytest.mark.parametrize(
+    "key", ["api_key", "access_token", "token", "client_secret", "private_key", "Authorization"]
+)
+def test_credential_keys_are_still_caught(redactor: Redactor, key: str) -> None:
+    """The narrower rule must not have opened a hole on the way past."""
+    assert redactor.redact_payload({key: "value"}) != {key: "value"}
+
+
 def test_non_string_scalars_pass_through_unchanged(redactor: Redactor) -> None:
     """Numbers, booleans and nulls carry no secrets and must survive typed."""
     payload: dict[str, Any] = {"temperature": 0.2, "stream": False, "seed": None, "tags": ["a"]}
