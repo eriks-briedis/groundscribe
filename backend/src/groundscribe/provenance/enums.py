@@ -79,6 +79,13 @@ class InvocationOutcome(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ArtifactDirection(StrEnum):
+    """Whether an execution consumed a snapshot or produced it."""
+
+    INPUT = "input"
+    OUTPUT = "output"
+
+
 class ToolInitiator(StrEnum):
     """Who chose to call a tool: the model, or the pipeline itself."""
 

@@ -17,7 +17,10 @@ import pytest
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-import groundscribe.domain.models  # noqa: F401  (side effect: register ORM models)
+# Importing the ORM modules registers their tables on ``Base.metadata``; both
+# are needed for the full schema to be visible.
+import groundscribe.domain.models
+import groundscribe.provenance.models  # noqa: F401
 from groundscribe.db import Base, create_engine
 from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
