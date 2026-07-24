@@ -9,6 +9,10 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+
+# Autogenerate renders project-defined column types (e.g. UTCDateTime) with
+# their full module path, so the module has to be importable in every revision.
+import groundscribe.db
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.
