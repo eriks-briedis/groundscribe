@@ -36,7 +36,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
-    Enum,
     Float,
     ForeignKey,
     Integer,
@@ -46,7 +45,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from groundscribe.db import Base, UTCDateTime
+from groundscribe.db import Base, UTCDateTime, enum_column
 from groundscribe.domain.models import ArtifactSnapshot, Project, User
 from groundscribe.provenance.enums import (
     ActorType,
@@ -58,11 +57,6 @@ from groundscribe.provenance.enums import (
     RetryType,
     ToolInitiator,
 )
-
-
-def _enum(enum_cls: type[Any]) -> Enum:
-    """A portable, value-stored enum column type (as in the editorial models)."""
-    return Enum(enum_cls, native_enum=False, values_callable=lambda e: [m.value for m in e])
 
 
 class ProvenanceRecord:
@@ -95,7 +89,7 @@ class PipelineRun(ProvenanceRecord, Base):
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
-        _enum(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
+        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
     runtime_config: Mapped[dict[str, Any]] = mapped_column(JSONColumn, default=dict, nullable=False)
@@ -122,7 +116,7 @@ class StageExecution(ProvenanceRecord, Base):
     stage: Mapped[str] = mapped_column(String, nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
-        _enum(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
+        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
@@ -178,7 +172,9 @@ class ExecutionArtifact(ProvenanceRecord, Base):
         ForeignKey("stage_executions.id"), nullable=False
     )
     snapshot_id: Mapped[str] = mapped_column(ForeignKey("artifact_snapshots.id"), nullable=False)
-    direction: Mapped[ArtifactDirection] = mapped_column(_enum(ArtifactDirection), nullable=False)
+    direction: Mapped[ArtifactDirection] = mapped_column(
+        enum_column(ArtifactDirection), nullable=False
+    )
     role: Mapped[str] = mapped_column(String, default="", nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -215,7 +211,7 @@ class ContextItem(ProvenanceRecord, Base):
     ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reference: Mapped[str] = mapped_column(String, nullable=False)
     disposition: Mapped[ContextDisposition] = mapped_column(
-        _enum(ContextDisposition), nullable=False
+        enum_column(ContextDisposition), nullable=False
     )
     reason: Mapped[str] = mapped_column(String, default="", nullable=False)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -240,8 +236,10 @@ class ModelInvocation(ProvenanceRecord, Base):
         ForeignKey("model_invocations.id"), nullable=True
     )
     attempt_ordinal: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    retry_type: Mapped[RetryType | None] = mapped_column(_enum(RetryType), nullable=True)
-    outcome: Mapped[InvocationOutcome] = mapped_column(_enum(InvocationOutcome), nullable=False)
+    retry_type: Mapped[RetryType | None] = mapped_column(enum_column(RetryType), nullable=True)
+    outcome: Mapped[InvocationOutcome] = mapped_column(
+        enum_column(InvocationOutcome), nullable=False
+    )
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     template_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -298,7 +296,7 @@ class ToolInvocation(ProvenanceRecord, Base):
     )
     tool_name: Mapped[str] = mapped_column(String, nullable=False)
     tool_version: Mapped[str] = mapped_column(String, nullable=False)
-    initiator: Mapped[ToolInitiator] = mapped_column(_enum(ToolInitiator), nullable=False)
+    initiator: Mapped[ToolInitiator] = mapped_column(enum_column(ToolInitiator), nullable=False)
     approval_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     approved_by: Mapped[str | None] = mapped_column(String, nullable=True)
     # Raw is what crossed the boundary; normalised is what the pipeline acted on.
@@ -312,7 +310,7 @@ class ToolInvocation(ProvenanceRecord, Base):
         JSONColumn, default=dict, nullable=False
     )
     status: Mapped[ExecutionStatus] = mapped_column(
-        _enum(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
+        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
@@ -344,7 +342,7 @@ class DecisionRecord(ProvenanceRecord, Base):
     )
     decision_type: Mapped[str] = mapped_column(String, nullable=False)
     decided_by: Mapped[str] = mapped_column(String, nullable=False)
-    decided_by_type: Mapped[ActorType] = mapped_column(_enum(ActorType), nullable=False)
+    decided_by_type: Mapped[ActorType] = mapped_column(enum_column(ActorType), nullable=False)
     policy_version: Mapped[str | None] = mapped_column(String, nullable=True)
     inputs: Mapped[dict[str, Any]] = mapped_column(JSONColumn, default=dict, nullable=False)
     outcome: Mapped[str] = mapped_column(String, nullable=False)
@@ -382,7 +380,7 @@ class UserIntervention(ProvenanceRecord, Base):
     )
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     intervention_type: Mapped[InterventionType] = mapped_column(
-        _enum(InterventionType), nullable=False
+        enum_column(InterventionType), nullable=False
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, default=dict, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
@@ -414,7 +412,7 @@ class TraceEvent(ProvenanceRecord, Base):
     )
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
-    actor_type: Mapped[ActorType] = mapped_column(_enum(ActorType), nullable=False)
+    actor_type: Mapped[ActorType] = mapped_column(enum_column(ActorType), nullable=False)
     actor_id: Mapped[str] = mapped_column(String, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, default=dict, nullable=False)
     correlation_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -432,7 +430,7 @@ class ExperimentRun(ProvenanceRecord, Base):
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
-        _enum(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
+        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
@@ -444,7 +442,7 @@ class Job(ProvenanceRecord, Base):
 
     job_type: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
-        _enum(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
+        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
     pipeline_run_id: Mapped[str | None] = mapped_column(
         ForeignKey("pipeline_runs.id"), nullable=True

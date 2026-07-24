@@ -22,29 +22,19 @@ Non-goals).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, Enum, ForeignKey, Integer, String, Table
+from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
-from groundscribe.db import Base
+from groundscribe.db import Base, enum_column
 from groundscribe.domain.enums import (
     ArtifactType,
     BranchStatus,
     ClaimClassification,
     SelectionStatus,
 )
-
-
-def _enum(enum_cls: type[Any]) -> Enum:
-    """A portable, value-stored enum column type.
-
-    ``native_enum=False`` renders a ``VARCHAR`` + ``CHECK`` (no Postgres native
-    enum type to migrate); ``values_callable`` stores the StrEnum *value* rather
-    than its member name, so the DB holds the same stable string the code uses.
-    """
-    return Enum(enum_cls, native_enum=False, values_callable=lambda e: [m.value for m in e])
 
 
 class EntityMixin:
@@ -73,10 +63,10 @@ class LineageMixin:
         return mapped_column(ForeignKey(f"{cls.__tablename__}.id"), nullable=True)
 
     branch_status: Mapped[BranchStatus] = mapped_column(
-        _enum(BranchStatus), default=BranchStatus.ACTIVE, nullable=False
+        enum_column(BranchStatus), default=BranchStatus.ACTIVE, nullable=False
     )
     selection_status: Mapped[SelectionStatus] = mapped_column(
-        _enum(SelectionStatus), default=SelectionStatus.PENDING, nullable=False
+        enum_column(SelectionStatus), default=SelectionStatus.PENDING, nullable=False
     )
 
 
@@ -137,7 +127,7 @@ class SourceClaim(EntityMixin, Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     text: Mapped[str] = mapped_column(String, nullable=False)
     classification: Mapped[ClaimClassification] = mapped_column(
-        _enum(ClaimClassification), nullable=False
+        enum_column(ClaimClassification), nullable=False
     )
 
     project: Mapped[Project] = relationship()
@@ -285,7 +275,7 @@ class ArtifactSnapshot(EntityMixin, Base):
 
     __tablename__ = "artifact_snapshots"
 
-    artifact_type: Mapped[ArtifactType] = mapped_column(_enum(ArtifactType), nullable=False)
+    artifact_type: Mapped[ArtifactType] = mapped_column(enum_column(ArtifactType), nullable=False)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     content_location: Mapped[str] = mapped_column(String, nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -293,8 +283,8 @@ class ArtifactSnapshot(EntityMixin, Base):
         ForeignKey("artifact_snapshots.id"), nullable=True
     )
     branch_status: Mapped[BranchStatus] = mapped_column(
-        _enum(BranchStatus), default=BranchStatus.ACTIVE, nullable=False
+        enum_column(BranchStatus), default=BranchStatus.ACTIVE, nullable=False
     )
     selection_status: Mapped[SelectionStatus] = mapped_column(
-        _enum(SelectionStatus), default=SelectionStatus.PENDING, nullable=False
+        enum_column(SelectionStatus), default=SelectionStatus.PENDING, nullable=False
     )

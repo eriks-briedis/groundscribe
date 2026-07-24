@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Dialect, Engine, event
+from sqlalchemy import DateTime, Dialect, Engine, Enum, event
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -23,6 +23,22 @@ DEFAULT_URL = "sqlite+pysqlite:///:memory:"
 
 class Base(DeclarativeBase):
     """Declarative base shared by every ORM model in the project."""
+
+
+def enum_column(enum_cls: type[Any]) -> Enum:
+    """A portable, value-stored enum column type.
+
+    ``native_enum=False`` renders a ``VARCHAR`` rather than a PostgreSQL native
+    enum type, so adding a member never needs a type migration;
+    ``values_callable`` stores the StrEnum *value* instead of its member name, so
+    the database holds the same stable string the code and any provenance dump
+    use.
+
+    Shared by the editorial and provenance models: two copies of this three-line
+    decision could drift apart and silently change how enums are stored in half
+    the schema.
+    """
+    return Enum(enum_cls, native_enum=False, values_callable=lambda e: [m.value for m in e])
 
 
 class UTCDateTime(TypeDecorator[datetime]):
