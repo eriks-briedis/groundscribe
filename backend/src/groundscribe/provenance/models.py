@@ -42,6 +42,7 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -397,6 +398,9 @@ class TraceEvent(ProvenanceRecord, Base):
     in the same microsecond still have a defined order, and a concurrent writer
     that would duplicate a position fails loudly instead of silently reordering
     history.
+
+    Append-only is enforced by mapper events below, not by convention: a timeline
+    that can be edited afterwards proves nothing about what happened.
     """
 
     __tablename__ = "trace_events"
@@ -421,6 +425,20 @@ class TraceEvent(ProvenanceRecord, Base):
 
     pipeline_run: Mapped[PipelineRun | None] = relationship()
     stage_execution: Mapped[StageExecution | None] = relationship(back_populates="trace_events")
+
+
+class AppendOnlyViolation(Exception):
+    """Raised when something tries to change or remove a stored trace event."""
+
+
+@event.listens_for(TraceEvent, "before_update", propagate=True)
+def _reject_trace_update(_mapper: Any, _connection: Any, target: TraceEvent) -> None:
+    raise AppendOnlyViolation(f"trace event {target.id} is append-only and cannot be updated")
+
+
+@event.listens_for(TraceEvent, "before_delete", propagate=True)
+def _reject_trace_delete(_mapper: Any, _connection: Any, target: TraceEvent) -> None:
+    raise AppendOnlyViolation(f"trace event {target.id} is append-only and cannot be deleted")
 
 
 class ExperimentRun(ProvenanceRecord, Base):

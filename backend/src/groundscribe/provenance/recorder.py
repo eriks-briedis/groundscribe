@@ -96,6 +96,13 @@ class ProvenanceRecorder:
         )
         self._session.add(run)
         self._session.flush()
+        self.emit(
+            event_type="run.started",
+            actor_type=ActorType.SYSTEM,
+            actor_id="pipeline",
+            run=run,
+            payload={"project_id": project_id},
+        )
         return run
 
     def start_stage(
@@ -119,6 +126,13 @@ class ProvenanceRecorder:
         )
         self._session.add(execution)
         self._session.flush()
+        self.emit(
+            event_type="stage.started",
+            actor_type=ActorType.SYSTEM,
+            actor_id="pipeline",
+            execution=execution,
+            payload={"stage": stage, "parent_execution_id": execution.parent_execution_id},
+        )
         return execution
 
     # ------------------------------------------------------------------
@@ -182,6 +196,20 @@ class ProvenanceRecorder:
         )
         self._session.add(invocation)
         self._session.flush()
+        self.emit(
+            event_type="model.invoked",
+            actor_type=ActorType.MODEL,
+            actor_id=f"{provider}/{model}",
+            execution=execution,
+            # A reference, not a copy: the invocation row is the record, and an
+            # event that repeated the prompt would be a second version of it.
+            payload={
+                "model_invocation_id": invocation.id,
+                "attempt_ordinal": invocation.attempt_ordinal,
+                "outcome": outcome.value,
+                "retry_type": retry_type.value if retry_type is not None else None,
+            },
+        )
         return invocation
 
     # ------------------------------------------------------------------
@@ -226,6 +254,17 @@ class ProvenanceRecorder:
         )
         self._session.add(tool)
         self._session.flush()
+        self.emit(
+            event_type="tool.invoked",
+            actor_type=ActorType.TOOL,
+            actor_id=f"{tool_name}@{tool_version}",
+            execution=execution,
+            payload={
+                "tool_invocation_id": tool.id,
+                "initiator": initiator.value,
+                "status": status.value,
+            },
+        )
         return tool
 
     def record_tool_dependency(
@@ -312,6 +351,18 @@ class ProvenanceRecorder:
         decision = models.DecisionRecord(**record.model_dump())
         self._session.add(decision)
         self._session.flush()
+        self.emit(
+            event_type="decision.recorded",
+            actor_type=decided_by_type,
+            actor_id=decided_by,
+            execution=execution,
+            payload={
+                "decision_record_id": decision.id,
+                "decision_type": decision_type,
+                "outcome": outcome,
+                "policy_version": policy_version,
+            },
+        )
         return decision
 
     def record_evaluation(
@@ -358,6 +409,16 @@ class ProvenanceRecorder:
         )
         self._session.add(intervention)
         self._session.flush()
+        self.emit(
+            event_type="intervention.recorded",
+            actor_type=ActorType.USER,
+            actor_id=user_id,
+            execution=execution,
+            payload={
+                "user_intervention_id": intervention.id,
+                "intervention_type": intervention_type.value,
+            },
+        )
         return intervention
 
     # ------------------------------------------------------------------
