@@ -52,7 +52,7 @@ def test_provenance_payloads_are_snapshotted_artifact_types() -> None:
     *separate snapshots*, which means the snapshot store's type vocabulary has to
     name them.
     """
-    assert PROVENANCE_ARTIFACT_TYPES <= _values(ArtifactType)
+    assert _values(ArtifactType) >= PROVENANCE_ARTIFACT_TYPES
 
 
 def test_artifact_type_is_exactly_the_editorial_plus_provenance_kinds() -> None:

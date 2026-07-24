@@ -50,8 +50,17 @@ class SelectionStatus(StrEnum):
 
 
 class ArtifactType(StrEnum):
-    """The kind of artefact a content-addressed :class:`ArtifactSnapshot` holds."""
+    """The kind of artefact a content-addressed :class:`ArtifactSnapshot` holds.
 
+    Two groups share one vocabulary because they share one store. The editorial
+    kinds are the product's subject matter (phase 02); the provenance kinds are
+    the payloads of a model call (phase 03), which are content-addressed for the
+    same two reasons: the integrity check that detects tampering applies to them
+    unchanged, and a repair attempt that resends a nearly identical request
+    dedups against the original instead of storing it twice.
+    """
+
+    # Editorial artefacts (phase 02).
     SOURCE_DOCUMENT = "source_document"
     SOURCE_MODEL = "source_model"
     CONTENT_ARCHITECTURE = "content_architecture"
@@ -62,3 +71,11 @@ class ArtifactType(StrEnum):
     REVISION_PLAN = "revision_plan"
     VOICE_PROFILE = "voice_profile"
     VALIDATION_REPORT = "validation_report"
+
+    # Provenance payloads (phase 03). Kept as three distinct response kinds
+    # rather than one, so a response that parses but fails validation is stored
+    # beside its repaired successor instead of replacing it.
+    EFFECTIVE_REQUEST = "effective_request"
+    RAW_RESPONSE = "raw_response"
+    PARSED_RESPONSE = "parsed_response"
+    VALIDATED_RESPONSE = "validated_response"
