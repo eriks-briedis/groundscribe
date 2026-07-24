@@ -11,6 +11,7 @@ test.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from sqlalchemy.engine import Engine
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Session
 
 import groundscribe.domain.models  # noqa: F401  (side effect: register ORM models)
 from groundscribe.db import Base, create_engine
+from groundscribe.storage.blob_store import BlobStore
+from groundscribe.storage.snapshot_store import SnapshotStore
 
 
 @pytest.fixture(scope="session")
@@ -44,3 +47,15 @@ def db_session(engine: Engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def blob_store(tmp_path: Path) -> BlobStore:
+    """A content-addressed blob store rooted in this test's temporary directory."""
+    return BlobStore(tmp_path)
+
+
+@pytest.fixture
+def snapshot_store(db_session: Session, blob_store: BlobStore) -> SnapshotStore:
+    """The phase-02 snapshot store bound to the rolled-back test session."""
+    return SnapshotStore(db_session, blob_store)
