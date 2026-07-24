@@ -242,7 +242,7 @@ def test_tool_invocations_retain_everything_needed_to_judge_them(
 def test_a_tool_result_records_which_artefacts_depended_on_it(
     recorder: ProvenanceRecorder,
 ) -> None:
-    """"If this fetch was wrong, what else is wrong?" must be answerable."""
+    """ "If this fetch was wrong, what else is wrong?" must be answerable."""
     execution = _stage(recorder)
     tool = recorder.record_tool_invocation(
         execution,
@@ -276,9 +276,7 @@ def test_context_selection_records_what_was_left_out_as_well_as_what_was_used(
         strategy_version="2.0.0",
         token_budget=4096,
         candidates=[
-            ContextCandidate(
-                reference="seg-1", disposition=ContextDisposition.SELECTED, score=0.9
-            ),
+            ContextCandidate(reference="seg-1", disposition=ContextDisposition.SELECTED, score=0.9),
             ContextCandidate(
                 reference="seg-2", disposition=ContextDisposition.EXCLUDED, reason="off topic"
             ),
@@ -314,7 +312,7 @@ def test_a_decision_must_name_who_made_it(recorder: ProvenanceRecorder) -> None:
 
 
 def test_a_policy_decision_must_name_its_policy_version(recorder: ProvenanceRecorder) -> None:
-    """"The policy decided" is not reproducible without knowing which policy."""
+    """ "The policy decided" is not reproducible without knowing which policy."""
     execution = _stage(recorder)
     with pytest.raises(ValueError, match="policy_version"):
         recorder.record_decision(
@@ -377,9 +375,7 @@ def test_inputs_and_outputs_are_attached_with_direction_and_role(
 ) -> None:
     """The execution records what it consumed as well as what it produced."""
     execution = _stage(recorder)
-    source = snapshot_store.write(
-        artifact_type=ArtifactType.SOURCE_DOCUMENT, content=b"raw notes"
-    )
+    source = snapshot_store.write(artifact_type=ArtifactType.SOURCE_DOCUMENT, content=b"raw notes")
     recorder.record_input(execution, source, role="source_document")
     recorder.record_output(
         execution, artifact_type=ArtifactType.SOURCE_MODEL, content={"claims": []}

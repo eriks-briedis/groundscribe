@@ -250,7 +250,9 @@ class DecisionRecord(_Record):
     decided_at: datetime
 
     @model_validator(mode="after")
-    def _policy_decisions_name_their_version(self) -> Self:
+    def _decisions_are_attributable(self) -> Self:
+        if not self.decided_by:
+            raise ValueError("decided_by is required: an unattributed decision is unreviewable")
         if self.decided_by_type is ActorType.POLICY and not self.policy_version:
             raise ValueError("policy_version is required for decisions made by a policy")
         return self
