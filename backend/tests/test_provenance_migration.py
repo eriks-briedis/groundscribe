@@ -28,6 +28,21 @@ ALEMBIC_DIR = Path(__file__).resolve().parents[1] / "alembic"
 
 EXPECTED_TABLES = EXECUTION_TABLES | EVALUATION_TABLES
 
+#: The minimum chain of rows a stage execution depends on, written as raw SQL so
+#: the migrated schema is exercised without the ORM smoothing anything over.
+_SEED_EXECUTION = (
+    "INSERT INTO users (id, schema_version, name, email) "
+    "VALUES ('u1', 1, 'Ada', 'ada@example.com')",
+    "INSERT INTO projects (id, schema_version, user_id, title, description) "
+    "VALUES ('p1', 1, 'u1', 'Caching', '')",
+    "INSERT INTO pipeline_runs "
+    "(id, schema_version, project_id, status, correlation_id, runtime_config, started_at) "
+    "VALUES ('r1', 1, 'p1', 'running', 'c1', '{}', '2026-07-25 12:00:00')",
+    "INSERT INTO stage_executions "
+    "(id, schema_version, pipeline_run_id, stage, ordinal, status, correlation_id, started_at) "
+    "VALUES ('e1', 1, 'r1', 'draft', 0, 'running', 'c1', '2026-07-25 12:00:00')",
+)
+
 
 def _config(db_url: str) -> Config:
     cfg = Config()
@@ -67,14 +82,8 @@ def test_the_migrated_schema_keeps_the_policy_version_check(migrated_url: str) -
     engine = create_engine(migrated_url)
     try:
         with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO stage_executions "
-                    "(id, schema_version, pipeline_run_id, stage, ordinal, status,"
-                    " correlation_id, started_at) "
-                    "VALUES ('e1', 1, 'r1', 'draft', 0, 'running', 'c1', '2026-07-25 12:00:00')"
-                )
-            )
+            for statement in _SEED_EXECUTION:
+                conn.execute(text(statement))
             with pytest.raises(IntegrityError):
                 conn.execute(
                     text(
