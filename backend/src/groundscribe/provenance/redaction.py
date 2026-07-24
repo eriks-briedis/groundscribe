@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from itertools import pairwise
 from typing import Any
 
 #: Placeholder left in place of removed material. The label says *why* the span
@@ -158,7 +159,7 @@ def is_sensitive_key(key: str) -> bool:
         return False
     if any(word in _SECRET_KEY_WORDS for word in words):
         return True
-    return any(pair in _SECRET_KEY_PAIRS for pair in zip(words, words[1:], strict=False))
+    return any(pair in _SECRET_KEY_PAIRS for pair in pairwise(words))
 
 
 def _label_for_key(key: str) -> str:
