@@ -55,7 +55,7 @@ def test_editorial_tables_upgrade_and_downgrade(tmp_path: Path) -> None:
     engine = create_engine(db_url)
     try:
         tables = set(inspect(engine).get_table_names())
-        assert EXPECTED_TABLES <= tables, EXPECTED_TABLES - tables
+        assert tables >= EXPECTED_TABLES, EXPECTED_TABLES - tables
     finally:
         engine.dispose()
 

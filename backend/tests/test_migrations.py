@@ -39,11 +39,12 @@ def test_upgrade_then_downgrade_round_trips(tmp_path: Path) -> None:
     db_url = f"sqlite+pysqlite:///{db_path}"
     cfg = _make_config(db_url)
 
+    head = ScriptDirectory.from_config(cfg).get_current_head()
     command.upgrade(cfg, "head")
     engine = create_engine(db_url)
     try:
         assert "alembic_version" in inspect(engine).get_table_names()
-        assert _current_revision(engine) == "0001_baseline"
+        assert _current_revision(engine) == head
     finally:
         engine.dispose()
 
@@ -57,19 +58,21 @@ def test_upgrade_then_downgrade_round_trips(tmp_path: Path) -> None:
 
 
 def test_baseline_migration_is_empty_and_reversible(tmp_path: Path) -> None:
-    """Exactly one baseline revision exists (down_revision None) and creates no schema."""
-    cfg = _make_config(f"sqlite+pysqlite:///{tmp_path / 'scratch.sqlite'}")
+    """Exactly one root revision exists (down_revision None) and it creates no schema."""
+    db_url = f"sqlite+pysqlite:///{tmp_path / 'scratch.sqlite'}"
+    cfg = _make_config(db_url)
     script = ScriptDirectory.from_config(cfg)
 
-    revisions = list(script.walk_revisions())
-    assert len(revisions) == 1, "phase 01 must ship exactly the empty baseline revision"
-    baseline = revisions[0]
-    assert baseline.down_revision is None, "baseline must be the root revision"
+    roots = [rev for rev in script.walk_revisions() if rev.down_revision is None]
+    assert len(roots) == 1, "there must be exactly one root revision"
+    baseline = roots[0]
+    assert baseline.revision == "0001_baseline"
 
-    command.upgrade(cfg, "head")
-    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'scratch.sqlite'}")
+    # Upgrading to the baseline specifically introduces no domain tables — only
+    # alembic's own bookkeeping. Later revisions add the schema (tested elsewhere).
+    command.upgrade(cfg, baseline.revision)
+    engine = create_engine(db_url)
     try:
-        # An empty baseline introduces no domain tables — only alembic's own bookkeeping.
         assert inspect(engine).get_table_names() == ["alembic_version"]
     finally:
         engine.dispose()
