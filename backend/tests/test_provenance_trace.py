@@ -23,11 +23,11 @@ from groundscribe.provenance.enums import (
     ToolInitiator,
 )
 from groundscribe.provenance.enums import ExecutionStatus as Status
-from groundscribe.provenance.models import AppendOnlyViolation
+from groundscribe.provenance.models import AppendOnlyViolation, TraceEvent
 from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.provenance.schemas import EffectiveRequest, Message
 from groundscribe.storage.snapshot_store import SnapshotStore
-from provenance_helpers import make_recorder, seed_project
+from provenance_helpers import START, make_recorder, seed_project
 
 REQUEST = EffectiveRequest(
     template_id="extract_claims",
@@ -116,6 +116,33 @@ def test_a_causal_path_can_be_walked_back_to_its_root(
     path = queries.causal_path(db_session, third)
     assert [e.id for e in path] == [first.id, second.id, third.id]
     assert first.causation_id is None
+
+
+def test_a_causal_path_stops_at_a_cause_it_cannot_find(
+    recorder: ProvenanceRecorder, db_session: Session
+) -> None:
+    """A dangling cause truncates the explanation instead of failing to give one.
+
+    Trace retention (phase 13) will eventually age events out, and an event whose
+    cause has been aged away is still worth explaining as far as it goes.
+    """
+    run = recorder.start_run(project_id="p1")
+    orphan = TraceEvent(
+        id="ev-orphan",
+        pipeline_run_id=run.id,
+        event_type="mystery",
+        timestamp=START,
+        actor_type=ActorType.SYSTEM,
+        actor_id="pipeline",
+        payload={},
+        correlation_id=run.correlation_id,
+        causation_id="an-event-that-is-not-here",
+        sequence=99,
+    )
+    db_session.add(orphan)
+    db_session.flush()
+
+    assert [e.id for e in queries.causal_path(db_session, orphan)] == ["ev-orphan"]
 
 
 def test_an_unanchored_event_is_refused(recorder: ProvenanceRecorder) -> None:

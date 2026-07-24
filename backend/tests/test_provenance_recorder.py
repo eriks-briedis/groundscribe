@@ -406,3 +406,23 @@ def test_output_snapshots_can_supersede_a_parent_without_overwriting_it(
 
     assert second.parent_snapshot_id == first.id
     assert b"draft one" in snapshot_store.read(first)
+
+
+def test_the_default_clock_and_id_factory_produce_real_values(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Injection is for tests; production gets a wall clock and unique ids.
+
+    Worth pinning because the defaults are the code path that actually ships and
+    the one every other test replaces.
+    """
+    seed_project(db_session)
+    plain = ProvenanceRecorder(db_session, snapshot_store)
+
+    first = plain.start_run(project_id="p1")
+    second = plain.start_run(project_id="p1")
+
+    assert first.id != second.id
+    assert first.correlation_id != second.correlation_id
+    assert first.started_at.tzinfo is not None
+    assert first.started_at <= second.started_at
