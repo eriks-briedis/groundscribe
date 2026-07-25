@@ -20,8 +20,13 @@ from groundscribe.llm import (
     FakeLLMClient,
     InjectableFailure,
     InjectedFailureError,
+    LLMError,
+    LLMProviderError,
+    LLMRateLimitError,
     LLMRequest,
     LLMScriptError,
+    LLMTimeoutError,
+    TokenUsage,
 )
 
 
@@ -111,3 +116,131 @@ async def test_identical_scripting_yields_identical_outputs() -> None:
 
     assert left_out == right_out
     assert left.received_requests == right.received_requests
+
+
+# ---------------------------------------------------------------------------
+# Phase 04: the fake as a full LLMClient (plan/01 said "expand in phase 04").
+#
+# The repair ladder is driven entirely by what a client can return, so the fake
+# has to be able to produce every outcome the ladder distinguishes: a body that
+# does not parse, a refusal, a tool call, and each transport failure as its own
+# provider-neutral error type.
+# ---------------------------------------------------------------------------
+
+
+async def test_scripted_raw_text_is_preserved_verbatim() -> None:
+    """An unparseable body must survive exactly as emitted.
+
+    The ladder classifies on the raw text, and provenance stores it: normalising
+    it here would hide the very defect the record exists to explain.
+    """
+    client = FakeLLMClient()
+    client.script_text("extract", '{"claims": [')
+
+    response = await client.complete(_request("extract"))
+
+    assert response.text == '{"claims": ['
+    assert response.raw_text == '{"claims": ['
+    assert response.output == {}
+
+
+async def test_raw_text_falls_back_to_the_scripted_structured_form() -> None:
+    """Scripting a dict is the common case; it still has a canonical raw form."""
+    client = FakeLLMClient()
+    client.script_response("extract", {"b": 2, "a": 1})
+
+    response = await client.complete(_request("extract"))
+
+    # Canonical (sorted, compact) so the same logical body hashes identically.
+    assert response.raw_text == '{"a":1,"b":2}'
+
+
+async def test_a_refusal_is_a_response_not_an_exception() -> None:
+    """plan/04: a refusal is captured as a refusal state, not a valid result.
+
+    Modelling it as an exception would collapse it into transport failure, and a
+    provider declining to answer is a different problem with a different fix — a
+    human, not a retry.
+    """
+    client = FakeLLMClient()
+    client.script_refusal("draft", "I can't help with that.")
+
+    response = await client.complete(_request("draft"))
+
+    assert response.refusal == "I can't help with that."
+    assert response.output == {}
+
+
+async def test_a_model_requested_tool_call_is_returned_with_its_arguments() -> None:
+    client = FakeLLMClient()
+    client.script_tool_call("draft", name="lookup_metric", arguments={"metric": "p99"})
+
+    response = await client.complete(_request("draft"))
+
+    assert [(call.name, call.arguments) for call in response.tool_calls] == [
+        ("lookup_metric", {"metric": "p99"})
+    ]
+    assert response.tool_calls[0].call_id
+
+
+async def test_token_and_cost_usage_is_reported() -> None:
+    """Token/cost reporting is part of the protocol, so the fake must carry it."""
+    client = FakeLLMClient()
+    usage = TokenUsage(input_tokens=10, output_tokens=4)
+    client.script_response("score", {"ok": True}, usage=usage)
+
+    response = await client.complete(_request("score"))
+
+    assert response.usage.total_tokens == 14
+
+
+@pytest.mark.parametrize(
+    ("failure", "error_type"),
+    [
+        (InjectableFailure.TIMEOUT, LLMTimeoutError),
+        (InjectableFailure.RATE_LIMIT, LLMRateLimitError),
+        (InjectableFailure.PROVIDER_ERROR, LLMProviderError),
+    ],
+)
+async def test_transport_failures_raise_the_provider_neutral_error_type(
+    failure: InjectableFailure, error_type: type[Exception]
+) -> None:
+    """Injected transport failures are the *same* types a real adapter raises.
+
+    Otherwise the ladder would be tested against a taxonomy nothing in
+    production uses, and the retry types recorded in provenance would only be
+    correct in tests.
+    """
+    client = FakeLLMClient()
+    client.script_failure("call", failure)
+
+    with pytest.raises(error_type) as excinfo:
+        await client.complete(_request("call"))
+
+    # Still an injected failure, so the phase-01 harness contract holds.
+    assert isinstance(excinfo.value, InjectedFailureError)
+
+
+async def test_a_scripting_mistake_is_not_a_provider_failure() -> None:
+    """LLMScriptError must not be retryable: the test is wrong, not the provider."""
+    client = FakeLLMClient()
+    with pytest.raises(LLMScriptError) as excinfo:
+        await client.complete(_request("never_scripted"))
+    assert not isinstance(excinfo.value, LLMError)
+
+
+async def test_streaming_yields_the_body_then_the_usage() -> None:
+    client = FakeLLMClient()
+    client.script_response("draft", {"x": 1}, usage=TokenUsage(input_tokens=3, output_tokens=1))
+
+    chunks = [chunk async for chunk in client.stream(_request("draft"))]
+
+    assert "".join(chunk.text for chunk in chunks) == '{"x":1}'
+    assert chunks[-1].usage is not None
+    assert chunks[-1].usage.total_tokens == 4
+
+
+def test_provider_metadata_identifies_the_exact_model() -> None:
+    client = FakeLLMClient(model="fake-mini")
+    assert (client.metadata.provider, client.metadata.model) == ("fake", "fake-mini")
+    assert client.metadata.client_version
