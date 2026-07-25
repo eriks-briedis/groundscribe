@@ -294,10 +294,16 @@ class WorkflowEngine:
     # ------------------------------------------------------------------
 
     def begin_stage(
-        self, stage: str, *, parent: models.StageExecution | None = None
+        self,
+        stage: str,
+        *,
+        impl_version: str = "",
+        parent: models.StageExecution | None = None,
     ) -> models.StageExecution:
         """Open a stage execution under this run for phases 06-08 to fill."""
-        return self._recorder.start_stage(self.run, stage=stage, parent=parent)
+        return self._recorder.start_stage(
+            self.run, stage=stage, impl_version=impl_version, parent=parent
+        )
 
     def replay(
         self, execution: models.StageExecution, *, requested_by: str

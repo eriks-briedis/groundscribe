@@ -136,11 +136,16 @@ class StageExecution(_Record):
     ``parent_execution_id`` records the execution this one branched from — a
     re-run, a rewrite, or an experiment arm — so two branches can be compared
     against their true parents rather than against each other.
+
+    ``impl_version`` is the build of the stage that ran. It defaults to empty
+    because the engine's own executions have no stage implementation behind them,
+    and because records written before the field existed must still validate.
     """
 
     pipeline_run_id: str
     parent_execution_id: str | None = None
     stage: str
+    impl_version: str = ""
     ordinal: int = 0
     status: ExecutionStatus = ExecutionStatus.PENDING
     correlation_id: str

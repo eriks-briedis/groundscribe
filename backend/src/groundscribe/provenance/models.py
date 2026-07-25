@@ -115,6 +115,10 @@ class StageExecution(ProvenanceRecord, Base):
         ForeignKey("stage_executions.id"), nullable=True
     )
     stage: Mapped[str] = mapped_column(String, nullable=False)
+    # Which build of the stage ran. Empty for the engine's own executions, which
+    # have no stage implementation behind them (plan/06 → stage-execution
+    # metadata includes the stage impl version).
+    impl_version: Mapped[str] = mapped_column(String, default="", nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
         enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False

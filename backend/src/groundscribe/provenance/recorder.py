@@ -110,15 +110,23 @@ class ProvenanceRecorder:
         run: models.PipelineRun,
         *,
         stage: str,
+        impl_version: str = "",
         ordinal: int = 0,
         parent: models.StageExecution | None = None,
     ) -> models.StageExecution:
-        """Open a stage execution within ``run``, optionally branching from ``parent``."""
+        """Open a stage execution within ``run``, optionally branching from ``parent``.
+
+        ``impl_version`` names the build of the stage that is running. It is
+        recorded at the start rather than on completion: a stage that fails still
+        has to say which implementation failed, and by the time anyone asks the
+        code may have moved on.
+        """
         execution = models.StageExecution(
             id=self._new_id(),
             pipeline_run=run,
             parent=parent,
             stage=stage,
+            impl_version=impl_version,
             ordinal=ordinal,
             status=ExecutionStatus.RUNNING,
             correlation_id=run.correlation_id,
@@ -131,7 +139,11 @@ class ProvenanceRecorder:
             actor_type=ActorType.SYSTEM,
             actor_id="pipeline",
             execution=execution,
-            payload={"stage": stage, "parent_execution_id": execution.parent_execution_id},
+            payload={
+                "stage": stage,
+                "impl_version": impl_version,
+                "parent_execution_id": execution.parent_execution_id,
+            },
         )
         return execution
 
