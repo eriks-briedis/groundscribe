@@ -14,6 +14,7 @@ stored artefacts to check.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from groundscribe.provenance.enums import ActorType
@@ -30,6 +31,7 @@ from groundscribe.workflow.policy import (
     WorkflowPolicy,
     default_workflow_policy,
 )
+from groundscribe.workflow.stagnation import ScoreRound, StagnationFinding, detect_stagnation
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from groundscribe.workflow.transitions import (
     TERMINAL_STATES,
@@ -128,6 +130,22 @@ class RewriteLedger:
     def spend(self, kind: LimitKind) -> None:
         """Charge one round of ``kind`` to the run."""
         self.rounds[kind] = self.spent(kind) + 1
+
+
+@dataclass(frozen=True)
+class StagnationCheck:
+    """What a stagnation check found, and whether it parked the run.
+
+    ``findings`` is populated whether or not the run stalled, so a caller that
+    checks early can show a person the trend before the loop runs out.
+    """
+
+    findings: tuple[StagnationFinding, ...]
+    transition: TransitionOutcome | None = None
+
+    @property
+    def stalled(self) -> bool:
+        return self.transition is not None
 
 
 @dataclass(frozen=True)
@@ -266,6 +284,27 @@ class WorkflowMachine:
         if limit is not None:
             self.ledger.spend(limit)
         return RouteResult(outcome=outcome, transition=transition, approval=approval)
+
+    def check_stagnation(self, history: Sequence[ScoreRound]) -> StagnationCheck:
+        """Park the run if the revision loop has stopped paying for itself.
+
+        Checked at the routing point and nowhere else: stalling from the middle
+        of a stage would abandon work in progress, and the decision a stall asks
+        for — approve anyway, add source, narrow the thesis, reopen the brief,
+        abandon — is the same decision routing was about to make.
+
+        The state is validated even when nothing is found, so a caller asking
+        from the wrong place hears about it on the healthy path too, rather than
+        only on the day a run stagnates.
+        """
+        self._resolve(WorkflowAction.STALL, WorkflowState.STALLED)
+        findings = detect_stagnation(history, self.policy.stagnation)
+        if not findings:
+            return StagnationCheck(findings=())
+        return StagnationCheck(
+            findings=findings,
+            transition=self.apply(WorkflowAction.STALL, target=WorkflowState.STALLED),
+        )
 
     def _resolve(self, action: WorkflowAction, target: WorkflowState | None) -> Transition:
         """Find the one edge this call means, or explain why there isn't one."""
