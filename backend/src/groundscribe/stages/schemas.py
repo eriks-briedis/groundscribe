@@ -25,6 +25,7 @@ the ingested document or it does not, and the stage checks which.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -211,7 +212,124 @@ class GapReport(_Output):
         return tuple(gap for gap in self.gaps if gap.priority is priority)
 
 
+class RiskLevel(StrEnum):
+    """A graded risk, used where a boolean would lose the middle case.
+
+    Thin content is the example that forces three levels: "definitely thin" and
+    "definitely not" are easy, and the article that is *probably* thin is exactly
+    the one an author needs to be warned about rather than blocked on.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ProposedArticle(BaseModel):
+    """One candidate article: a thesis, what supports it, and what it risks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    thesis: str
+    supporting_claim_ids: tuple[str, ...] = Field(min_length=1)
+    evidence_summary: str = ""
+    standalone: bool = True
+    reader_knowledge_assumed: str = ""
+    overlaps_with: tuple[str, ...] = ()
+    thin_content_risk: RiskLevel = RiskLevel.LOW
+    platform_fit: str = ""
+
+
+class RejectedAlternative(BaseModel):
+    """An architecture that was considered and dropped, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    reason_rejected: str
+
+    @model_validator(mode="after")
+    def _rejection_is_explained(self) -> Self:
+        if not self.reason_rejected.strip():
+            raise ValueError(
+                "an alternative must say why it was rejected: considered-and-dropped "
+                "with no reason is not a record of a decision"
+            )
+        return self
+
+
+class ArchitectureDecision(BaseModel):
+    """Why this shape was chosen over the others (phase 06 §4).
+
+    ``alternatives_considered`` is required and non-empty. Choosing means
+    rejecting: a proposal that rejected nothing did not choose, it reported the
+    first idea it had, and the two are indistinguishable afterwards unless the
+    schema insists.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected: str
+    rationale: str = ""
+    alternatives_considered: tuple[RejectedAlternative, ...] = Field(min_length=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    uncertainties: tuple[str, ...] = ()
+
+
+class SeriesConsiderations(BaseModel):
+    """How several articles relate, if they do."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_series: bool = False
+    reading_order: tuple[str, ...] = ()
+    shared_material: tuple[str, ...] = ()
+    sequencing_rationale: str = ""
+
+
+class ArchitectureProposal(_Output):
+    """The proposed shape of the article or series (phase 06 §4)."""
+
+    articles: tuple[ProposedArticle, ...] = Field(min_length=1)
+    competing_theses: tuple[str, ...] = ()
+    series: SeriesConsiderations = SeriesConsiderations()
+    decision: ArchitectureDecision
+
+    @model_validator(mode="after")
+    def _the_decision_is_actionable(self) -> Self:
+        ids = [article.id for article in self.articles]
+        duplicated = sorted({key for key in ids if ids.count(key) > 1})
+        if duplicated:
+            raise ValueError(f"article ids must be unique; repeated: {', '.join(duplicated)}")
+        if self.decision.selected not in ids:
+            raise ValueError(
+                f"the decision selected {self.decision.selected!r}, which is not one of the "
+                f"proposed articles ({', '.join(ids)}); a decision naming nothing that exists "
+                "cannot be acted on"
+            )
+        if self.series.is_series and set(self.series.reading_order) != set(ids):
+            raise ValueError(
+                "a series must give a reading order covering every article it contains; "
+                f"ordered: {', '.join(self.series.reading_order) or 'none'}"
+            )
+        return self
+
+    def article(self, article_id: str) -> ProposedArticle | None:
+        """The proposed article with ``article_id``, if there is one."""
+        return next((article for article in self.articles if article.id == article_id), None)
+
+    def cited_claim_ids(self) -> frozenset[str]:
+        """Every source claim the proposal argues from."""
+        return frozenset(
+            claim_id for article in self.articles for claim_id in article.supporting_claim_ids
+        )
+
+
 __all__ = [
+    "ArchitectureDecision",
+    "ArchitectureProposal",
     "DevelopmentEvent",
     "Evidence",
     "ExtractedClaim",
@@ -219,7 +337,11 @@ __all__ = [
     "Lesson",
     "PotentialArgument",
     "ProductFact",
+    "ProposedArticle",
     "PublicationConstraint",
+    "RejectedAlternative",
+    "RiskLevel",
+    "SeriesConsiderations",
     "SourceGapQuestion",
     "SourceModel",
 ]

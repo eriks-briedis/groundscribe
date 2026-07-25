@@ -192,10 +192,18 @@ class UserAnswer(_Entity):
 
 
 class ContentArchitecture(_Lineage):
-    """A proposed structure for the article(s) drawn from the source model."""
+    """A proposed structure for the article(s) drawn from the source model.
+
+    ``locked`` is set on approval: from then on a change must fork a new version
+    and name who authorised it (plan/05 → no approved architecture mutates
+    silently).
+    """
 
     project_id: str
     summary: str
+    snapshot_id: str | None = None
+    locked: bool = False
+    locked_by: str | None = None
 
 
 class ArticleConcept(_Entity):
@@ -204,6 +212,8 @@ class ArticleConcept(_Entity):
     architecture_id: str
     title: str
     angle: str = ""
+    thesis: str = ""
+    ordinal: int = 0
 
 
 class ArticleBrief(_Lineage):

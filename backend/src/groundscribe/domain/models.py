@@ -260,12 +260,26 @@ class UserAnswer(EntityMixin, Base):
 
 
 class ContentArchitecture(LineageMixin, EntityMixin, Base):
+    """One version of the proposed shape of the article or series (phase 06 §4).
+
+    ``locked`` is set when a person approves it. From then on a change must fork a
+    new version and name who authorised it (plan/05 → no approved architecture
+    mutates silently); the flag is what makes "was this approved when it changed?"
+    answerable without replaying the whole run.
+    """
+
     __tablename__ = "content_architectures"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     summary: Mapped[str] = mapped_column(String, nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
+    locked: Mapped[bool] = mapped_column(default=False, nullable=False)
+    locked_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
     project: Mapped[Project] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
 class ArticleConcept(EntityMixin, Base):
@@ -276,6 +290,11 @@ class ArticleConcept(EntityMixin, Base):
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     angle: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # The claim being argued, kept apart from the angle: the angle is how it is
+    # approached, the thesis is what the article asserts, and the brief is a
+    # contract against the second one.
+    thesis: Mapped[str] = mapped_column(String, default="", nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     architecture: Mapped[ContentArchitecture] = relationship()
 
