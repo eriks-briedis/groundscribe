@@ -40,4 +40,22 @@ class ArchitectureLocked(StageError):
     """An approved architecture was changed without an override naming who did it."""
 
 
-__all__ = ["ArchitectureLocked", "EvidenceError", "ProviderNotPermitted", "StageError"]
+class BriefContractError(StageError):
+    """A brief would license the draft to do something the source model forbids.
+
+    Distinct from :class:`EvidenceError`, which is about references that point
+    nowhere. This is about references that point somewhere and then *drop what
+    they found*: a qualification the source demanded, a constraint on what may be
+    published, a length the project set. The brief is what phase 07 writes against
+    and phase 08 validates against, so a clause missing here is a clause nothing
+    downstream will ever check.
+    """
+
+
+__all__ = [
+    "ArchitectureLocked",
+    "BriefContractError",
+    "EvidenceError",
+    "ProviderNotPermitted",
+    "StageError",
+]

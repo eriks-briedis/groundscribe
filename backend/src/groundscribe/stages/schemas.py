@@ -327,10 +327,100 @@ class ArchitectureProposal(_Output):
         )
 
 
+class BriefSection(BaseModel):
+    """One section of the argument, and what it is for.
+
+    ``mandatory`` is the clause that makes a brief a contract rather than an
+    outline: an optional section may be dropped by the draft without the article
+    failing its own definition of done, and a mandatory one may not.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    heading: str
+    purpose: str
+    claim_ids: tuple[str, ...] = ()
+    required_examples: tuple[str, ...] = ()
+    mandatory: bool = True
+
+
+class DoneCriterion(BaseModel):
+    """One condition the finished article must meet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    mandatory: bool = True
+
+
+class ArticleBriefDocument(_Output):
+    """The brief-as-contract for one approved article (phase 06 §6).
+
+    Every field plan/06 names is here and none are optional-by-omission: a brief
+    missing a clause is a brief that licenses the draft to decide that clause for
+    itself, which is precisely the scope drift the product exists to prevent.
+
+    The definition of done is what makes it a contract. Phase 08's final
+    validation checks the article against it, so a definition consisting entirely
+    of optional criteria defines nothing at all — and is refused here rather than
+    discovered as a validation that always passes.
+    """
+
+    title: str
+    thesis: str
+    audience: str
+    reader_knowledge: str = ""
+    reader_problem: str = ""
+    opening_direction: str = ""
+    argument_structure: tuple[BriefSection, ...] = Field(min_length=1)
+    claims_requiring_qualification: tuple[str, ...] = ()
+    required_conclusion: str = ""
+    target_length_words: int = Field(gt=0)
+    platform_constraints: tuple[str, ...] = ()
+    voice_profile: str = "default"
+    style_overrides: tuple[str, ...] = ()
+    excluded_material: tuple[str, ...] = ()
+    reserved_material: tuple[str, ...] = ()
+    definition_of_done: tuple[DoneCriterion, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _the_contract_binds_something(self) -> Self:
+        if not any(criterion.mandatory for criterion in self.definition_of_done):
+            raise ValueError(
+                "definition_of_done needs at least one mandatory criterion: a definition "
+                "of done where everything is optional defines nothing"
+            )
+        if not any(section.mandatory for section in self.argument_structure):
+            raise ValueError(
+                "argument_structure needs at least one mandatory section: an argument "
+                "every part of which may be dropped is not an argument"
+            )
+        return self
+
+    @property
+    def mandatory_criteria(self) -> tuple[DoneCriterion, ...]:
+        """The criteria the article must meet to be finished."""
+        return tuple(criterion for criterion in self.definition_of_done if criterion.mandatory)
+
+    @property
+    def optional_criteria(self) -> tuple[DoneCriterion, ...]:
+        """The criteria that improve the article without gating it."""
+        return tuple(criterion for criterion in self.definition_of_done if not criterion.mandatory)
+
+    def cited_claim_ids(self) -> frozenset[str]:
+        """Every source claim the brief's sections rest on."""
+        return frozenset(
+            claim_id for section in self.argument_structure for claim_id in section.claim_ids
+        )
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
+    "ArticleBriefDocument",
+    "BriefSection",
     "DevelopmentEvent",
+    "DoneCriterion",
     "Evidence",
     "ExtractedClaim",
     "GapReport",

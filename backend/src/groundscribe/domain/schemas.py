@@ -217,11 +217,16 @@ class ArticleConcept(_Entity):
 
 
 class ArticleBrief(_Lineage):
-    """The scoped, approved plan for a single article."""
+    """The scoped, approved plan for a single article.
+
+    The brief *document* — every clause plan/06 §6 names — lives in the snapshot;
+    this row is its identity, its lineage and the two fields anything queries on.
+    """
 
     concept_id: str
     scope: str
     objectives: str = ""
+    snapshot_id: str | None = None
 
 
 class Article(_Entity):

@@ -300,13 +300,19 @@ class ArticleConcept(EntityMixin, Base):
 
 
 class ArticleBrief(LineageMixin, EntityMixin, Base):
+    """The contract for one article; the document itself is the snapshot."""
+
     __tablename__ = "article_briefs"
 
     concept_id: Mapped[str] = mapped_column(ForeignKey("article_concepts.id"), nullable=False)
     scope: Mapped[str] = mapped_column(String, nullable=False)
     objectives: Mapped[str] = mapped_column(String, default="", nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
 
     concept: Mapped[ArticleConcept] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
 class Article(EntityMixin, Base):
