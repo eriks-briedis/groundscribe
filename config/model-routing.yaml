@@ -1,0 +1,74 @@
+# Per-stage model routing (plan/04).
+#
+# Which provider and model each editorial stage runs against, with the parameters
+# that shape the call. Edited by hand; every execution records the `version`
+# below, so bump it whenever a routing choice changes — superseded versions live
+# in git history, and a run that cannot name its routing version cannot be
+# explained afterwards.
+#
+# Only the stages phase 04 knows about are listed. Later phases add their own
+# entries as the stages arrive; anything unlisted resolves to `default` and is
+# flagged as having done so.
+version: "1"
+description: >
+  Local-first defaults: a strong structured model for extraction, a prose model
+  for drafting, and a cheap deterministic model for validation.
+
+# Unrouted stages land here. Deliberately conservative — a stage nobody has
+# thought about yet should be cheap and deterministic, not creative.
+default:
+  primary:
+    provider: ollama
+    model: llama3.1:8b-instruct
+    temperature: 0.0
+    structured_output_mode: json_mode
+    timeout_seconds: 120.0
+
+stages:
+  # Structure matters more than style here, and a schema violation costs a repair
+  # round-trip, so this is where a natively schema-constrained model earns its
+  # price. Temperature 0 with a fixed seed: extraction should be reproducible.
+  extract_claims:
+    rationale: >
+      Structured fidelity dominates; reproducibility matters for re-runs of the
+      same source.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+    fallback:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.0
+      structured_output_mode: json_mode
+      timeout_seconds: 180.0
+
+  # Prose, not structure: some sampling breadth is wanted, and the output is
+  # disposable by design (plan/00 — generated prose is not source truth).
+  draft_article:
+    rationale: Voice and readability dominate; the draft is disposable.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.7
+      top_p: 0.9
+      structured_output_mode: prompted
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+
+  # Validation must be boring and repeatable. A cheaper model run at temperature
+  # 0 is the right trade: this stage judges, it does not create.
+  validate_article:
+    rationale: Deterministic judging; cost matters because it runs on every loop.
+    primary:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 180.0

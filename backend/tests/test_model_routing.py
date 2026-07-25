@@ -135,8 +135,10 @@ def test_a_stage_may_declare_the_fallback_model_the_ladder_escalates_to(
     policy: RoutingPolicy,
 ) -> None:
     """Rung 3 of the repair ladder needs a *configured* fallback, not a guess."""
-    assert policy.resolve("extract_claims").fallback is not None
-    assert policy.resolve("extract_claims").fallback.model == "fake-mini"
+    extraction = policy.resolve("extract_claims")
+    assert extraction.fallback is not None
+    assert extraction.fallback.model == "fake-mini"
+    assert extraction.choice(use_fallback=True).model == "fake-mini"
     assert policy.resolve("draft_article").fallback is None
 
 
