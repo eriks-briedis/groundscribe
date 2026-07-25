@@ -30,7 +30,14 @@ from generation_helpers import (
     fake_client,
     started_stage,
 )
-from groundscribe.llm import FakeLLMClient, InjectableFailure, RetryPolicy
+from groundscribe.llm import (
+    FakeLLMClient,
+    InjectableFailure,
+    LLMError,
+    LLMRequest,
+    LLMResponse,
+    RetryPolicy,
+)
 from groundscribe.llm.generation import (
     GenerationFailed,
     StructuredGenerator,
@@ -462,3 +469,76 @@ async def test_a_model_requested_tool_call_is_recorded_with_its_initiator(
     assert tool.status is ExecutionStatus.PENDING
     # A pause, not a failure: the stage is still running.
     assert stage_execution.status is ExecutionStatus.RUNNING
+
+
+async def test_a_json_body_that_is_not_an_object_is_treated_as_invalid(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: FakeLLMClient,
+) -> None:
+    """Models return bare arrays and strings often enough to matter.
+
+    ``json.loads`` accepts them, so without this check a list would reach
+    ``model_validate`` and fail there with a message about the wrong thing.
+    """
+    _, stage_execution = execution
+    client.script_text(STAGE, '["p99 fell"]')
+    client.script_response(STAGE, VALID_OUTPUT)
+
+    result = await generator.generate(
+        stage_execution,
+        stage=STAGE,
+        template_id=STAGE,
+        variables=VARIABLES,
+        schema=ClaimVerdict,
+        template_version="v1",
+    )
+
+    first = queries.attempt_chain(result.attempts[0])[0]
+    assert first.outcome is InvocationOutcome.INVALID_JSON
+    assert first.error_message is not None
+    assert "not a JSON object" in first.error_message
+
+
+async def test_an_unfamiliar_provider_error_is_still_retried_as_a_provider_error(
+    tmp_path: Path,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A future adapter may raise an LLMError this phase has never seen.
+
+    It must classify as *something* rather than escaping the ladder: an
+    unrecorded exception would leave a stage that simply stopped, with no
+    invocation explaining why.
+    """
+
+    class OddError(LLMError):
+        pass
+
+    recorder, stage_execution = execution
+    client = fake_client()
+    generator = build_generator(tmp_path, recorder, {"fake": client})
+    calls = {"n": 0}
+    original = client.complete
+
+    async def flaky(request: LLMRequest) -> LLMResponse:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OddError("something new went wrong")
+        return await original(request)
+
+    monkeypatch.setattr(client, "complete", flaky)
+    client.script_response(STAGE, VALID_OUTPUT)
+
+    result = await generator.generate(
+        stage_execution,
+        stage=STAGE,
+        template_id=STAGE,
+        variables=VARIABLES,
+        schema=ClaimVerdict,
+        template_version="v1",
+    )
+
+    chain = queries.attempt_chain(result.attempts[0])
+    assert chain[0].outcome is InvocationOutcome.PROVIDER_ERROR
+    assert chain[1].retry_type is RetryType.PROVIDER_ERROR

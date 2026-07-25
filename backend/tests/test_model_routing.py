@@ -206,3 +206,10 @@ def test_the_shipped_routing_config_is_versioned_and_covers_the_named_stages() -
         resolved = policy.resolve(stage)
         assert resolved.used_default is False, f"{stage} is not routed explicitly"
         assert resolved.primary.model
+
+
+def test_unparseable_yaml_is_refused_like_any_other_bad_config(tmp_path: Path) -> None:
+    path = tmp_path / "unparseable.yaml"
+    path.write_text("version: '1'\nstages: [unclosed\n", encoding="utf-8")
+    with pytest.raises(RoutingConfigError, match="YAML"):
+        RoutingPolicy.from_yaml(path)

@@ -142,6 +142,9 @@ def test_each_stub_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
     assert _protocol_typed(adapter) is adapter
     assert isinstance(adapter.metadata, ProviderMetadata)
     assert adapter.metadata.provider in {"openai", "anthropic", "ollama"}
+    # The retry policy is part of the contract: the repair ladder reads it off
+    # the client, so an adapter that omitted it would be unbounded in practice.
+    assert isinstance(adapter.retry_policy, RetryPolicy)
 
 
 @pytest.mark.parametrize("adapter", STUB_ADAPTERS, ids=ADAPTER_IDS)

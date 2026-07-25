@@ -196,3 +196,30 @@ def test_the_shipped_repair_prompts_load_and_render() -> None:
     assert "classification" in feedback.rendered_prompt
     assert "ClaimSet" in repair.rendered_prompt
     assert repair.messages[0].role == "system"
+
+
+def test_metadata_that_disagrees_with_its_directory_is_refused(tmp_path: Path) -> None:
+    """A family whose metadata names a different template would resolve one id and
+    record another — the record would then point at a template that never ran."""
+    family = tmp_path / "actual"
+    family.mkdir()
+    (family / "metadata.yaml").write_text(
+        "template_id: other\ncurrent_version: v1\nversions:\n  v1: {}\n", encoding="utf-8"
+    )
+    (family / "v1.jinja2").write_text("hi", encoding="utf-8")
+
+    with pytest.raises(PromptTemplateError, match="other"):
+        PromptStore(tmp_path).render("actual", {})
+
+
+def test_unreadable_metadata_is_refused(tmp_path: Path) -> None:
+    """Malformed YAML and an unexpected shape fail the same way: the prompt
+    cannot be produced, and the message says which file is at fault."""
+    family = tmp_path / "broken"
+    family.mkdir()
+    (family / "metadata.yaml").write_text(
+        "template_id: broken\nversions: [1, 2\n", encoding="utf-8"
+    )
+
+    with pytest.raises(PromptTemplateError, match="broken"):
+        PromptStore(tmp_path).render("broken", {})
