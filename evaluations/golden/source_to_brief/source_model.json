@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "summary": "A read-through cache cut p99 render latency from 810ms to 120ms, at the cost of a week of wrong invalidation caused by an under-specified cache key.",
+  "product_facts": [
+    {
+      "statement": "A read-through cache was placed in front of the render pipeline in March 2026.",
+      "segment_ids": ["S1"]
+    },
+    {
+      "statement": "The cache key is built from document path, locale and publish revision, and non-200 responses are not cached.",
+      "segment_ids": ["S10"]
+    }
+  ],
+  "development_history": [
+    {
+      "ordinal": 0,
+      "summary": "Profiling attributed 78% of wall time to the Markdown-to-AST step.",
+      "segment_ids": ["S3"]
+    },
+    {
+      "ordinal": 1,
+      "summary": "The cache shipped keyed on document path alone.",
+      "segment_ids": ["S1", "S6", "S7"]
+    },
+    {
+      "ordinal": 2,
+      "summary": "Locale and publish revision were added to the key and error responses excluded.",
+      "segment_ids": ["S10"]
+    }
+  ],
+  "claims": [
+    {
+      "id": "c1",
+      "text": "p99 latency on article pages fell from 810ms to 120ms after the cache shipped.",
+      "classification": "directly_supported_fact",
+      "evidence": [
+        {
+          "segment_ids": ["S1"],
+          "quote": "p99 latency fell from 810ms to 120ms on the article pages"
+        }
+      ],
+      "qualification_required": true
+    },
+    {
+      "id": "c2",
+      "text": "78% of wall time was spent in the Markdown-to-AST step.",
+      "classification": "directly_supported_fact",
+      "evidence": [
+        {
+          "segment_ids": ["S3"],
+          "quote": "Profiling showed 78% of wall time inside the Markdown-to-AST step"
+        }
+      ],
+      "qualification_required": false
+    },
+    {
+      "id": "c3",
+      "text": "Deterministic rendering is what makes caching viable rather than a source of stale bugs.",
+      "classification": "interpretation",
+      "evidence": [{ "segment_ids": ["S4"], "quote": "" }],
+      "qualification_required": false
+    },
+    {
+      "id": "c4",
+      "text": "Readers on a non-default locale were served the English render for a week.",
+      "classification": "user_observation",
+      "evidence": [
+        {
+          "segment_ids": ["S9"],
+          "quote": "readers on a non-default locale were served the English render"
+        }
+      ],
+      "qualification_required": false
+    },
+    {
+      "id": "c5",
+      "text": "The real mistake was treating invalidation as a follow-up task rather than part of the cache design.",
+      "classification": "opinion",
+      "evidence": [{ "segment_ids": ["S12"], "quote": "" }],
+      "qualification_required": false
+    },
+    {
+      "id": "c6",
+      "text": "Most teams shipping a cache under deadline make the same trade.",
+      "classification": "hypothesis",
+      "evidence": [{ "segment_ids": ["S12"], "quote": "" }],
+      "qualification_required": true
+    }
+  ],
+  "publication_constraints": [
+    {
+      "description": "The internal postmortem covering the deploy is not publishable.",
+      "reason": "The author marked it internal in the source.",
+      "segment_ids": ["S13"]
+    }
+  ],
+  "lessons": [
+    {
+      "statement": "Design invalidation with the cache, not after it.",
+      "claim_ids": ["c5"]
+    },
+    {
+      "statement": "A cache key must name every input the render depends on.",
+      "claim_ids": ["c4"]
+    }
+  ],
+  "potential_arguments": [
+    {
+      "thesis": "A cache key is a specification of what your render depends on, and getting it wrong is a correctness bug rather than a performance one.",
+      "claim_ids": ["c3", "c4", "c5"]
+    },
+    {
+      "thesis": "Determinism is the precondition that makes caching a latency win instead of a staleness risk.",
+      "claim_ids": ["c2", "c3"]
+    }
+  ]
+}

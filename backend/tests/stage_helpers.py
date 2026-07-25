@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from groundscribe.domain.enums import ArticleDepth
+from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.llm import FakeLLMClient, LLMClient
 from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.routing import default_routing_policy
@@ -48,11 +50,25 @@ def build_generator(
     )
 
 
+#: The constraints a test project publishes under, permitting only the local
+#: provider — which is what makes the provider-access check meaningful rather
+#: than vacuous in every stage test that does not set out to exercise it.
+DEFAULT_CONSTRAINTS = EditorialConstraints(
+    audience="senior backend engineers",
+    platform="personal blog",
+    depth=ArticleDepth.PRACTITIONER,
+    target_length_words=1800,
+    allowed_providers=(SHIPPED_PROVIDER,),
+    trace_retention_consent=True,
+)
+
+
 def build_context(
     session: Session,
     snapshots: SnapshotStore,
     *,
     clients: dict[str, LLMClient] | None = None,
+    constraints: EditorialConstraints = DEFAULT_CONSTRAINTS,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
 ) -> PipelineContext:
     """A pipeline context over a seeded project, a live run, and a fake transport."""
@@ -67,4 +83,5 @@ def build_context(
         generator=build_generator(recorder, clients),
         session=session,
         project_id=project_id,
+        constraints=constraints,
     )
