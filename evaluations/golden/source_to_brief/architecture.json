@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "articles": [
+    {
+      "id": "a1",
+      "title": "Your cache key is a specification",
+      "thesis": "A cache key enumerates everything the render depends on, so getting it wrong is a correctness bug rather than a performance one.",
+      "supporting_claim_ids": ["c3", "c4", "c5"],
+      "evidence_summary": "The locale and error-page incidents are both cases of an input missing from the key; the determinism argument explains why the key can be trusted at all.",
+      "standalone": true,
+      "reader_knowledge_assumed": "Familiarity with HTTP caching and cache invalidation as a concept; no knowledge of this pipeline.",
+      "overlaps_with": ["a2"],
+      "thin_content_risk": "low",
+      "platform_fit": "Fits a 1500-2000 word personal-blog post with two concrete failure stories."
+    },
+    {
+      "id": "a2",
+      "title": "Determinism is what makes caching a latency win",
+      "thesis": "Caching only converts to latency instead of staleness when the computation being cached is deterministic for its inputs.",
+      "supporting_claim_ids": ["c2", "c3"],
+      "evidence_summary": "The 78% profiling number motivates the cache; the determinism observation is what made it viable.",
+      "standalone": true,
+      "reader_knowledge_assumed": "Comfortable with profiling output and the idea of a pure function.",
+      "overlaps_with": ["a1"],
+      "thin_content_risk": "medium",
+      "platform_fit": "Shorter, more conceptual; risks being thin without the incident material from the first article."
+    }
+  ],
+  "competing_theses": [
+    "The story could be told as an incident writeup rather than as a design argument, but the source has no timeline detail and the postmortem is unpublishable."
+  ],
+  "series": {
+    "is_series": true,
+    "reading_order": ["a1", "a2"],
+    "shared_material": ["c3"],
+    "sequencing_rationale": "The concrete failure lands first; the conceptual piece reads as the generalisation of it rather than as preamble."
+  },
+  "decision": {
+    "selected": "a1",
+    "rationale": "The cache-key argument carries the strongest evidence and the material the source actually documents; the determinism piece depends on it for concreteness.",
+    "alternatives_considered": [
+      {
+        "description": "One long article covering both the incident and the determinism argument.",
+        "reason_rejected": "At practitioner depth it would exceed the 1800-word target and bury the incident detail that makes the argument land."
+      },
+      {
+        "description": "An incident writeup structured as a timeline.",
+        "reason_rejected": "The source has no minute-by-minute detail, and the internal postmortem is marked unpublishable."
+      }
+    ],
+    "confidence": 0.72,
+    "uncertainties": [
+      "Whether the determinism article has enough independent material to stand alone, or should be a section of the first."
+    ]
+  }
+}
