@@ -1,0 +1,234 @@
+"""The narrow internal LLM interface (phase 04).
+
+plan/04 → *Provider abstraction*: provider SDK types must never leak into the
+domain. The whole system therefore depends on this module — a request shape, a
+response shape, and a protocol with four members — and on nothing a provider
+ships. The adapters translate; everyone else programs against the protocol.
+
+The interface is deliberately *narrow*. Every capability the spec names is here
+(structured generation, text generation, streaming, tool calling, token/cost
+reporting, retry policy, provider metadata), but they are expressed through the
+shape of one request rather than as a method per capability: a request carrying
+an ``output_schema`` is structured generation, one carrying ``tools`` is tool
+calling, and one carrying neither is text generation. A wider surface would give
+callers more places to depend on provider-specific behaviour, which is the leak
+this layer exists to prevent.
+
+``Message`` and ``ToolDefinition`` are imported from the provenance schemas
+rather than redefined: they are the same value objects a stage execution records,
+and two definitions would let the sent request and the recorded request drift.
+The dependency runs one way only — the LLM layer knows the record shapes; the
+provenance layer knows nothing about clients.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from typing import Any, Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from groundscribe.llm.enums import StructuredOutputMode
+from groundscribe.provenance.schemas import Message, ToolDefinition
+
+__all__ = [
+    "LLMClient",
+    "LLMRequest",
+    "LLMResponse",
+    "ProviderMetadata",
+    "RetryPolicy",
+    "RuntimeConfig",
+    "StreamChunk",
+    "TokenUsage",
+    "ToolCall",
+]
+
+
+class ProviderMetadata(BaseModel):
+    """Who answered, and with which build.
+
+    ``model`` is the *exact* model id as the provider names it, not an alias:
+    aliases move, and a record that says "the latest model" explains nothing six
+    months later.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    model: str
+    model_revision: str | None = None
+    api_version: str | None = None
+    client_version: str | None = None
+
+
+class RetryPolicy(BaseModel):
+    """How many times a *transport* failure may be retried, and how patiently.
+
+    Versioned because it is a policy: "why did this run give up after two
+    attempts?" is only answerable if the record names the policy that decided so.
+
+    ``backoff_seconds`` defaults to zero. Sleeping inside a retry loop makes a
+    test suite slow and time-dependent; deployments set a real value in config,
+    and the default keeps the deterministic tests deterministic.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    version: str = "1"
+    max_attempts: int = Field(default=3, ge=1)
+    backoff_seconds: float = Field(default=0.0, ge=0.0)
+
+
+class RuntimeConfig(BaseModel):
+    """Everything that shapes a call, captured with the call.
+
+    plan/04 → *Runtime-configuration capture*. The list is exhaustive on purpose:
+    a replay that reproduces the prompt but not the temperature, the seed or the
+    structured-output mode is not a replay, and the difference is invisible
+    unless the record says what the settings were.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    model: str
+    model_revision: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    seed: int | None = None
+    max_output_tokens: int | None = None
+    reasoning_effort: str | None = None
+    structured_output_mode: StructuredOutputMode = StructuredOutputMode.NATIVE_SCHEMA
+    tool_choice: str | None = None
+    stop_sequences: tuple[str, ...] = ()
+    api_version: str | None = None
+    client_version: str | None = None
+    timeout_seconds: float | None = None
+    retry_policy: RetryPolicy = RetryPolicy()
+
+    def as_provider_config(self) -> dict[str, Any]:
+        """The JSON-safe form stored in an effective request's provider config."""
+        return self.model_dump(mode="json")
+
+
+class TokenUsage(BaseModel):
+    """What the call consumed. Cost is optional — not every provider reports it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+class ToolCall(BaseModel):
+    """A tool the model asked to run, as the model asked for it.
+
+    ``arguments`` are the model's own, un-normalised: what it *asked* for is the
+    evidence, and normalising before recording would hide the malformed request
+    that explains a downstream failure.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    call_id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMRequest(BaseModel):
+    """One call, as handed to a client (post-render, post-routing).
+
+    Frozen: a recorded request must reflect exactly what was sent, and a request
+    object that could be edited after the fact would make that unprovable.
+
+    ``call_key`` is an opaque label naming the call site. The deterministic fake
+    looks up its scripted outcomes by it; real adapters may attach it as request
+    metadata. It is not part of the effective request, because it says nothing
+    about what the model was asked.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    call_key: str
+    prompt: str = ""
+    schema_name: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    messages: tuple[Message, ...] = ()
+    tools: tuple[ToolDefinition, ...] = ()
+    output_schema: dict[str, Any] | None = None
+    runtime: RuntimeConfig | None = None
+
+
+class LLMResponse(BaseModel):
+    """What a client returned, before anything has been validated.
+
+    Deliberately permissive: an unparseable body, a refusal and a tool call are
+    all *successful* calls that produced no usable structured result, and each
+    has to survive into provenance rather than being raised away.
+
+    ``output`` is the convenience form for scripted/structured answers; ``text``
+    is what the provider actually emitted. :attr:`raw_text` is what gets stored
+    as the raw response, so an invalid body is preserved verbatim.
+    """
+
+    output: dict[str, Any] = Field(default_factory=dict)
+    text: str = ""
+    tool_calls: tuple[ToolCall, ...] = ()
+    refusal: str | None = None
+    usage: TokenUsage = Field(default_factory=TokenUsage)
+
+    @property
+    def raw_text(self) -> str:
+        """The body as emitted, falling back to the scripted structured form."""
+        if self.text:
+            return self.text
+        if self.output:
+            return json.dumps(self.output, sort_keys=True, separators=(",", ":"))
+        return ""
+
+
+class StreamChunk(BaseModel):
+    """One incremental piece of a streamed response.
+
+    Usage arrives on the final chunk for most providers, so it is optional here
+    rather than repeated on every chunk.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str = ""
+    usage: TokenUsage | None = None
+
+
+@runtime_checkable
+class LLMClient(Protocol):
+    """The only LLM surface the rest of groundscribe may depend on.
+
+    Runtime-checkable so conformance is asserted in tests as well as by mypy: a
+    protocol enforced only statically degrades the first time something is
+    duck-typed past it.
+    """
+
+    @property
+    def metadata(self) -> ProviderMetadata:
+        """Provider, exact model id and client build behind this instance."""
+        ...
+
+    @property
+    def retry_policy(self) -> RetryPolicy:
+        """The transport-retry policy this client was configured with."""
+        ...
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        """Make one call. Raises :mod:`groundscribe.llm.errors` on transport failure."""
+        ...
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[StreamChunk]:
+        """Stream the same call incrementally."""
+        ...

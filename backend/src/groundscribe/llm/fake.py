@@ -7,18 +7,26 @@ determinism the LLM-contract tests rely on. It also records every effective
 request it receives so provenance tests (phase 03) can assert on what was sent,
 including for attempts that failed.
 
-Kept intentionally minimal (plan/01): the full provider/prompt interface, real
-adapters, and repair/fallback semantics are defined in phase 04.
+Phase 04 makes it a real implementation of :class:`~groundscribe.llm.protocol.LLMClient`
+rather than a bare stand-in: the contract tests only mean something if the fake
+is exercised through the same interface production code uses.
 """
 
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from groundscribe.llm.protocol import (
+    LLMRequest,
+    LLMResponse,
+    ProviderMetadata,
+    RetryPolicy,
+    StreamChunk,
+)
 
 
 class InjectableFailure(StrEnum):
@@ -40,29 +48,13 @@ class InjectableFailure(StrEnum):
     FALLBACK_TRIGGER = "fallback_trigger"
 
 
-class LLMRequest(BaseModel):
-    """An effective request as seen by the client (post-render, post-redaction).
-
-    Frozen so a recorded request cannot be mutated after the fact — recorded
-    provenance must reflect exactly what was sent.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    call_key: str
-    prompt: str = ""
-    schema_name: str | None = None
-    params: dict[str, Any] = Field(default_factory=dict)
-
-
-class LLMResponse(BaseModel):
-    """A structured model response. Free-form prose lives under a schema field."""
-
-    output: dict[str, Any] = Field(default_factory=dict)
-
-
 class LLMScriptError(Exception):
-    """Raised when the fake is called for a key with no scripted result left."""
+    """Raised when the fake is called for a key with no scripted result left.
+
+    Deliberately *not* an :class:`~groundscribe.llm.errors.LLMError`: it means the
+    test is wrong, not that a provider failed, and the repair ladder must never
+    mistake a scripting mistake for a retryable condition.
+    """
 
 
 class InjectedFailureError(Exception):
@@ -84,9 +76,32 @@ class _Step:
 class FakeLLMClient:
     """A scripted, deterministic, recording stand-in for a real LLM client."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        provider: str = "fake",
+        model: str = "fake-1",
+        retry_policy: RetryPolicy | None = None,
+    ) -> None:
         self._scripts: dict[str, deque[_Step]] = {}
         self._received: list[LLMRequest] = []
+        self._metadata = ProviderMetadata(
+            provider=provider,
+            model=model,
+            model_revision="fake-rev",
+            api_version="fake-v1",
+            client_version="fake-client-1",
+        )
+        self._retry_policy = retry_policy or RetryPolicy()
+
+    @property
+    def metadata(self) -> ProviderMetadata:
+        """Provider identity, so a record made against the fake reads like a real one."""
+        return self._metadata
+
+    @property
+    def retry_policy(self) -> RetryPolicy:
+        return self._retry_policy
 
     def script_response(self, call_key: str, output: dict[str, Any]) -> None:
         """Queue a structured response to return for the next call to ``call_key``."""
@@ -111,11 +126,23 @@ class FakeLLMClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         """Record the request, then return/raise its next scripted outcome."""
         self._received.append(request)
-        steps = self._scripts.get(request.call_key)
+        return self._next_step(request.call_key)
+
+    async def stream(self, request: LLMRequest) -> AsyncIterator[StreamChunk]:
+        """Stream the scripted outcome as chunks, ending with usage.
+
+        Streaming is part of the protocol, so the fake implements it rather than
+        leaving a hole the contract tests cannot reach.
+        """
+        response = await self.complete(request)
+        yield StreamChunk(text=response.raw_text)
+        yield StreamChunk(usage=response.usage)
+
+    def _next_step(self, call_key: str) -> LLMResponse:
+        steps = self._scripts.get(call_key)
         if not steps:
             raise LLMScriptError(
-                f"no scripted result for call_key {request.call_key!r} "
-                f"(exhausted or never scripted)"
+                f"no scripted result for call_key {call_key!r} (exhausted or never scripted)"
             )
         step = steps.popleft()
         if step.failure is not None:

@@ -1,26 +1,57 @@
-"""LLM client interfaces and the deterministic test fake.
+"""LLM client interfaces, provider adapters and the deterministic test fake.
 
-Phase 01 ships only what the test harness needs (plan/01 Risk: do not over-build
-the fake — the full provider/prompt interface arrives in phase 04). Everything
-here is re-exported from :mod:`groundscribe.llm.fake`.
+Phase 04 puts the narrow :class:`~groundscribe.llm.protocol.LLMClient` protocol at
+the centre: callers import from here, never from a provider SDK. Adapters live in
+:mod:`groundscribe.llm.adapters` — the one package permitted to know a provider
+exists.
 """
 
 from __future__ import annotations
 
+from groundscribe.llm.enums import StructuredOutputMode
+from groundscribe.llm.errors import (
+    LLMError,
+    LLMNetworkError,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 from groundscribe.llm.fake import (
     FakeLLMClient,
     InjectableFailure,
     InjectedFailureError,
+    LLMScriptError,
+)
+from groundscribe.llm.protocol import (
+    LLMClient,
     LLMRequest,
     LLMResponse,
-    LLMScriptError,
+    ProviderMetadata,
+    RetryPolicy,
+    RuntimeConfig,
+    StreamChunk,
+    TokenUsage,
+    ToolCall,
 )
 
 __all__ = [
     "FakeLLMClient",
     "InjectableFailure",
     "InjectedFailureError",
+    "LLMClient",
+    "LLMError",
+    "LLMNetworkError",
+    "LLMProviderError",
+    "LLMRateLimitError",
     "LLMRequest",
     "LLMResponse",
     "LLMScriptError",
+    "LLMTimeoutError",
+    "ProviderMetadata",
+    "RetryPolicy",
+    "RuntimeConfig",
+    "StreamChunk",
+    "StructuredOutputMode",
+    "TokenUsage",
+    "ToolCall",
 ]

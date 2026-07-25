@@ -20,6 +20,7 @@ import pytest
 from groundscribe.llm import (
     FakeLLMClient,
     LLMClient,
+    LLMRequest,
     ProviderMetadata,
     RetryPolicy,
     RuntimeConfig,
@@ -27,6 +28,13 @@ from groundscribe.llm import (
     TokenUsage,
 )
 from groundscribe.llm.adapters import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
+
+STUB_ADAPTERS = [
+    OpenAIAdapter(model="gpt-x"),
+    AnthropicAdapter(model="claude-x"),
+    OllamaAdapter(model="llama"),
+]
+ADAPTER_IDS = ["openai", "anthropic", "ollama"]
 
 
 def _protocol_typed(client: LLMClient) -> LLMClient:
@@ -122,11 +130,7 @@ def test_the_fake_client_implements_the_protocol() -> None:
     assert client.metadata.provider == "fake"
 
 
-@pytest.mark.parametrize(
-    "adapter",
-    [OpenAIAdapter(model="gpt-x"), AnthropicAdapter(model="claude-x"), OllamaAdapter(model="llama")],
-    ids=["openai", "anthropic", "ollama"],
-)
+@pytest.mark.parametrize("adapter", STUB_ADAPTERS, ids=ADAPTER_IDS)
 def test_each_stub_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
     """Adapters are stubs, but they are stubs *of this interface*.
 
@@ -140,15 +144,9 @@ def test_each_stub_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
     assert adapter.metadata.provider in {"openai", "anthropic", "ollama"}
 
 
-@pytest.mark.parametrize(
-    "adapter",
-    [OpenAIAdapter(model="gpt-x"), AnthropicAdapter(model="claude-x"), OllamaAdapter(model="llama")],
-    ids=["openai", "anthropic", "ollama"],
-)
+@pytest.mark.parametrize("adapter", STUB_ADAPTERS, ids=ADAPTER_IDS)
 async def test_stub_adapters_refuse_to_pretend_they_called_a_provider(adapter: LLMClient) -> None:
     """plan/04 non-goal: no real network calls. A stub that returned a plausible
     answer would be worse than one that raises — tests would pass on fiction."""
-    from groundscribe.llm import LLMRequest
-
     with pytest.raises(NotImplementedError):
         await adapter.complete(LLMRequest(call_key="anything"))
