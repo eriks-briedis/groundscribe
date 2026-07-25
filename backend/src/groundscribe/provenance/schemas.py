@@ -59,6 +59,10 @@ class ToolDefinition(BaseModel):
     Recorded even when the model never calls it: the set of tools on offer
     changes what the model does, so a request without them is not the request
     that was sent.
+
+    ``requires_approval`` travels with the offer rather than with the call: what
+    a tool needed *at the moment it was offered* is the fact a later audit asks
+    about, and the policy may have changed since.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -66,6 +70,7 @@ class ToolDefinition(BaseModel):
     name: str
     version: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    requires_approval: bool = False
 
 
 class EffectiveRequest(BaseModel):
@@ -75,6 +80,12 @@ class EffectiveRequest(BaseModel):
     prompt, the full message sequence with roles, the tool definitions supplied,
     the structured-output schema, and provider-specific request config.
 
+    ``template_variables`` and ``output_schema_version`` are what plan/04's
+    renderer adds: the same template rendered with different inputs is a
+    different call, and the rendered text alone cannot always say which variable
+    produced which fragment. Both default to empty so records written before the
+    renderer existed still validate.
+
     ``redacted`` marks the persisted form. It is not decoration: a reader must be
     able to tell a stored request (secrets removed) from the live one, rather
     than assuming byte-identity with what crossed the wire.
@@ -83,9 +94,11 @@ class EffectiveRequest(BaseModel):
     template_id: str
     template_version: str
     rendered_prompt: str
+    template_variables: dict[str, Any] = Field(default_factory=dict)
     messages: list[Message] = Field(default_factory=list)
     tool_definitions: list[ToolDefinition] = Field(default_factory=list)
     output_schema: dict[str, Any] | None = None
+    output_schema_version: int | None = None
     provider_config: dict[str, Any] = Field(default_factory=dict)
     redacted: bool = False
 
