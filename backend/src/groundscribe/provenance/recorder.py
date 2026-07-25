@@ -612,6 +612,34 @@ class ProvenanceRecorder:
         self._attach(execution, snapshot, ArtifactDirection.OUTPUT, role)
         return snapshot
 
+    def record_text_output(
+        self,
+        execution: models.StageExecution,
+        *,
+        artifact_type: ArtifactType,
+        text: str,
+        role: str = "",
+        parent: ArtifactSnapshot | None = None,
+    ) -> ArtifactSnapshot:
+        """Snapshot text as *bytes* rather than as a JSON string.
+
+        Source material is the one artefact whose stored form must be byte-identical
+        to what arrived: its content hash is how a reader checks the stored document
+        against the file they ingested, and a JSON envelope would change the address
+        of every source in the system (phase 06 §1).
+
+        Redaction still happens here, before the write, so this stays inside the
+        one-chokepoint rule rather than beside it.
+        """
+        snapshot = self._snapshots.write(
+            artifact_type=artifact_type,
+            content=self._redactor.redact_text(text).encode("utf-8"),
+            created_by_execution_id=execution.id,
+            parent=parent,
+        )
+        self._attach(execution, snapshot, ArtifactDirection.OUTPUT, role)
+        return snapshot
+
     def _attach(
         self,
         execution: models.StageExecution,

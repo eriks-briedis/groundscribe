@@ -32,12 +32,19 @@ class BlobRef:
     size: int
 
 
-def _hash(content: bytes) -> str:
+def content_hash(content: bytes) -> str:
+    """The content address of ``content``: its sha256, hex-encoded.
+
+    Public because callers outside the store hash things that are *addressed the
+    same way* without being blobs of their own — a source segment records the hash
+    of its own text (phase 06). Two different hash functions for one system's
+    content addresses would make those references silently incomparable.
+    """
     return hashlib.sha256(content).hexdigest()
 
 
-def _location_for(content_hash: str) -> str:
-    return f"{content_hash[:2]}/{content_hash[2:]}"
+def _location_for(digest: str) -> str:
+    return f"{digest[:2]}/{digest[2:]}"
 
 
 class BlobStore:
@@ -54,8 +61,8 @@ class BlobStore:
         is left byte-for-byte untouched (identical content is, by construction,
         already there), so repeated puts dedup to a single blob.
         """
-        content_hash = _hash(content)
-        location = _location_for(content_hash)
+        digest = content_hash(content)
+        location = _location_for(digest)
         path = self._root / location
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,23 +71,23 @@ class BlobStore:
             tmp = path.with_suffix(".tmp")
             tmp.write_bytes(content)
             tmp.rename(path)
-        return BlobRef(content_hash=content_hash, location=location, size=len(content))
+        return BlobRef(content_hash=digest, location=location, size=len(content))
 
-    def get(self, content_hash: str) -> bytes:
-        """Return the bytes stored under ``content_hash``; ``KeyError`` if absent."""
-        path = self._root / _location_for(content_hash)
+    def get(self, digest: str) -> bytes:
+        """Return the bytes stored under ``digest``; ``KeyError`` if absent."""
+        path = self._root / _location_for(digest)
         if not path.exists():
-            raise KeyError(content_hash)
+            raise KeyError(digest)
         return path.read_bytes()
 
-    def verify(self, content_hash: str) -> bool:
-        """True iff the stored bytes still hash to ``content_hash``.
+    def verify(self, digest: str) -> bool:
+        """True iff the stored bytes still hash to ``digest``.
 
         Detects accidental or malicious on-disk tampering: the recomputed hash of
         a mutated blob no longer matches the address it is stored under.
         """
         try:
-            stored = self.get(content_hash)
+            stored = self.get(digest)
         except KeyError:
             return False
-        return _hash(stored) == content_hash
+        return content_hash(stored) == digest
