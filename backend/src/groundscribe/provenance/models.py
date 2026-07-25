@@ -263,6 +263,14 @@ class ModelInvocation(ProvenanceRecord, Base):
     validated_response_snapshot_id: Mapped[str | None] = mapped_column(
         ForeignKey("artifact_snapshots.id"), nullable=True
     )
+    # What the call consumed. Recorded per attempt, failed ones included: a run
+    # that reported only its accepted calls would under-report exactly the runs
+    # that cost the most, which are the ones that needed repairing.
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Nullable, not zero: not every provider reports cost, and "free" is a
+    # different claim from "unknown".
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)

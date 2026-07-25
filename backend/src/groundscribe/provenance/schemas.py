@@ -73,6 +73,28 @@ class ToolDefinition(BaseModel):
     requires_approval: bool = False
 
 
+class TokenUsage(BaseModel):
+    """What one model call consumed, and what it cost if the provider said.
+
+    Lives here rather than in the LLM layer for the reason :class:`Message` does:
+    it is a value a record stores, the client layer merely reports it, and two
+    definitions would let the reported figure and the stored one drift.
+
+    Cost is optional and stays ``None`` when unreported. Not every provider gives
+    one, and zero is a claim that the call was free.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
 class EffectiveRequest(BaseModel):
     """Everything needed to reissue a model call exactly as it was made.
 
@@ -219,6 +241,9 @@ class ModelInvocation(_Record):
     raw_response_snapshot_id: str | None = None
     parsed_response_snapshot_id: str | None = None
     validated_response_snapshot_id: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
     started_at: datetime
     completed_at: datetime | None = None
     error_message: str | None = None

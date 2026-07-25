@@ -36,7 +36,7 @@ from groundscribe.provenance.enums import (
     ToolInitiator,
 )
 from groundscribe.provenance.redaction import Redactor
-from groundscribe.provenance.schemas import ContextCandidate, EffectiveRequest
+from groundscribe.provenance.schemas import ContextCandidate, EffectiveRequest, TokenUsage
 from groundscribe.storage.snapshot_store import SnapshotStore
 
 #: A payload as handed to the recorder: structured, or raw provider text.
@@ -259,6 +259,7 @@ class ProvenanceRecorder:
         validated_response: Payload | None = None,
         parent: models.ModelInvocation | None = None,
         retry_type: RetryType | None = None,
+        usage: TokenUsage | None = None,
         error_message: str | None = None,
     ) -> models.ModelInvocation:
         """Record one model call, including the ones that failed.
@@ -270,6 +271,10 @@ class ProvenanceRecorder:
 
         The three response forms become three separate snapshots, so a response
         that parses but fails validation is preserved rather than replaced.
+
+        ``usage`` is recorded per attempt, failed attempts included: a run that
+        counted only its accepted calls would under-report exactly the runs that
+        cost the most, which are the ones that needed repairing.
         """
         if parent is not None and retry_type is None:
             raise ValueError("a follow-up attempt must state its retry_type")
@@ -297,6 +302,9 @@ class ProvenanceRecorder:
             validated_response_snapshot=self._write_optional(
                 ArtifactType.VALIDATED_RESPONSE, validated_response, execution
             ),
+            input_tokens=usage.input_tokens if usage is not None else 0,
+            output_tokens=usage.output_tokens if usage is not None else 0,
+            cost_usd=usage.cost_usd if usage is not None else None,
             started_at=self._clock(),
             completed_at=self._clock(),
             error_message=error_message,

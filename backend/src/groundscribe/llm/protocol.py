@@ -14,11 +14,12 @@ calling, and one carrying neither is text generation. A wider surface would give
 callers more places to depend on provider-specific behaviour, which is the leak
 this layer exists to prevent.
 
-``Message`` and ``ToolDefinition`` are imported from the provenance schemas
-rather than redefined: they are the same value objects a stage execution records,
-and two definitions would let the sent request and the recorded request drift.
-The dependency runs one way only — the LLM layer knows the record shapes; the
-provenance layer knows nothing about clients.
+``Message``, ``ToolDefinition`` and ``TokenUsage`` are imported from the
+provenance schemas rather than redefined: they are the same value objects a stage
+execution records, and two definitions would let the sent request and the recorded
+request drift. The dependency runs one way only — the LLM layer knows the record
+shapes; the provenance layer knows nothing about clients, which is asserted in
+``test_provider_isolation``.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from groundscribe.llm.enums import StructuredOutputMode
-from groundscribe.provenance.schemas import Message, ToolDefinition
+from groundscribe.provenance.schemas import Message, TokenUsage, ToolDefinition
 
 __all__ = [
     "LLMClient",
@@ -110,20 +111,6 @@ class RuntimeConfig(BaseModel):
     def as_provider_config(self) -> dict[str, Any]:
         """The JSON-safe form stored in an effective request's provider config."""
         return self.model_dump(mode="json")
-
-
-class TokenUsage(BaseModel):
-    """What the call consumed. Cost is optional — not every provider reports it."""
-
-    model_config = ConfigDict(frozen=True)
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cost_usd: float | None = None
-
-    @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
 
 
 class ToolCall(BaseModel):
