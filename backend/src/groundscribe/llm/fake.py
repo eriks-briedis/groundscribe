@@ -20,12 +20,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from groundscribe.llm.errors import LLMProviderError, LLMRateLimitError, LLMTimeoutError
 from groundscribe.llm.protocol import (
     LLMRequest,
     LLMResponse,
     ProviderMetadata,
     RetryPolicy,
     StreamChunk,
+    TokenUsage,
+    ToolCall,
 )
 
 
@@ -58,11 +61,39 @@ class LLMScriptError(Exception):
 
 
 class InjectedFailureError(Exception):
-    """Raised to simulate a scripted failure; carries the injected kind."""
+    """Raised to simulate a scripted failure; carries the injected kind.
+
+    The transport kinds get subclasses that *also* inherit the provider-neutral
+    error the real adapters raise, so a test can assert on the injected kind
+    while the code under test only ever sees the production taxonomy.
+    """
 
     def __init__(self, failure: InjectableFailure) -> None:
         super().__init__(f"injected LLM failure: {failure.value}")
         self.failure = failure
+
+
+class InjectedTimeoutError(InjectedFailureError, LLMTimeoutError):
+    """An injected timeout, indistinguishable from a real one to the ladder."""
+
+
+class InjectedRateLimitError(InjectedFailureError, LLMRateLimitError):
+    """An injected rate limit, indistinguishable from a real one to the ladder."""
+
+
+class InjectedProviderError(InjectedFailureError, LLMProviderError):
+    """An injected provider error, indistinguishable from a real one to the ladder."""
+
+
+#: Injected kinds that map onto a provider-neutral transport failure. The
+#: content kinds (invalid schema/enum, refusal, tool call) are absent on
+#: purpose: they are things a provider *returns*, and scripting them as
+#: exceptions would let the ladder retry conditions no retry can fix.
+_TRANSPORT_ERRORS: dict[InjectableFailure, type[InjectedFailureError]] = {
+    InjectableFailure.TIMEOUT: InjectedTimeoutError,
+    InjectableFailure.RATE_LIMIT: InjectedRateLimitError,
+    InjectableFailure.PROVIDER_ERROR: InjectedProviderError,
+}
 
 
 @dataclass(frozen=True)
@@ -103,15 +134,51 @@ class FakeLLMClient:
     def retry_policy(self) -> RetryPolicy:
         return self._retry_policy
 
-    def script_response(self, call_key: str, output: dict[str, Any]) -> None:
+    def script_response(
+        self, call_key: str, output: dict[str, Any], *, usage: TokenUsage | None = None
+    ) -> None:
         """Queue a structured response to return for the next call to ``call_key``."""
-        self._scripts.setdefault(call_key, deque()).append(
-            _Step(response=LLMResponse(output=output))
+        self._queue(call_key, LLMResponse(output=output, usage=usage or TokenUsage()))
+
+    def script_text(self, call_key: str, text: str, *, usage: TokenUsage | None = None) -> None:
+        """Queue a raw body, valid JSON or not.
+
+        This is how the ladder's content failures are scripted: an unparseable
+        body is a *successful* call whose result is unusable, and the raw text
+        has to survive verbatim into the record.
+        """
+        self._queue(call_key, LLMResponse(text=text, usage=usage or TokenUsage()))
+
+    def script_refusal(self, call_key: str, reason: str) -> None:
+        """Queue a provider refusal — a response, never an exception."""
+        self._queue(call_key, LLMResponse(refusal=reason))
+
+    def script_tool_call(
+        self,
+        call_key: str,
+        *,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        call_id: str | None = None,
+    ) -> None:
+        """Queue a model-requested tool call.
+
+        The arguments are stored exactly as given: what the model *asked* for is
+        the evidence, so the fake never tidies them on the way through.
+        """
+        call = ToolCall(
+            call_id=call_id or f"{call_key}-tool-{len(self._scripts.get(call_key, ()))}",
+            name=name,
+            arguments=arguments or {},
         )
+        self._queue(call_key, LLMResponse(tool_calls=(call,)))
 
     def script_failure(self, call_key: str, failure: InjectableFailure) -> None:
         """Queue an injected failure to raise for the next call to ``call_key``."""
         self._scripts.setdefault(call_key, deque()).append(_Step(failure=failure))
+
+    def _queue(self, call_key: str, response: LLMResponse) -> None:
+        self._scripts.setdefault(call_key, deque()).append(_Step(response=response))
 
     @property
     def received_requests(self) -> tuple[LLMRequest, ...]:
@@ -146,6 +213,6 @@ class FakeLLMClient:
             )
         step = steps.popleft()
         if step.failure is not None:
-            raise InjectedFailureError(step.failure)
+            raise _TRANSPORT_ERRORS.get(step.failure, InjectedFailureError)(step.failure)
         assert step.response is not None  # invariant: a step is a response xor a failure
         return step.response
