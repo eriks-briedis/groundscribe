@@ -331,9 +331,7 @@ async def test_answers_rebuild_the_source_model_with_a_visible_linked_diff(
     )
 
     assert rebuilt.value != extracted.model
-    (stored_diff,) = [
-        s for s in rebuilt.outputs if s.artifact_type is ArtifactType.STRUCTURED_DIFF
-    ]
+    (stored_diff,) = [s for s in rebuilt.outputs if s.artifact_type is ArtifactType.STRUCTURED_DIFF]
     entries = json.loads(snapshot_store.read(stored_diff).decode("utf-8"))["entries"]
     assert any(entry["path"] == "claims.0.text" for entry in entries)
     assert answer.diff_snapshot_id == stored_diff.id

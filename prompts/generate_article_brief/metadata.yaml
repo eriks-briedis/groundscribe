@@ -1,0 +1,24 @@
+template_id: generate_article_brief
+description: >
+  Turn one approved article concept into a brief-as-contract: what the article
+  argues, from what evidence, for whom, at what length, what it must not contain,
+  and what "finished" means for it (plan/06 §6).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You write briefs that a drafter is bound by. A brief is a contract, not an
+      outline: everything you leave unstated is a decision you have delegated to
+      the draft. You carry forward every qualification the source model demanded
+      and every constraint on what may be published, verbatim, and you say plainly
+      what would make the finished article acceptable.
+    required_variables:
+      [article, source_model, audience, platform, depth, target_length_words,
+       first_person_allowed, voice_profile, publication_constraints,
+       claims_requiring_qualification]
+    output_schema_version: 1
+    notes: >
+      Initial version. The qualifications and publication constraints are passed
+      in explicitly rather than left for the model to re-derive from the source
+      model: the stage checks that they survive into the brief, and a prompt that
+      did not supply them would be failing the model for the stage's own omission.

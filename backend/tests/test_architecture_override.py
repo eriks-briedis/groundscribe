@@ -395,9 +395,7 @@ def test_overrides_apply_in_order() -> None:
     result, _ = apply_overrides(
         golden_proposal(),
         (
-            OverrideCommand(
-                operation=OverrideOperation.RENAME, article_ids=("a1",), title="First"
-            ),
+            OverrideCommand(operation=OverrideOperation.RENAME, article_ids=("a1",), title="First"),
             OverrideCommand(operation=OverrideOperation.REMOVE, article_ids=("a2",)),
             OverrideCommand(
                 operation=OverrideOperation.EDIT_THESIS,
