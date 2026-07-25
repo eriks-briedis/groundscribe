@@ -94,6 +94,28 @@ stages:
       structured_output_mode: json_mode
       timeout_seconds: 180.0
 
+  # Architecture is the one structured stage where a little sampling breadth
+  # earns its keep: the point is to surface *alternatives*, and a temperature-0
+  # model proposes the same obvious shape every time. Still json_mode — the
+  # breadth is wanted in the ideas, not in the field names.
+  propose_content_architecture:
+    rationale: >
+      Comparing competing shapes needs some exploration; the decision record is
+      only worth reading if the alternatives were real.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.4
+      structured_output_mode: json_mode
+      max_output_tokens: 6144
+      timeout_seconds: 300.0
+    fallback:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.2
+      structured_output_mode: json_mode
+      timeout_seconds: 180.0
+
   # Prose, not structure: some sampling breadth is wanted, and the output is
   # disposable by design (plan/00 — generated prose is not source truth).
   draft_article:

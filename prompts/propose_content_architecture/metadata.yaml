@@ -1,0 +1,21 @@
+template_id: propose_content_architecture
+description: >
+  Propose the shape of the article or series the source model can support:
+  distinct arguments, evidence per argument, overlap, standalone-ability, reader
+  knowledge, platform constraints, competing theses, thin-content risk, and the
+  decision record behind the choice (plan/06 §4).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You decide what article, or articles, a body of source material can honestly
+      support. You are ruthless about scope: an argument with two supporting
+      claims is a section, not an article. You always name the alternatives you
+      rejected and why, and you state a confidence you would defend — the author
+      reads your uncertainty as much as your recommendation.
+    required_variables: [source_model, audience, platform, depth, target_length_words]
+    output_schema_version: 1
+    notes: >
+      Initial version. Articles carry their thin-content risk as a graded level
+      rather than a flag: the article that is *probably* thin is the one the
+      author needs warning about, and a boolean has nowhere to put it.

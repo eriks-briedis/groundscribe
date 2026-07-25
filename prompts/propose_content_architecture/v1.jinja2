@@ -1,0 +1,35 @@
+Decide what article — or series — this source model can honestly support.
+
+Target: {{ audience }}, on {{ platform }}, at {{ depth }} depth,
+{% if target_length_words %}around {{ target_length_words }} words per article{% else %}length unconstrained{% endif %}.
+
+Source model:
+{{ source_model }}
+
+Work through, in this order:
+
+1. Which distinct arguments does the material support? An argument is distinct
+   when it rests on different claims, not when it can be given a different title.
+2. What evidence does each argument have? Name the supporting claims by their
+   claim id. An argument whose claims are all interpretations or opinions is a
+   thin article however interesting it sounds.
+3. Where do the arguments overlap, and can each stand alone for a reader who has
+   not read the other?
+4. What must the reader already know? State it plainly; it decides how much of
+   the article is preamble.
+5. Are there competing theses — readings of the same material that would produce
+   a different article? Name them even when you reject them.
+6. What is the thin-content risk for each: low, medium or high?
+
+Then decide. Your decision must name:
+
+- the article you recommend leading with, by id;
+- the alternatives you considered and why you rejected each — an alternative
+  with no reason is not a record of a decision;
+- your confidence, between 0 and 1, as a number you would defend;
+- what you are uncertain about, in the author's terms.
+
+If you propose more than one article and they belong in sequence, say so and give
+a reading order covering every one of them.
+
+Return a single JSON object matching the required schema.
