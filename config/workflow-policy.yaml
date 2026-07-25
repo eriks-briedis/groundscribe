@@ -1,0 +1,87 @@
+# The editorial workflow policy (plan/05).
+#
+# Where a failing article goes next, how many automatic rounds each kind of
+# failure gets, and when the loop has stopped being worth another round.
+#
+# Edited by hand. Every routing decision records the `version` below, so bump it
+# whenever a route, limit or threshold changes — superseded versions live in git
+# history, and a run that cannot name its policy version cannot be explained
+# afterwards. Phase 08's scoring loop resolves through this same file.
+version: "1"
+description: >
+  Bounded revision: send each failure to the stage that can actually correct it,
+  cap the automatic rounds, and hand the run to a person when it stops improving.
+
+# Failure class → correcting stage. `target` is the default; `alternatives` are
+# the other ends the same rule legitimately has, chosen by the caller when it
+# knows more (for example: the source is silent, so ask the author rather than
+# re-extracting). Every state named here must be one the transition table
+# permits from `revision_required` — the loader refuses anything else.
+routing:
+  # Facts are corrected at the source, never in the prose. Re-extraction is the
+  # default because the answer is usually already in the material; questions are
+  # for when it is genuinely absent.
+  factual_gap:
+    target: source_model_extracting
+    alternatives: [source_questions_required]
+    rationale: >
+      Factual failures are corrected against source truth. No limit: the source
+      model is authoritative, and refusing to fix a fact to save a round would
+      trade the one thing the product cannot compromise.
+
+  # A structural problem is upstream of the words. Reopening the architecture is
+  # expensive and capped at one automatic round; narrowing the brief is the
+  # cheaper alternative when the shape is right but the scope is not.
+  architecture_issue:
+    target: architecture_proposing
+    alternatives: [brief_generating]
+    limit: architecture
+    rationale: The article is structurally wrong, not badly written.
+
+  # Substantive problems go through a plan first: a rewrite briefed by "the
+  # review said it was thin" produces a differently thin article.
+  substantive_issue:
+    target: revision_plan_required
+    alternatives: [substantive_rewriting]
+    limit: substantive
+    rationale: Plan the revision, then rewrite against the plan.
+
+  # Style is the voice pass's job and nothing else's.
+  style_issue:
+    target: voice_aligning
+    limit: style
+    rationale: The substance is settled; only how it reads is wrong.
+
+  # A targeted patch spends a substantive round on purpose. It is a smaller
+  # rewrite, not a different kind of one, and giving it its own budget would let
+  # an article take three rewrites plus an unbounded stream of "minor" ones.
+  minor_local:
+    target: substantive_rewriting
+    limit: substantive
+    rationale: A local fix, applied without replanning the whole revision.
+
+# plan/05: max 3 substantive rewrites, max 2 style-only, max 1 automatic
+# architecture reopening. Beyond these a person must explicitly authorise the
+# next round — the limits bound the machine, not the author.
+limits:
+  substantive: 3
+  style: 2
+  architecture: 1
+
+# When to stop and ask a human. These are the numbers plan/05's six stagnation
+# conditions compare against.
+stagnation:
+  # Under two points of overall movement is noise, not progress.
+  min_improvement: 2.0
+  # Two consecutive no-progress rounds before calling it stagnant: one flat
+  # round is common and often followed by a good one.
+  improvement_rounds: 2
+  # A blocking issue that survived two rewrites will survive a third.
+  blocking_issue_rounds: 2
+  # One dimension gaining five points while another loses five is not an
+  # improvement, it is the loop trading one problem for another.
+  dimension_divergence: 5.0
+  # If a third of the text is still being edited by hand after repeated voice
+  # passes, the voice profile is the problem, not the draft.
+  max_edit_distance: 0.3
+  voice_pass_rounds: 2
