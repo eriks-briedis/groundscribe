@@ -31,6 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, runtime_checkable
 
+from sqlalchemy.orm import Session
+
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.protocol import TokenUsage
@@ -50,12 +52,17 @@ class PipelineContext:
     here: it is per-invocation, and a context that carried one would have to be
     rebuilt for every stage — inviting a stage to record against the wrong
     execution by holding on to a stale copy.
+
+    The session is here because editorial rows are the *stages'* to write, while
+    provenance rows are the recorder's; a stage that had to reach into the recorder
+    for a session would be reaching around the redaction chokepoint that owns it.
     """
 
     engine: WorkflowEngine
     recorder: ProvenanceRecorder
     snapshots: SnapshotStore
     generator: StructuredGenerator
+    session: Session
     project_id: str
     actor_id: str = "pipeline"
 

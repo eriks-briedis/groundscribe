@@ -65,5 +65,6 @@ def build_context(
         recorder=recorder,
         snapshots=snapshots,
         generator=build_generator(recorder, clients),
+        session=session,
         project_id=project_id,
     )
