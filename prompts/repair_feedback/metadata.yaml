@@ -1,0 +1,21 @@
+# Rung 1 of the structured-output repair ladder (plan/04).
+#
+# Appended as an extra user message to the *original* request rather than
+# replacing it, so the model keeps the full task context and is told only what
+# was wrong. It is a file rather than a string in code for the same reason every
+# other prompt is: this text materially changes what the model does, so it must
+# be reviewable in a diff and quotable from a provenance record.
+template_id: repair_feedback
+description: >
+  Validation feedback appended to the original request on the first repair
+  attempt.
+current_version: v1
+versions:
+  v1:
+    required_variables:
+      - validation_errors
+    output_schema_version: 1
+    notes: >
+      No system message: this message joins an existing sequence that already
+      has one, and a second system turn would change the framing of the original
+      call rather than merely correcting it.

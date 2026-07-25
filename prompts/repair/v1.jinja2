@@ -1,0 +1,17 @@
+A previous response failed validation against the required schema.
+
+Required schema ({{ schema_name }}):
+{{ output_schema }}
+
+Rejected response:
+{{ previous_output }}
+
+Validation errors:
+{% for error in validation_errors %}
+- {{ error }}
+{% endfor %}
+
+Return the corrected value as a single JSON object satisfying the schema above.
+Keep the substance of the rejected response: fix only what the errors name. If a
+required value is genuinely unknown, use the schema's own representation for
+that (for example an explicit "unknown" member), never an invented one.

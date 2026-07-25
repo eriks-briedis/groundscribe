@@ -1,0 +1,27 @@
+# Rung 2 of the structured-output repair ladder (plan/04).
+#
+# Rung 1 re-sends the original stage prompt with validation feedback appended;
+# this template replaces it entirely with a constrained instruction that carries
+# only the schema, the rejected output and the errors. Dropping the original task
+# framing is the point: by rung 2 the model has already failed to follow it twice,
+# and repeating it is what keeps it failing the same way.
+template_id: repair
+description: >
+  Constrained repair prompt: rewrite a rejected response so it satisfies the
+  required output schema, changing nothing else.
+current_version: v1
+versions:
+  v1:
+    system: >-
+      You repair malformed structured output. You return a single JSON value and
+      nothing else: no prose, no apology, no code fence.
+    required_variables:
+      - schema_name
+      - output_schema
+      - previous_output
+      - validation_errors
+    output_schema_version: 1
+    notes: >
+      Preserve the substance of the rejected output. The failure is in the
+      shape, and silently rewriting the content would hide a model error behind
+      a schema fix.
