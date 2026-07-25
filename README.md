@@ -21,12 +21,29 @@ groundscribe/
 ├── frontend/         # React + TypeScript (placeholder until phase 11)
 ├── contracts/        # generated OpenAPI + TS types
 ├── prompts/          # versioned Jinja2 prompt templates + metadata
+├── config/           # versioned operational config (model routing)
 ├── evaluations/      # golden data, eval datasets, evaluation suite
 ├── tests/            # cross-cutting / integration tests
 ├── docker/
 ├── compose.yaml
 └── README.md
 ```
+
+### Editable files: prompts and routing
+
+Two things deliberately live outside the code, because they change often and a
+change to either changes what the system produces:
+
+```
+prompts/<template_id>/metadata.yaml   # declared versions + which one is current
+prompts/<template_id>/v1.jinja2       # one file per version
+config/model-routing.yaml             # per-stage provider/model/params, versioned
+```
+
+Both roots can be pointed elsewhere with `GROUNDSCRIBE_PROMPTS_ROOT` and
+`GROUNDSCRIBE_CONFIG_ROOT`. Every model invocation records the prompt version and
+routing-policy version it ran under, so a change here never makes an existing
+provenance record ambiguous.
 
 ## Tech stack (fixed by spec)
 
