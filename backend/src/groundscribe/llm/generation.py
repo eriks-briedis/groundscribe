@@ -1,37 +1,67 @@
-"""Structured generation: routing, rendering, validation, provenance (phase 04).
+"""Structured generation and the repair ladder (phase 04).
 
 This is the one path a stage takes to ask a model for structured data. It ties
 together the four pieces phase 04 builds — the routing policy, the prompt store,
 the client protocol and the phase-03 recorder — so that a stage cannot make a
 model call that goes unrecorded, unrouted, or unvalidated.
 
+The ladder (plan/04 → *Structured outputs*) is the interesting part:
+
+1. **feedback retry** — re-send the original request with the validation errors
+   appended. The model keeps its full task context and is told only what was
+   wrong.
+2. **constrained repair** — replace the task framing with the dedicated repair
+   prompt carrying the schema, the rejected output and the errors. By this point
+   the original framing has failed twice, and repeating it is what keeps it
+   failing the same way.
+3. **model fallback** — re-issue the current request against the stage's
+   *configured* fallback model.
+4. **escalate** — fail the stage and ask for a human.
+
+Every rung is recorded as an ordered, typed child invocation, so the sequence is
+legible afterwards; a bare retry count could not tell this apart from three
+rate-limit retries, which needs a completely different fix.
+
 Two boundaries are deliberate:
 
-- **The generator never returns unvalidated output.** A response that does not
-  parse, does not validate, or is a refusal fails the stage instead. plan/04:
-  invalid output is never accepted silently.
+- **Nothing unvalidated is ever returned.** Invalid output, a refusal, or an
+  exhausted ladder fails the stage instead.
 - **The generator does not own the stage lifecycle.** It fails a stage when it
-  gives up (there is nothing else honest to do with a run whose model call cannot
-  be completed), but starting, completing and re-entering stages is the state
-  machine's job in phase 05.
+  gives up — there is nothing else honest to do with a run whose model call
+  cannot be completed — but starting, completing and re-entering stages is the
+  state machine's job in phase 05.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum, auto
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig
+from groundscribe.llm.errors import (
+    LLMError,
+    LLMNetworkError,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
+from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig, ToolCall
 from groundscribe.llm.routing import ResolvedRoute, RouteOverride, RoutingPolicy
-from groundscribe.prompts import PromptStore
+from groundscribe.prompts import PromptStore, RenderedPrompt
 from groundscribe.provenance import models
-from groundscribe.provenance.enums import ActorType, InvocationOutcome, RetryType
+from groundscribe.provenance.enums import (
+    ActorType,
+    ExecutionStatus,
+    InvocationOutcome,
+    RetryType,
+    ToolInitiator,
+)
 from groundscribe.provenance.recorder import ProvenanceRecorder
-from groundscribe.provenance.schemas import EffectiveRequest, ToolDefinition
+from groundscribe.provenance.schemas import EffectiveRequest, Message, ToolDefinition
 
 
 class GenerationError(Exception):
@@ -42,8 +72,8 @@ class GenerationFailed(Exception):
     """A stage's model call could not be completed and the stage was failed.
 
     Carries the attempts so a caller (and a human) can see *how* it failed
-    without going back to the database; ``error_type`` is the same value stored
-    on the failed stage execution.
+    without going back to the database; ``error_type`` is the value stored on the
+    failed stage execution.
     """
 
     def __init__(
@@ -61,6 +91,78 @@ class GenerationFailed(Exception):
         self.attempts = attempts
 
 
+class ToolCallRequested(Exception):
+    """The model asked to run a tool, so generation paused.
+
+    Not a failure: the stage is left running and every record is intact.
+    Executing tools is stage business logic (phases 06-08), so this is raised
+    rather than returned — a caller cannot then mistake a paused generation for
+    an answer, which a nullable return value would invite.
+    """
+
+    def __init__(
+        self,
+        *,
+        stage: str,
+        invocation: models.ModelInvocation,
+        tool_invocations: tuple[models.ToolInvocation, ...],
+        attempts: tuple[models.ModelInvocation, ...],
+    ) -> None:
+        names = ", ".join(tool.tool_name for tool in tool_invocations)
+        super().__init__(f"{stage}: model requested tool call(s): {names}")
+        self.stage = stage
+        self.invocation = invocation
+        self.tool_invocations = tool_invocations
+        self.attempts = attempts
+
+
+class RepairRung(StrEnum):
+    """One step of the structured-output repair ladder."""
+
+    FEEDBACK_RETRY = "feedback_retry"
+    CONSTRAINED_REPAIR = "constrained_repair"
+    MODEL_FALLBACK = "model_fallback"
+
+
+#: Which retry type each rung records. Fixed here rather than at the call sites
+#: so the ladder and the provenance vocabulary cannot drift apart.
+RUNG_RETRY_TYPES: dict[RepairRung, RetryType] = {
+    RepairRung.FEEDBACK_RETRY: RetryType.INVALID_SCHEMA,
+    RepairRung.CONSTRAINED_REPAIR: RetryType.CONTENT_REPAIR,
+    RepairRung.MODEL_FALLBACK: RetryType.MODEL_FALLBACK,
+}
+
+
+class RepairPolicy(BaseModel):
+    """The ladder, versioned.
+
+    Versioned because escalating to a human is a decision, and phase 03 refuses
+    to record a policy decision that cannot name the policy version that made it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    version: str = "1"
+    ladder: tuple[RepairRung, ...] = (
+        RepairRung.FEEDBACK_RETRY,
+        RepairRung.CONSTRAINED_REPAIR,
+        RepairRung.MODEL_FALLBACK,
+    )
+    feedback_template_id: str = "repair_feedback"
+    repair_template_id: str = "repair"
+    #: Hard stop, whatever the ladder and the retry policy say between them. A
+    #: loop that cannot terminate is worse than a stage that fails.
+    max_total_attempts: int = 8
+
+
+class _Form(StrEnum):
+    """Which request shape the next attempt should send."""
+
+    ORIGINAL = auto()
+    FEEDBACK = auto()
+    REPAIR = auto()
+
+
 @dataclass(frozen=True)
 class GenerationResult[T: BaseModel]:
     """A completed generation: the validated value and how it was produced."""
@@ -72,8 +174,27 @@ class GenerationResult[T: BaseModel]:
     request: EffectiveRequest = field(repr=False)
 
 
+@dataclass(frozen=True)
+class _Transport:
+    """How one transport failure is classified into the record vocabulary."""
+
+    outcome: InvocationOutcome
+    retry_type: RetryType
+
+
+#: Checked in order; the first matching exception type wins. A network failure
+#: records as a provider error because phase 03's outcome vocabulary is fixed and
+#: has no network member — the *retry* type keeps the distinction that matters.
+_TRANSPORT_CLASSES: tuple[tuple[type[LLMError], _Transport], ...] = (
+    (LLMTimeoutError, _Transport(InvocationOutcome.TIMEOUT, RetryType.NETWORK)),
+    (LLMRateLimitError, _Transport(InvocationOutcome.RATE_LIMITED, RetryType.RATE_LIMIT)),
+    (LLMNetworkError, _Transport(InvocationOutcome.PROVIDER_ERROR, RetryType.NETWORK)),
+    (LLMProviderError, _Transport(InvocationOutcome.PROVIDER_ERROR, RetryType.PROVIDER_ERROR)),
+)
+
+
 class StructuredGenerator:
-    """Routes, renders, calls, validates and records one structured model call.
+    """Routes, renders, calls, validates, repairs and records one model call.
 
     Clients are supplied per provider name. Routing names a provider, so
     something has to map that name to a client; doing it here — and failing when
@@ -88,11 +209,13 @@ class StructuredGenerator:
         recorder: ProvenanceRecorder,
         prompts: PromptStore,
         routing: RoutingPolicy,
+        repair_policy: RepairPolicy | None = None,
     ) -> None:
         self._clients = dict(clients)
         self._recorder = recorder
         self._prompts = prompts
         self._routing = routing
+        self._repair = repair_policy or RepairPolicy()
 
     async def generate[T: BaseModel](
         self,
@@ -106,65 +229,224 @@ class StructuredGenerator:
         tools: tuple[ToolDefinition, ...] = (),
         override: RouteOverride | None = None,
     ) -> GenerationResult[T]:
-        """Ask the stage's configured model for a value of ``schema``."""
+        """Ask the stage's configured model for a value of ``schema``.
+
+        Raises :class:`GenerationFailed` when the ladder is exhausted, the
+        provider refuses, or transport retries run out — never a partly-valid
+        value. Raises :class:`ToolCallRequested` when the model asks for a tool.
+        """
         route = self._routing.resolve(stage, override=override)
         self._record_routing_decision(execution, route, override)
-        client = self._client_for(route.primary.provider)
 
         rendered = self._prompts.render(template_id, variables, version=template_version)
-        runtime = route.runtime_config(client.metadata, client.retry_policy)
         output_schema = schema.model_json_schema()
-        request = rendered.to_effective_request(
-            provider_config=runtime.as_provider_config(),
-            tool_definitions=tools,
-            output_schema=output_schema,
-        )
+        rungs = self._available_rungs(route)
 
-        response = await client.complete(self._llm_request(stage, request, schema, runtime, tools))
-        raw = response.raw_text
+        attempts: list[models.ModelInvocation] = []
+        parent: models.ModelInvocation | None = None
+        retry_type: RetryType | None = None
+        rung_index = 0
+        form = _Form.ORIGINAL
+        use_fallback = False
+        transport_attempts = 0
+        errors: list[str] = []
+        rejected_output = ""
 
-        parsed, parse_error = _parse(raw)
-        if parse_error is not None:
-            invocation = self._record(
-                execution, request, runtime, InvocationOutcome.INVALID_JSON, raw, error=parse_error
+        while True:
+            client = self._client_for(route.choice(use_fallback=use_fallback).provider)
+            runtime = route.runtime_config(
+                client.metadata, client.retry_policy, use_fallback=use_fallback
             )
-            raise self._fail(execution, stage, "invalid_json", parse_error, (invocation,))
+            request = self._build_request(
+                form=form,
+                rendered=rendered,
+                schema=schema,
+                output_schema=output_schema,
+                tools=tools,
+                runtime=runtime,
+                errors=errors,
+                rejected_output=rejected_output,
+            )
 
-        try:
-            value = schema.model_validate(parsed)
-        except ValidationError as exc:
-            reason = "; ".join(format_validation_errors(exc))
+            try:
+                response = await client.complete(
+                    self._llm_request(stage, request, schema, runtime, tools)
+                )
+            except LLMError as exc:
+                transport = _classify_transport(exc)
+                invocation = self._record(
+                    execution, request, runtime, transport.outcome, "", parent, retry_type, str(exc)
+                )
+                attempts.append(invocation)
+                transport_attempts += 1
+                if transport_attempts >= runtime.retry_policy.max_attempts:
+                    raise self._escalate(
+                        execution, stage, transport.outcome.value, str(exc), tuple(attempts)
+                    ) from exc
+                parent, retry_type = invocation, transport.retry_type
+                continue
+
+            raw = response.raw_text
+
+            if response.refusal is not None:
+                # Not retried: a refusal is a deliberate provider decision, and
+                # looping on it burns budget to arrive at the same human.
+                invocation = self._record(
+                    execution,
+                    request,
+                    runtime,
+                    InvocationOutcome.REFUSED,
+                    raw,
+                    parent,
+                    retry_type,
+                    response.refusal,
+                )
+                attempts.append(invocation)
+                raise self._escalate(
+                    execution,
+                    stage,
+                    InvocationOutcome.REFUSED.value,
+                    response.refusal,
+                    tuple(attempts),
+                )
+
+            if response.tool_calls:
+                invocation = self._record(
+                    execution, request, runtime, InvocationOutcome.ACCEPTED, raw, parent, retry_type
+                )
+                attempts.append(invocation)
+                raise ToolCallRequested(
+                    stage=stage,
+                    invocation=invocation,
+                    tool_invocations=self._record_tool_calls(
+                        execution, invocation, response.tool_calls, tools
+                    ),
+                    attempts=tuple(attempts),
+                )
+
+            parsed, parse_error = _parse(raw)
+            if parse_error is None and parsed is not None:
+                try:
+                    value = schema.model_validate(parsed)
+                except ValidationError as exc:
+                    outcome = InvocationOutcome.INVALID_SCHEMA
+                    errors = format_validation_errors(exc)
+                else:
+                    invocation = self._record(
+                        execution,
+                        request,
+                        runtime,
+                        InvocationOutcome.ACCEPTED,
+                        raw,
+                        parent,
+                        retry_type,
+                        parsed=parsed,
+                        validated=value.model_dump(mode="json"),
+                    )
+                    attempts.append(invocation)
+                    return GenerationResult(
+                        value=value,
+                        invocation=invocation,
+                        attempts=tuple(attempts),
+                        route=route,
+                        request=request,
+                    )
+            else:
+                outcome, errors = InvocationOutcome.INVALID_JSON, [parse_error or "unparseable"]
+
             invocation = self._record(
                 execution,
                 request,
                 runtime,
-                InvocationOutcome.INVALID_SCHEMA,
+                outcome,
                 raw,
+                parent,
+                retry_type,
+                "; ".join(errors),
                 parsed=parsed,
-                error=reason,
             )
-            raise self._fail(execution, stage, "invalid_schema", reason, (invocation,)) from exc
+            attempts.append(invocation)
+            rejected_output = raw
 
-        invocation = self._record(
-            execution,
-            request,
-            runtime,
-            InvocationOutcome.ACCEPTED,
-            raw,
-            parsed=parsed,
-            validated=value.model_dump(mode="json"),
-        )
-        return GenerationResult(
-            value=value,
-            invocation=invocation,
-            attempts=(invocation,),
-            route=route,
-            request=request,
-        )
+            exhausted = rung_index >= len(rungs) or len(attempts) >= self._repair.max_total_attempts
+            if exhausted:
+                raise self._escalate(
+                    execution, stage, outcome.value, "; ".join(errors), tuple(attempts)
+                )
+
+            rung = rungs[rung_index]
+            rung_index += 1
+            parent, retry_type = invocation, RUNG_RETRY_TYPES[rung]
+            if rung is RepairRung.FEEDBACK_RETRY:
+                form = _Form.FEEDBACK
+            elif rung is RepairRung.CONSTRAINED_REPAIR:
+                form = _Form.REPAIR
+            else:
+                # The fallback re-issues whatever the current request form is;
+                # only the model changes, which is what makes the swap the one
+                # variable under test.
+                use_fallback = True
 
     # ------------------------------------------------------------------
-    # Wiring
+    # Request construction
     # ------------------------------------------------------------------
+
+    def _available_rungs(self, route: ResolvedRoute) -> tuple[RepairRung, ...]:
+        """The ladder minus rungs this route cannot take.
+
+        A stage with no configured fallback simply has a shorter ladder — the
+        alternative, silently falling back to some other model, would put a model
+        nobody chose into the record.
+        """
+        return tuple(
+            rung
+            for rung in self._repair.ladder
+            if rung is not RepairRung.MODEL_FALLBACK or route.fallback is not None
+        )
+
+    def _build_request(
+        self,
+        *,
+        form: _Form,
+        rendered: RenderedPrompt,
+        schema: type[BaseModel],
+        output_schema: dict[str, Any],
+        tools: tuple[ToolDefinition, ...],
+        runtime: RuntimeConfig,
+        errors: Sequence[str],
+        rejected_output: str,
+    ) -> EffectiveRequest:
+        """Build the effective request for the next attempt."""
+        provider_config = runtime.as_provider_config()
+        if form is _Form.REPAIR:
+            repair = self._prompts.render(
+                self._repair.repair_template_id,
+                {
+                    "schema_name": schema.__name__,
+                    "output_schema": json.dumps(output_schema, indent=2, sort_keys=True),
+                    "previous_output": rejected_output,
+                    "validation_errors": list(errors),
+                },
+            )
+            return repair.to_effective_request(
+                provider_config=provider_config,
+                tool_definitions=tools,
+                output_schema=output_schema,
+            )
+
+        extra: tuple[Message, ...] = ()
+        if form is _Form.FEEDBACK:
+            feedback = self._prompts.render(
+                self._repair.feedback_template_id, {"validation_errors": list(errors)}
+            )
+            extra = (Message(role="user", content=feedback.rendered_prompt),)
+
+        return rendered.to_effective_request(
+            provider_config=provider_config,
+            tool_definitions=tools,
+            output_schema=output_schema,
+            extra_messages=extra,
+        )
 
     def _client_for(self, provider: str) -> LLMClient:
         client = self._clients.get(provider)
@@ -234,12 +516,12 @@ class StructuredGenerator:
         runtime: RuntimeConfig,
         outcome: InvocationOutcome,
         raw: str,
-        *,
-        parsed: dict[str, Any] | None = None,
-        validated: dict[str, Any] | None = None,
         parent: models.ModelInvocation | None = None,
         retry_type: RetryType | None = None,
         error: str | None = None,
+        *,
+        parsed: dict[str, Any] | None = None,
+        validated: dict[str, Any] | None = None,
     ) -> models.ModelInvocation:
         """Write one invocation, failed attempts included."""
         return self._recorder.record_model_invocation(
@@ -256,7 +538,44 @@ class StructuredGenerator:
             error_message=error,
         )
 
-    def _fail(
+    def _record_tool_calls(
+        self,
+        execution: models.StageExecution,
+        invocation: models.ModelInvocation,
+        calls: Sequence[ToolCall],
+        offered: Sequence[ToolDefinition],
+    ) -> tuple[models.ToolInvocation, ...]:
+        """Record what the model asked to run, before anything runs it.
+
+        Recorded as ``PENDING`` with the arguments the model supplied: with no
+        tool registry in this phase there is nothing to normalise the arguments
+        *into*, so the normalised form is the raw form and the record says so
+        rather than inventing a second version of the same fact.
+        """
+        definitions = {definition.name: definition for definition in offered}
+        recorded: list[models.ToolInvocation] = []
+        for call in calls:
+            definition = definitions.get(call.name)
+            recorded.append(
+                self._recorder.record_tool_invocation(
+                    execution,
+                    tool_name=call.name,
+                    tool_version=definition.version if definition is not None else "unknown",
+                    initiator=ToolInitiator.MODEL_SELECTED,
+                    raw_args=dict(call.arguments),
+                    normalised_args=dict(call.arguments),
+                    raw_result={},
+                    normalised_result={},
+                    status=ExecutionStatus.PENDING,
+                    model_invocation=invocation,
+                    approval_required=(
+                        definition.requires_approval if definition is not None else True
+                    ),
+                )
+            )
+        return tuple(recorded)
+
+    def _escalate(
         self,
         execution: models.StageExecution,
         stage: str,
@@ -264,15 +583,50 @@ class StructuredGenerator:
         reason: str,
         attempts: tuple[models.ModelInvocation, ...],
     ) -> GenerationFailed:
-        """Fail the stage, keeping every attempt recorded, and hand back the error.
+        """Rung 4: record the escalation, fail the stage, hand back the error.
 
-        Returned rather than raised so the call site reads ``raise self._fail(…)``
-        and the traceback starts where the decision was made.
+        Three writes, none of them optional. The decision names the policy that
+        gave up (phase 03 refuses an unattributed one), the trace event is what a
+        human-facing queue will read in phase 09, and failing the stage is what
+        stops the run from looking healthy while producing nothing.
+
+        Returned rather than raised so the call site reads ``raise
+        self._escalate(…)`` and the traceback starts where the decision was made.
         """
+        self._recorder.record_decision(
+            execution,
+            decision_type="repair_escalation",
+            decided_by="repair_ladder",
+            decided_by_type=ActorType.POLICY,
+            policy_version=self._repair.version,
+            inputs={
+                "stage": stage,
+                "error_type": error_type,
+                "attempts": len(attempts),
+                "ladder": [rung.value for rung in self._repair.ladder],
+            },
+            outcome="human_intervention_required",
+            rationale=reason,
+        )
+        self._recorder.emit(
+            event_type="intervention.requested",
+            actor_type=ActorType.SYSTEM,
+            actor_id="repair_ladder",
+            execution=execution,
+            payload={"stage": stage, "error_type": error_type, "attempts": len(attempts)},
+        )
         self._recorder.fail_stage(execution, error_type=error_type, error_message=reason)
         return GenerationFailed(
             stage=stage, error_type=error_type, reason=reason, attempts=attempts
         )
+
+
+def _classify_transport(exc: LLMError) -> _Transport:
+    """Map a provider-neutral failure onto the record vocabulary."""
+    for error_type, transport in _TRANSPORT_CLASSES:
+        if isinstance(exc, error_type):
+            return transport
+    return _Transport(InvocationOutcome.PROVIDER_ERROR, RetryType.PROVIDER_ERROR)
 
 
 def _parse(raw: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -306,6 +660,9 @@ __all__ = [
     "GenerationError",
     "GenerationFailed",
     "GenerationResult",
+    "RepairPolicy",
+    "RepairRung",
     "StructuredGenerator",
+    "ToolCallRequested",
     "format_validation_errors",
 ]
