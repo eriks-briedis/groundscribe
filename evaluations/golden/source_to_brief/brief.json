@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "title": "Your cache key is a specification",
+  "thesis": "A cache key enumerates everything the render depends on, so getting it wrong is a correctness bug rather than a performance one.",
+  "audience": "senior backend engineers",
+  "reader_knowledge": "Comfortable with HTTP caching and the idea of invalidation; no knowledge of this render pipeline.",
+  "reader_problem": "They are about to add a cache in front of something expensive and will reach for the obvious key.",
+  "opening_direction": "Open on the measured win, immediately qualified, so the reader knows the piece is not a victory lap.",
+  "argument_structure": [
+    {
+      "heading": "The win, and what it cost",
+      "purpose": "Establish the numbers and the qualification in the same breath.",
+      "claim_ids": ["c1"],
+      "required_examples": ["The p99 figure with its measurement window stated"],
+      "mandatory": true
+    },
+    {
+      "heading": "Why a cache was viable at all",
+      "purpose": "Determinism is the precondition; without it the article recommends a bug.",
+      "claim_ids": ["c3"],
+      "required_examples": [],
+      "mandatory": true
+    },
+    {
+      "heading": "The key that was missing two inputs",
+      "purpose": "The concrete failure: locale and publish revision absent from the key.",
+      "claim_ids": ["c4"],
+      "required_examples": ["The three-line cache_key function as it originally stood"],
+      "mandatory": true
+    },
+    {
+      "heading": "What I would do differently",
+      "purpose": "The author's own reading, clearly marked as opinion.",
+      "claim_ids": ["c5"],
+      "required_examples": [],
+      "mandatory": false
+    }
+  ],
+  "claims_requiring_qualification": ["c1"],
+  "required_conclusion": "A cache key is a specification of the render's inputs; write it as one and invalidation stops being a separate task.",
+  "target_length_words": 1800,
+  "platform_constraints": [
+    "Personal blog: no house style, but code blocks must be short enough to read on a phone."
+  ],
+  "voice_profile": "default",
+  "style_overrides": ["First person is allowed; the incident is the author's own."],
+  "excluded_material": [
+    "The internal postmortem covering the deploy is not publishable."
+  ],
+  "reserved_material": [
+    "The determinism argument is reserved for the follow-up article and should only be stated, not developed."
+  ],
+  "definition_of_done": [
+    {
+      "description": "Every stated number carries the conditions it was measured under.",
+      "mandatory": true
+    },
+    {
+      "description": "The cache_key example appears verbatim as it stood before the fix.",
+      "mandatory": true
+    },
+    {
+      "description": "Nothing from the internal postmortem appears in any form.",
+      "mandatory": true
+    },
+    {
+      "description": "The opinion section is marked as the author's reading rather than a finding.",
+      "mandatory": true
+    },
+    {
+      "description": "A closing line the reader could quote back.",
+      "mandatory": false
+    }
+  ]
+}
