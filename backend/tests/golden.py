@@ -47,7 +47,9 @@ def with_segment_ids(payload: dict[str, Any], source: IngestedSource) -> dict[st
     dangling reference.
     """
     ids = {f"S{segment.ordinal}": segment.id for segment in source.segments}
-    return _substitute(payload, ids)
+    substituted = _substitute(payload, ids)
+    assert isinstance(substituted, dict)
+    return substituted
 
 
 def _substitute(value: Any, ids: dict[str, str]) -> Any:

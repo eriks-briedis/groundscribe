@@ -217,6 +217,16 @@ class StructuredGenerator:
         self._routing = routing
         self._repair = repair_policy or RepairPolicy()
 
+    @property
+    def routing(self) -> RoutingPolicy:
+        """The policy this generator routes through.
+
+        Exposed so a stage can ask *where a call would go* before making it — the
+        provider-access check in phase 06 has to resolve the same route the call
+        will use, and a second copy of the policy would eventually disagree.
+        """
+        return self._routing
+
     async def generate[T: BaseModel](
         self,
         execution: models.StageExecution,

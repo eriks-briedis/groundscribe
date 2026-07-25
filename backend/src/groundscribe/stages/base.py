@@ -34,6 +34,7 @@ from typing import Any, Protocol, runtime_checkable
 from sqlalchemy.orm import Session
 
 from groundscribe.domain.models import ArtifactSnapshot
+from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.protocol import TokenUsage
 from groundscribe.provenance import models
@@ -64,6 +65,7 @@ class PipelineContext:
     generator: StructuredGenerator
     session: Session
     project_id: str
+    constraints: EditorialConstraints
     actor_id: str = "pipeline"
 
 

@@ -14,6 +14,8 @@ provider/model — the one that runs in production.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from sqlalchemy.orm import Session
 
 from groundscribe.domain.enums import ArticleDepth
@@ -33,13 +35,13 @@ from provenance_helpers import make_recorder, seed_project
 SHIPPED_PROVIDER = "ollama"
 
 
-def fake_clients(model: str = "llama3.1:70b-instruct") -> dict[str, LLMClient]:
+def fake_clients(model: str = "llama3.1:70b-instruct") -> Mapping[str, LLMClient]:
     """A client map keyed by the provider the shipped routing config asks for."""
     return {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model=model)}
 
 
 def build_generator(
-    recorder: ProvenanceRecorder, clients: dict[str, LLMClient] | None = None
+    recorder: ProvenanceRecorder, clients: Mapping[str, LLMClient] | None = None
 ) -> StructuredGenerator:
     """A generator over the shipped prompts and the shipped routing policy."""
     return StructuredGenerator(
@@ -63,11 +65,36 @@ DEFAULT_CONSTRAINTS = EditorialConstraints(
 )
 
 
+def scripted_context(
+    session: Session,
+    snapshots: SnapshotStore,
+    *,
+    model: str = "llama3.1:70b-instruct",
+    constraints: EditorialConstraints | None = None,
+    state: WorkflowState = WorkflowState.SOURCE_INGESTED,
+) -> tuple[PipelineContext, FakeLLMClient]:
+    """A context plus the fake behind it, for tests that script model answers.
+
+    Returns both because a stage test almost always needs to queue a response
+    *and* assert on what was sent; digging the client back out of the context
+    would make every such test reach through three objects to get it.
+    """
+    fake = FakeLLMClient(provider=SHIPPED_PROVIDER, model=model)
+    context = build_context(
+        session,
+        snapshots,
+        clients={SHIPPED_PROVIDER: fake},
+        constraints=constraints if constraints is not None else DEFAULT_CONSTRAINTS,
+        state=state,
+    )
+    return context, fake
+
+
 def build_context(
     session: Session,
     snapshots: SnapshotStore,
     *,
-    clients: dict[str, LLMClient] | None = None,
+    clients: Mapping[str, LLMClient] | None = None,
     constraints: EditorialConstraints = DEFAULT_CONSTRAINTS,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
 ) -> PipelineContext:

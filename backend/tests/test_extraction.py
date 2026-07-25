@@ -29,16 +29,20 @@ from groundscribe.domain.enums import (
     SourceFormat,
 )
 from groundscribe.domain.schemas import EditorialConstraints
-from groundscribe.llm import FakeLLMClient, LLMClient
+from groundscribe.llm import FakeLLMClient
 from groundscribe.provenance.enums import ContextDisposition, InvocationOutcome
 from groundscribe.stages.base import PipelineContext, StageRunner
 from groundscribe.stages.errors import EvidenceError, ProviderNotPermitted
-from groundscribe.stages.extraction import EXTRACTION_STRATEGY, ExtractSourceTruth
+from groundscribe.stages.extraction import (
+    EXTRACTION_STAGE,
+    EXTRACTION_STRATEGY,
+    ExtractSourceTruth,
+)
 from groundscribe.stages.ingestion import IngestedSource, IngestSource
 from groundscribe.stages.schemas import SourceModel
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.states import WorkflowState
-from stage_helpers import SHIPPED_PROVIDER, build_context
+from stage_helpers import SHIPPED_PROVIDER, scripted_context
 
 CONSTRAINTS = EditorialConstraints(
     audience="senior backend engineers",
@@ -48,6 +52,23 @@ CONSTRAINTS = EditorialConstraints(
     allowed_providers=(SHIPPED_PROVIDER,),
     trace_retention_consent=True,
 )
+
+
+#: What a model can honestly return when the budget only reached the opening
+#: paragraph: one claim, citing the one passage it was shown.
+BUDGETED_MODEL: dict[str, Any] = {
+    "schema_version": 1,
+    "summary": "A read-through cache cut p99 render latency.",
+    "claims": [
+        {
+            "id": "c1",
+            "text": "p99 latency fell from 810ms to 120ms.",
+            "classification": "directly_supported_fact",
+            "evidence": [{"segment_ids": ["S1"], "quote": "p99 latency fell from 810ms to 120ms"}],
+            "qualification_required": True,
+        }
+    ],
+}
 
 
 async def ingest_golden(context: PipelineContext) -> IngestedSource:
@@ -63,20 +84,18 @@ async def ingest_golden(context: PipelineContext) -> IngestedSource:
     return result.value
 
 
-def script(client: LLMClient, payload: dict[str, Any]) -> None:
+def script(client: FakeLLMClient, payload: dict[str, Any]) -> None:
     """Queue ``payload`` as the next structured answer for the extraction stage."""
-    assert isinstance(client, FakeLLMClient)
-    client.script_response("extract_source_truth", payload)
+    client.script_response(EXTRACTION_STAGE, payload)
 
 
 async def test_the_golden_source_extracts_into_the_expected_source_model(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """plan/06 golden test: representative source → expected source-model schema."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source))
     model = result.value
@@ -100,10 +119,9 @@ async def test_every_claim_is_classified_and_its_evidence_points_at_real_passage
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """plan/02 → every claim carries exactly one classification and cites segments."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
 
     model = (await StageRunner(context).run(ExtractSourceTruth(source=source))).value
 
@@ -120,10 +138,9 @@ async def test_the_accepted_model_is_stored_as_the_stage_output(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """The artefact is the *validated* model, and it round-trips from storage."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source))
     execution = result.execution
@@ -142,10 +159,9 @@ async def test_the_stage_records_what_it_showed_the_model_and_what_it_withheld(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """plan/06 → included/excluded segments with reasons, budget and truncation."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source))
     execution = result.execution
@@ -163,11 +179,14 @@ async def test_the_stage_records_what_it_showed_the_model_and_what_it_withheld(
 async def test_a_source_over_the_budget_is_truncated_and_the_record_says_so(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
-    """What the model could not see explains as much as what it could (plan/03)."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    """What the model could not see explains as much as what it could (plan/03).
+
+    The scripted answer cites only the passages that fit, which is the whole point:
+    a budgeted run can only produce evidence from what it was actually shown.
+    """
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(BUDGETED_MODEL, source))
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source, token_budget=60))
     execution = result.execution
@@ -182,7 +201,7 @@ async def test_a_source_over_the_budget_is_truncated_and_the_record_says_so(
     excluded = next(i for i in selection.items if i.disposition is ContextDisposition.EXCLUDED)
     assert "budget" in excluded.reason
     # What was sent matches what was recorded: the prompt stops at the budget.
-    sent = clients[SHIPPED_PROVIDER].last_request
+    sent = model_client.last_request
     assert sent is not None
     kept = [i for i in selection.items if i.disposition is not ContextDisposition.EXCLUDED]
     assert all(item.reference in sent.prompt for item in kept)
@@ -201,12 +220,11 @@ async def test_evidence_citing_a_passage_that_does_not_exist_fails_the_stage(
     Not a schema failure — the response is well-formed — so the repair ladder
     cannot see it. The stage checks it against the document it actually sent.
     """
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
     payload = golden_json("source_model.json")
     payload["claims"][0]["evidence"][0]["segment_ids"] = ["S999"]
-    script(clients[SHIPPED_PROVIDER], with_segment_ids(payload, source))
+    script(model_client, with_segment_ids(payload, source))
 
     with pytest.raises(EvidenceError, match="S999"):
         await StageRunner(context).run(ExtractSourceTruth(source=source))
@@ -223,30 +241,26 @@ async def test_material_is_not_sent_to_a_provider_the_project_has_not_allowed(
     material has already crossed the wire has not protected anything.
     """
     constraints = CONSTRAINTS.model_copy(update={"allowed_providers": ("anthropic",)})
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=constraints)
+    context, model_client = scripted_context(db_session, snapshot_store, constraints=constraints)
     source = await ingest_golden(context)
 
     with pytest.raises(ProviderNotPermitted, match=SHIPPED_PROVIDER):
         await StageRunner(context).run(ExtractSourceTruth(source=source))
 
-    assert clients[SHIPPED_PROVIDER].received_requests == ()
+    assert model_client.received_requests == ()
 
 
 async def test_an_invalid_classification_is_repaired_by_the_phase_04_ladder(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """plan/06 LLM-contract: extraction handles invalid-schema → repair correctly."""
-    clients = {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model="golden")}
-    context = build_context(db_session, snapshot_store, clients=clients, constraints=CONSTRAINTS)
+    context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
     good = with_segment_ids(golden_json("source_model.json"), source)
     broken = json.loads(json.dumps(good))
     broken["claims"][0]["classification"] = "probably_true"
-    client = clients[SHIPPED_PROVIDER]
-    assert isinstance(client, FakeLLMClient)
-    client.script_response("extract_source_truth", broken)
-    client.script_response("extract_source_truth", good)
+    script(model_client, broken)
+    script(model_client, good)
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source))
     execution = result.execution
