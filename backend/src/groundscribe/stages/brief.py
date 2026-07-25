@@ -27,6 +27,7 @@ worse than no contract, because everyone downstream behaves as though it is ther
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from typing import ClassVar
 
 from groundscribe.domain import models as domain_models
@@ -96,7 +97,7 @@ class GenerateArticleBrief:
             execution, self._architecture_snapshot, role="content_architecture"
         )
 
-        required = required_qualifications(self._article, self._source_model)
+        required = required_qualifications(self._article.supporting_claim_ids, self._source_model)
         constraints = [
             constraint.description for constraint in self._source_model.publication_constraints
         ]
@@ -200,11 +201,17 @@ class GenerateArticleBrief:
         )
 
 
-def required_qualifications(article: ProposedArticle, source_model: SourceModel) -> frozenset[str]:
-    """The claims this article argues that the source model says need qualifying."""
+def required_qualifications(claim_ids: Iterable[str], source_model: SourceModel) -> frozenset[str]:
+    """Those of ``claim_ids`` the source model marked as needing qualification.
+
+    Used twice with different inputs, which is the whole reason it takes ids
+    rather than an article: the prompt is told what the *architecture* said the
+    article would argue, and the check is applied to what the brief actually
+    cited. A brief that reached for one more claim must qualify that one too.
+    """
     return frozenset(
         claim_id
-        for claim_id in article.supporting_claim_ids
+        for claim_id in claim_ids
         if (claim := source_model.claim(claim_id)) is not None and claim.qualification_required
     )
 
@@ -232,7 +239,7 @@ def check_brief(
         )
 
     cited_and_qualified = sorted(
-        (required | _qualified_among(brief.cited_claim_ids(), source_model))
+        (required | required_qualifications(brief.cited_claim_ids(), source_model))
         - set(brief.claims_requiring_qualification)
     )
     if cited_and_qualified:
@@ -259,15 +266,6 @@ def check_brief(
             f"the brief sets a length of {brief.target_length_words} words, but the project "
             f"constrains articles to {target}; length is the author's to set, not the model's"
         )
-
-
-def _qualified_among(claim_ids: frozenset[str], source_model: SourceModel) -> frozenset[str]:
-    """Those of ``claim_ids`` the source model marked as needing qualification."""
-    return frozenset(
-        claim_id
-        for claim_id in claim_ids
-        if (claim := source_model.claim(claim_id)) is not None and claim.qualification_required
-    )
 
 
 __all__ = [

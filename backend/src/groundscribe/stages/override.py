@@ -28,7 +28,7 @@ around this module cannot produce a silent replacement, which is the point.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -156,16 +156,7 @@ def _apply(
             "that edits nothing is a mistake, not a no-op"
         )
 
-    handlers = {
-        OverrideOperation.MERGE: _merge,
-        OverrideOperation.SPLIT: _split,
-        OverrideOperation.REMOVE: _remove,
-        OverrideOperation.REORDER: _reorder,
-        OverrideOperation.RENAME: _rename,
-        OverrideOperation.EDIT_THESIS: _edit_thesis,
-        OverrideOperation.REASSIGN_EVIDENCE: _reassign_evidence,
-    }
-    return handlers[command.operation](articles, command)
+    return _HANDLERS[command.operation](articles, command)
 
 
 def _merge(
@@ -583,6 +574,27 @@ def override_architecture(
         decision=decision,
         execution=execution,
     )
+
+
+#: One handler per operation, resolved by lookup rather than by a chain of
+#: branches: the seven are a closed set, and a table makes an unhandled member a
+#: KeyError at the call site instead of a silent no-op at the bottom of an
+#: if/elif. Declared after the handlers so they are defined when it is built.
+_HANDLERS: dict[
+    OverrideOperation,
+    Callable[
+        [list[ProposedArticle], OverrideCommand],
+        tuple[list[ProposedArticle], list[OverrideWarning]],
+    ],
+] = {
+    OverrideOperation.MERGE: _merge,
+    OverrideOperation.SPLIT: _split,
+    OverrideOperation.REMOVE: _remove,
+    OverrideOperation.REORDER: _reorder,
+    OverrideOperation.RENAME: _rename,
+    OverrideOperation.EDIT_THESIS: _edit_thesis,
+    OverrideOperation.REASSIGN_EVIDENCE: _reassign_evidence,
+}
 
 
 __all__ = [
