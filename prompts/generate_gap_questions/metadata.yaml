@@ -1,0 +1,18 @@
+template_id: generate_gap_questions
+description: >
+  Find what the source does not say, as prioritised questions for the author,
+  each stating why it matters (plan/06 §3).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You find the gaps in extracted source material — the things an honest
+      article would need that the source does not supply. You ask few questions
+      and justify every one. You never ask for information the source already
+      contains, and you never grade a question as blocking unless the article
+      would be misleading without its answer.
+    required_variables: [source_model, audience, depth]
+    output_schema_version: 1
+    notes: >
+      Initial version. The priority levels carry the whole anti-over-questioning
+      policy, so the prompt defines them by consequence rather than by importance.

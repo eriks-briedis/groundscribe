@@ -87,6 +87,10 @@ SIX_GAPS: dict[str, Any] = {
 
 NO_BLOCKING_GAPS: dict[str, Any] = {"schema_version": 1, "gaps": [gap("g3", "optional")]}
 
+#: The seeded project's author. Answers are attributed to a real user row: an
+#: intervention nobody can be identified as is not reviewable (plan/03).
+AUTHOR = "u1"
+
 
 @dataclass(frozen=True)
 class Extracted:
@@ -214,7 +218,7 @@ async def test_the_queue_offers_the_surfaced_questions_and_takes_all_six_respons
     # question each, no more and no fewer.
     responses = list(AnswerResponse)
     for row, response in zip(queue.pending, responses, strict=True):
-        answer = queue.respond(row, response=response, text="12ms", answered_by="ada")
+        answer = queue.respond(row, response=response, text="12ms", answered_by=AUTHOR)
         assert answer.response_type is response
 
     still_open = f"g{responses.index(AnswerResponse.DEFERRED) + 1}"
@@ -234,14 +238,14 @@ async def test_an_answer_retains_its_question_reason_gaps_text_and_execution(
         queue.pending[0],
         response=AnswerResponse.ANSWERED,
         text="Cold cache p99 was 690ms over the same seven-day window.",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
 
     assert answer.question == asked.question
     assert answer.why_it_matters == asked.why_it_matters
     assert answer.text == "Cold cache p99 was 690ms over the same seven-day window."
     assert answer.response_type is AnswerResponse.ANSWERED
-    assert answer.answered_by == "ada"
+    assert answer.answered_by == AUTHOR
     assert [addressed.id for addressed in answer.gaps] == [asked.id]
     assert answer.created_by_execution_id == queue.execution.id
     # A human control point, recorded as one (plan/03 → user interventions).
@@ -266,26 +270,26 @@ async def test_only_sendable_answers_reach_the_model(
         queue.pending[0],
         response=AnswerResponse.CONFIDENTIAL,
         text="Northwind's contract forbids naming them.",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
-    queue.respond(queue.pending[0], response=AnswerResponse.SKIPPED, text="", answered_by="ada")
+    queue.respond(queue.pending[0], response=AnswerResponse.SKIPPED, text="", answered_by=AUTHOR)
     queue.respond(
         queue.pending[0],
         response=AnswerResponse.UNKNOWN,
         text="never measured it",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
     queue.respond(
         queue.pending[0],
         response=AnswerResponse.PREMISE_INCORRECT,
         text="The parser was never the bottleneck; the AST walk was.",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
     queue.respond(
         queue.pending[0],
         response=AnswerResponse.ANSWERED,
         text="Cold cache p99 was 690ms.",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
 
     sendable = queue.sendable_answers()
@@ -308,9 +312,9 @@ async def test_answers_rebuild_the_source_model_with_a_visible_linked_diff(
         queue.pending[0],
         response=AnswerResponse.ANSWERED,
         text="Cold cache p99 was 690ms.",
-        answered_by="ada",
+        answered_by=AUTHOR,
     )
-    queue.submit(submitted_by="ada")
+    queue.submit(submitted_by=AUTHOR)
     assert context.engine.state is WorkflowState.SOURCE_MODEL_EXTRACTING
 
     amended = with_segment_ids(golden_json("source_model.json"), extracted.source)
@@ -348,9 +352,9 @@ async def test_the_rebuilt_model_supersedes_its_parent_rather_than_replacing_it(
 
     queue = open_question_queue(context)
     answer = queue.respond(
-        queue.pending[0], response=AnswerResponse.ANSWERED, text="690ms", answered_by="ada"
+        queue.pending[0], response=AnswerResponse.ANSWERED, text="690ms", answered_by=AUTHOR
     )
-    queue.submit(submitted_by="ada")
+    queue.submit(submitted_by=AUTHOR)
     script(model_client, with_segment_ids(golden_json("source_model.json"), extracted.source))
     rebuilt = await StageRunner(context).run(
         ExtractSourceTruth(

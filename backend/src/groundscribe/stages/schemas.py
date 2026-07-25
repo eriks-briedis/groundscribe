@@ -29,7 +29,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from groundscribe.domain.enums import ClaimClassification
+from groundscribe.domain.enums import ClaimClassification, GapPriority
 
 
 class _Output(BaseModel):
@@ -169,13 +169,57 @@ class SourceModel(_Output):
         return frozenset(cited)
 
 
+class SourceGapQuestion(BaseModel):
+    """One thing the source does not say, phrased as a question for the author.
+
+    ``why_it_matters`` is mandatory and non-blank. plan/06 requires every surfaced
+    question to state why it matters, and enforcing it here means a model that
+    forgets is told so through the repair ladder — where a stage-level check would
+    only tell the author, who is the person the reason exists for.
+
+    ``group`` is how the risk plan/06 names — over-questioning — is mitigated at
+    the presentation layer: related questions arrive together instead of as six
+    separate demands.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    question: str
+    why_it_matters: str
+    priority: GapPriority
+    addresses: tuple[str, ...] = ()
+    group: str = ""
+
+    @model_validator(mode="after")
+    def _questions_justify_themselves(self) -> Self:
+        if not self.why_it_matters.strip():
+            raise ValueError(
+                f"gap {self.id!r} must say why it matters: a question the author cannot "
+                "judge the importance of is a question they will not answer"
+            )
+        return self
+
+
+class GapReport(_Output):
+    """Everything extraction could not settle from the source alone (phase 06 §3)."""
+
+    gaps: tuple[SourceGapQuestion, ...] = ()
+
+    def by_priority(self, priority: GapPriority) -> tuple[SourceGapQuestion, ...]:
+        """The gaps at one priority, in the order the model produced them."""
+        return tuple(gap for gap in self.gaps if gap.priority is priority)
+
+
 __all__ = [
     "DevelopmentEvent",
     "Evidence",
     "ExtractedClaim",
+    "GapReport",
     "Lesson",
     "PotentialArgument",
     "ProductFact",
     "PublicationConstraint",
+    "SourceGapQuestion",
     "SourceModel",
 ]

@@ -81,6 +81,12 @@ class StageResult[T]:
     ``usage`` totals what the stage's model calls consumed, so cost is answerable
     per stage without summing invocations by hand.
 
+    ``exit_action`` lets a stage choose its outgoing edge from what it *found*
+    rather than declaring it up front. Gap analysis is the case that needs it:
+    whether the run parks for the author or completes the extraction depends on
+    whether anything blocking is missing, which is exactly what the stage
+    computes. ``None`` means "take the edge the stage declared".
+
     ``execution`` is filled in by the runner, not by the stage. A stage is handed
     its execution and should not have to remember to hand it back, and a result
     naming an execution it did not run under would be worse than one naming none.
@@ -91,6 +97,7 @@ class StageResult[T]:
     usage: TokenUsage = field(default_factory=TokenUsage)
     invocations: tuple[models.ModelInvocation, ...] = ()
     detail: dict[str, Any] = field(default_factory=dict)
+    exit_action: WorkflowAction | None = None
     execution: models.StageExecution | None = None
 
 
@@ -168,10 +175,9 @@ class StageRunner:
             raise
 
         context.recorder.complete_stage(execution)
-        if stage.exit_action is not None:
-            context.engine.apply(
-                stage.exit_action, actor_id=context.actor_id, artifacts=result.outputs
-            )
+        exit_action = result.exit_action or stage.exit_action
+        if exit_action is not None:
+            context.engine.apply(exit_action, actor_id=context.actor_id, artifacts=result.outputs)
         return replace(result, execution=execution)
 
 

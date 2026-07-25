@@ -1,0 +1,28 @@
+Find what this source model does not settle, for an article aimed at
+{{ audience }} at {{ depth }} depth.
+
+Source model:
+{{ source_model }}
+
+Grade every gap by what happens if it is never answered:
+
+- blocking — the article would be misleading, unsupported or unpublishable
+  without the answer. A number that only holds under conditions the source does
+  not state is blocking; so is a claim the source cannot support.
+- high_value — the article would be noticeably better with the answer, and is
+  honest without it.
+- optional — nice to have. Colour, background, an aside.
+
+Rules:
+
+- Ask nothing the source model already answers. Re-reading is not a gap.
+- Every question states why it matters, in terms of what it changes about the
+  article. "For completeness" is not a reason.
+- Group related questions under a short shared group name, so the author answers
+  a topic rather than a list.
+- Reference the claims a gap affects by their claim id, in `addresses`.
+- Prefer few blocking questions. Every blocking question stops the pipeline and
+  costs the author's attention, and an author facing fifteen questions answers
+  none of them.
+
+Return a single JSON object matching the required schema.

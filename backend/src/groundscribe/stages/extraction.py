@@ -28,13 +28,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-from groundscribe.domain.enums import ArtifactType
-from groundscribe.domain.models import SourceSegment
+from groundscribe.domain import models as domain_models
+from groundscribe.domain.enums import AnswerResponse, ArtifactType
+from groundscribe.domain.models import ArtifactSnapshot, SourceSegment
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ContextDisposition
 from groundscribe.provenance.schemas import ContextCandidate
 from groundscribe.stages.base import PipelineContext, StageResult
+from groundscribe.stages.diffing import structured_diff
 from groundscribe.stages.errors import EvidenceError, ProviderNotPermitted
 from groundscribe.stages.ingestion import IngestedSource
 from groundscribe.stages.schemas import SourceModel
@@ -148,9 +150,13 @@ class ExtractSourceTruth:
     """
 
     name: ClassVar[str] = EXTRACTION_STAGE
-    impl_version: ClassVar[str] = "1.0"
-    entry_action: ClassVar[WorkflowAction | None] = WorkflowAction.EXTRACT_SOURCE_MODEL
+    impl_version: ClassVar[str] = "1.1"
     exit_action: ClassVar[WorkflowAction | None] = None
+
+    #: An instance attribute, not a class one: extraction is entered from
+    #: ``SOURCE_INGESTED`` the first time and re-entered from the answer pause,
+    #: where the person answering has already taken the edge (phase 06 §3).
+    entry_action: WorkflowAction | None
 
     def __init__(
         self,
@@ -159,11 +165,19 @@ class ExtractSourceTruth:
         token_budget: int = DEFAULT_TOKEN_BUDGET,
         template_version: str | None = None,
         override: RouteOverride | None = None,
+        entry_action: WorkflowAction | None = WorkflowAction.EXTRACT_SOURCE_MODEL,
+        answers: Sequence[domain_models.UserAnswer] = (),
+        previous: SourceModel | None = None,
+        previous_snapshot: ArtifactSnapshot | None = None,
     ) -> None:
         self._source = source
         self._token_budget = token_budget
         self._template_version = template_version
         self._override = override
+        self.entry_action = entry_action
+        self._answers = tuple(answers)
+        self._previous = previous
+        self._previous_snapshot = previous_snapshot
 
     async def run(
         self, context: PipelineContext, execution: models.StageExecution
@@ -199,6 +213,7 @@ class ExtractSourceTruth:
                 "audience": context.constraints.audience,
                 "platform": context.constraints.platform,
                 "depth": context.constraints.depth.value,
+                "answers": [_render_answer(answer) for answer in self._sendable_answers()],
             },
             schema=SourceModel,
             override=self._override,
@@ -211,17 +226,73 @@ class ExtractSourceTruth:
             artifact_type=ArtifactType.SOURCE_MODEL,
             content=model.model_dump(mode="json"),
             role="source_model",
+            # A rebuild forks from the model it replaces, so the earlier version
+            # stays readable and comparable (plan/00 → no silent mutation).
+            parent=self._previous_snapshot,
         )
+        outputs = (snapshot, *self._record_diff(context, execution, model))
         return StageResult(
             value=model,
-            outputs=(snapshot,),
+            outputs=outputs,
             invocations=generated.attempts,
             detail={
                 "claims": len(model.claims),
                 "segments_offered": len(window.selected),
                 "token_budget": window.token_budget,
+                "answers_applied": len(self._sendable_answers()),
             },
         )
+
+    def _sendable_answers(self) -> tuple[domain_models.UserAnswer, ...]:
+        """The answers whose text may go into the prompt.
+
+        Filtered here as well as in the queue: this is the point where the text
+        would actually cross the wire, and a guard that only lives at the caller
+        is a guard the next caller will forget.
+        """
+        return tuple(answer for answer in self._answers if answer.response_type.may_be_sent)
+
+    def _record_diff(
+        self,
+        context: PipelineContext,
+        execution: models.StageExecution,
+        model: SourceModel,
+    ) -> tuple[ArtifactSnapshot, ...]:
+        """Store what this rebuild changed, and link it to the answers that caused it.
+
+        The diff is an artefact rather than a computed view because it is what a
+        person reviews and what an answer record points at. Linking it back to the
+        answers completes their provenance: the answer, and what it did.
+        """
+        if self._previous is None:
+            return ()
+        diff = structured_diff(
+            self._previous.model_dump(mode="json"), model.model_dump(mode="json")
+        )
+        snapshot = context.recorder.record_output(
+            execution,
+            artifact_type=ArtifactType.SOURCE_MODEL_DIFF,
+            content=diff.model_dump(mode="json"),
+            role="source_model_diff",
+        )
+        for answer in self._answers:
+            answer.diff_snapshot_id = snapshot.id
+        context.session.flush()
+        return (snapshot,)
+
+
+def _render_answer(answer: domain_models.UserAnswer) -> dict[str, object]:
+    """One answer in the shape the prompt renders it.
+
+    A corrected premise is flagged rather than presented as an answer: the model
+    has to *stop assuming* the premise, which is a different instruction from
+    recording a new fact.
+    """
+    return {
+        "question": answer.question,
+        "text": answer.text,
+        "premise_incorrect": answer.response_type is AnswerResponse.PREMISE_INCORRECT,
+    }
 
 
 def require_permitted_provider(

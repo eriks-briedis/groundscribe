@@ -71,6 +71,29 @@ stages:
       structured_output_mode: json_mode
       timeout_seconds: 180.0
 
+  # Gap analysis is a judgement about *absence*, which is harder than extraction
+  # and much cheaper to get wrong in the safe direction: an unnecessary question
+  # costs the author a moment, a missed blocking gap costs the article's honesty.
+  # Same strong model, same determinism, smaller output.
+  generate_gap_questions:
+    rationale: >
+      Judging what is missing needs the strong model; the cost of a false
+      positive is one ignored question, of a false negative a misleading article.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 240.0
+    fallback:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.0
+      structured_output_mode: json_mode
+      timeout_seconds: 180.0
+
   # Prose, not structure: some sampling breadth is wanted, and the output is
   # disposable by design (plan/00 — generated prose is not source truth).
   draft_article:

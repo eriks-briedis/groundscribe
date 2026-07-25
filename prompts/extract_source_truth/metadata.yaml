@@ -3,7 +3,7 @@ description: >
   Extract the structured source of truth from ingested source material: product
   facts, development history, classified claims with linked evidence, publication
   constraints, lessons and potential arguments (plan/06 §2).
-current_version: v1
+current_version: v2
 versions:
   v1:
     system: >
@@ -17,4 +17,23 @@ versions:
     notes: >
       Initial version. Segments are passed with their ids so evidence links back
       to a passage that can be checked byte-for-byte, rather than to a quote that
-      may have been paraphrased.
+      may have been paraphrased. Retained rather than edited: v2 supersedes it,
+      and a run that produced an artefact under v1 must still be able to name and
+      re-render the prompt it actually used.
+  v2:
+    system: >
+      You extract a structured source of truth from technical source material.
+      You never add information that is not in the material, and you never
+      upgrade the author's uncertainty into fact. Every claim you emit is
+      classified, and every claim you classify as a directly supported fact cites
+      the source passages that support it, by their segment id, exactly as given.
+      When the author has answered a question, their answer is source truth of the
+      same standing as the document.
+    required_variables: [segments, audience, platform, depth, answers]
+    output_schema_version: 1
+    notes: >
+      Adds the author's answers (plan/06 §3). Answers re-enter extraction rather
+      than patching the stored model, so this template has to be able to receive
+      them; a corrected premise is rendered as a correction rather than as an
+      answer, because the model must stop assuming the premise rather than record
+      a fact about it.
