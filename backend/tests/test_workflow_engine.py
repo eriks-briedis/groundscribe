@@ -121,6 +121,8 @@ def test_every_transition_emits_a_decision_naming_its_policy(flow: WorkflowEngin
     assert decision.outcome == S.SOURCE_MODEL_EXTRACTING.value
     assert decision.inputs["from"] == S.SOURCE_INGESTED.value
     assert decision.inputs["action"] == A.EXTRACT_SOURCE_MODEL.value
+    assert recorded.action is A.EXTRACT_SOURCE_MODEL
+    assert recorded.state is S.SOURCE_MODEL_EXTRACTING
 
 
 def test_a_transition_carries_the_edge_rationale_into_the_record(
@@ -181,7 +183,9 @@ def test_a_routing_decision_identifies_the_policy_that_made_it(
 ) -> None:
     """plan/05: a routing decision must identify its triggering policy or actor."""
     flow = build_engine(recorder, snapshot_store, state=S.REVISION_REQUIRED)
-    decision = flow.route(C.STYLE_ISSUE).decision
+    recorded = flow.route(C.STYLE_ISSUE)
+    assert recorded.state is S.VOICE_ALIGNING
+    decision = recorded.decision
     assert decision.decision_type == "revision_routing"
     assert decision.decided_by_type is ActorType.POLICY
     assert decision.policy_version == "test-1"
@@ -216,6 +220,7 @@ def test_an_exhausted_limit_records_the_stall_and_asks_for_a_person(
 
     recorded = flow.route(C.SUBSTANTIVE_ISSUE)
     assert recorded.route.escalated
+    assert flow.is_paused
     assert recorded.decision.outcome == S.STALLED.value
     assert recorded.decision.rationale
     assert any(
@@ -319,6 +324,26 @@ def test_an_approved_architecture_cannot_be_replaced_silently(
     assert flow.state is S.ARCHITECTURE_APPROVED
 
 
+def test_carrying_the_approved_architecture_forward_is_not_a_mutation(
+    recorder: ProvenanceRecorder, snapshot_store: SnapshotStore
+) -> None:
+    """Later stages hand the approved architecture along; that is the normal case."""
+    flow = build_engine(recorder, snapshot_store, state=S.ARCHITECTURE_REVIEW_REQUIRED)
+    approved = approve_architecture(flow, snapshot_store)
+    assert flow.apply(A.GENERATE_BRIEF, artifacts=(approved,)).state is S.BRIEF_GENERATING
+
+
+def test_other_artefacts_pass_the_architecture_and_lineage_guards(
+    recorder: ProvenanceRecorder, snapshot_store: SnapshotStore
+) -> None:
+    """Guards key on artefact type; a brief travelling alongside is not an
+    architecture change and not an article version."""
+    flow = build_engine(recorder, snapshot_store, state=S.ARCHITECTURE_REVIEW_REQUIRED)
+    approve_architecture(flow, snapshot_store)
+    brief = snapshot(flow, snapshot_store, ArtifactType.ARTICLE_BRIEF, b'{"scope":"one article"}')
+    assert flow.apply(A.GENERATE_BRIEF, artifacts=(brief,)).state is S.BRIEF_GENERATING
+
+
 def test_a_forked_architecture_still_needs_an_override_record(
     recorder: ProvenanceRecorder, snapshot_store: SnapshotStore
 ) -> None:
@@ -384,7 +409,10 @@ def test_a_successor_article_version_must_retain_its_lineage(
     flow = build_engine(recorder, snapshot_store, state=S.DRAFT_GENERATING)
     first = snapshot(flow, snapshot_store, ArtifactType.ARTICLE_VERSION, b'{"draft":1}')
     flow.apply(A.SUBMIT_DRAFT, artifacts=(first,))
-    flow.apply(A.REQUIRE_REVISION_PLAN)
+    # The review that demands the rewrite travels with the transition; only
+    # article versions answer to the lineage guard.
+    review = snapshot(flow, snapshot_store, ArtifactType.REVIEW, b'{"verdict":"revise"}')
+    flow.apply(A.REQUIRE_REVISION_PLAN, artifacts=(review,))
     flow.apply(A.APPROVE_REVISION_PLAN, actor_id="ada", actor_type=ActorType.USER)
 
     orphaned = snapshot(flow, snapshot_store, ArtifactType.ARTICLE_VERSION, b'{"draft":2}')
@@ -404,6 +432,8 @@ def test_export_must_use_the_version_that_passed_validation(
     flow = build_engine(recorder, snapshot_store, state=S.FINAL_VALIDATING)
     passed = snapshot(flow, snapshot_store, ArtifactType.ARTICLE_VERSION, b'{"final":1}')
     flow.apply(A.VALIDATION_PASSED, artifacts=(passed,))
+    assert flow.validated_version is not None
+    assert flow.validated_version.id == passed.id
 
     other = snapshot(
         flow, snapshot_store, ArtifactType.ARTICLE_VERSION, b'{"final":2}', parent=passed

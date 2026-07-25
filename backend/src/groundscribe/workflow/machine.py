@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 
 from groundscribe.provenance.enums import ActorType
 from groundscribe.workflow.errors import (
-    AmbiguousTransition,
     HumanActionRequired,
     IllegalTransition,
 )
@@ -217,6 +216,21 @@ class WorkflowMachine:
         the engine, acting as a policy, can never step past a review state, but
         a person driving the run by hand is not locked out of ordinary progress.
         """
+        if action is WorkflowAction.ROUTE_REVISION:
+            raise IllegalTransition(
+                "route_revision cannot be applied directly; call route() so the failure "
+                "resolves through the policy and charges the limit that bounds it"
+            )
+        return self._apply(action, target=target, actor=actor)
+
+    def _apply(
+        self,
+        action: WorkflowAction,
+        *,
+        target: WorkflowState | None = None,
+        actor: ActorType = ActorType.POLICY,
+    ) -> TransitionOutcome:
+        """Apply an already-authorised action; the ledger's own entry point."""
         transition = self._resolve(action, target)
         if transition.actor is ActorType.USER and actor is not ActorType.USER:
             raise HumanActionRequired(
@@ -269,7 +283,7 @@ class WorkflowMachine:
                 )
                 return RouteResult(
                     outcome=outcome,
-                    transition=self.apply(WorkflowAction.STALL, target=WorkflowState.STALLED),
+                    transition=self._apply(WorkflowAction.STALL, target=WorkflowState.STALLED),
                     escalated=True,
                     reason=reason,
                 )
@@ -280,7 +294,7 @@ class WorkflowMachine:
             # nobody has looked at yet.
             approval = None
 
-        transition = self.apply(WorkflowAction.ROUTE_REVISION, target=outcome.target)
+        transition = self._apply(WorkflowAction.ROUTE_REVISION, target=outcome.target)
         if limit is not None:
             self.ledger.spend(limit)
         return RouteResult(outcome=outcome, transition=transition, approval=approval)
@@ -303,7 +317,7 @@ class WorkflowMachine:
             return StagnationCheck(findings=())
         return StagnationCheck(
             findings=findings,
-            transition=self.apply(WorkflowAction.STALL, target=WorkflowState.STALLED),
+            transition=self._apply(WorkflowAction.STALL, target=WorkflowState.STALLED),
         )
 
     def _resolve(self, action: WorkflowAction, target: WorkflowState | None) -> Transition:
@@ -320,14 +334,12 @@ class WorkflowMachine:
                 f"{action.value} is not available in {self.state.value} (offered: {offered})"
             )
 
-        if target is None:
-            if len(candidates) > 1:
-                choices = ", ".join(sorted(state.value for state in candidates))
-                raise AmbiguousTransition(
-                    f"{action.value} from {self.state.value} leads to several states "
-                    f"({choices}); name the target"
-                )
-            target = candidates[0]
+        # Routing is the only action with several destinations, and it is
+        # reachable only through `route()`, which always names one — so every
+        # action arriving here has exactly one target. `test_workflow_states`
+        # asserts that precondition against the table, which is where a future
+        # multi-destination action would have to answer for itself.
+        target = target if target is not None else candidates[0]
 
         transition = transition_for(self.state, action, target)
         if transition is None:

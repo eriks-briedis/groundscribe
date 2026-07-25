@@ -18,10 +18,6 @@ class IllegalTransition(WorkflowError):
     """The transition table has no such edge from the current state."""
 
 
-class AmbiguousTransition(WorkflowError):
-    """The action is legal but leads several places and no target was named."""
-
-
 class HumanActionRequired(WorkflowError):
     """The edge exists but only a person may take it — the run is parked."""
 
@@ -51,7 +47,6 @@ class ConfidentialMaterialError(WorkflowError):
 
 
 __all__ = [
-    "AmbiguousTransition",
     "ArtifactProvenanceError",
     "AttributionRequired",
     "ConfidentialMaterialError",

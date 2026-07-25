@@ -18,7 +18,6 @@ import pytest
 
 from groundscribe.provenance.enums import ActorType
 from groundscribe.workflow.errors import (
-    AmbiguousTransition,
     HumanActionRequired,
     IllegalTransition,
 )
@@ -70,11 +69,11 @@ def test_a_rejected_transition_leaves_the_state_untouched() -> None:
 
 
 def test_a_legal_action_with_an_illegal_target_is_rejected() -> None:
-    """``ROUTE_REVISION`` is legal here, but never to ``COMPLETED``."""
-    machine = WorkflowMachine(state=S.REVISION_REQUIRED)
+    """``VALIDATE_FINAL`` is legal here, but it never leads to ``COMPLETED``."""
+    machine = WorkflowMachine(state=S.PASSED)
     with pytest.raises(IllegalTransition):
-        machine.apply(A.ROUTE_REVISION, target=S.COMPLETED)
-    assert machine.state is S.REVISION_REQUIRED
+        machine.apply(A.VALIDATE_FINAL, target=S.COMPLETED)
+    assert machine.state is S.PASSED
 
 
 def test_terminal_states_accept_nothing() -> None:
@@ -89,11 +88,16 @@ def test_a_single_target_action_needs_no_target() -> None:
     assert machine.apply(A.VALIDATE_FINAL).state is S.FINAL_VALIDATING
 
 
-def test_a_multi_target_action_without_a_target_is_ambiguous() -> None:
-    """Guessing one of seven destinations would make routing unenforceable."""
+def test_routing_must_go_through_route() -> None:
+    """``apply`` refuses ``ROUTE_REVISION`` and says where it belongs.
+
+    Two things would go wrong otherwise: the machine would have to guess one of
+    seven destinations, and the move would skip the rewrite limit that bounds
+    it. ``route()`` resolves both through the policy.
+    """
     machine = WorkflowMachine(state=S.REVISION_REQUIRED)
-    with pytest.raises(AmbiguousTransition):
-        machine.apply(A.ROUTE_REVISION)
+    with pytest.raises(IllegalTransition, match="route"):
+        machine.apply(A.ROUTE_REVISION, target=S.VOICE_ALIGNING)
     assert machine.state is S.REVISION_REQUIRED
 
 

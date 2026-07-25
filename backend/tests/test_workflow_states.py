@@ -257,6 +257,23 @@ def test_transition_for_disambiguates_a_multi_target_action() -> None:
         assert found.target is target
 
 
+def test_routing_is_the_only_action_with_several_destinations() -> None:
+    """Every other ``(state, action)`` pair leads exactly one place.
+
+    The machine relies on this: it may take the sole target when none is named,
+    and only ``ROUTE_REVISION`` — which goes through the routing policy — is
+    allowed to be ambiguous. A future action with two destinations fails here
+    first, where whoever adds it has to say how it gets disambiguated.
+    """
+    ambiguous = {
+        (state, action)
+        for state in WorkflowState
+        for action in available_actions(state)
+        if len(targets_for(state, action)) > 1
+    }
+    assert ambiguous == {(WorkflowState.REVISION_REQUIRED, WorkflowAction.ROUTE_REVISION)}
+
+
 def test_targets_for_an_unavailable_action_is_empty() -> None:
     assert targets_for(WorkflowState.SOURCE_INGESTED, WorkflowAction.SCORE_PASSED) == ()
 
