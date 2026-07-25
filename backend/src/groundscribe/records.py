@@ -28,6 +28,7 @@ EDITORIAL_TABLES: frozenset[str] = frozenset(
     {
         "users",
         "projects",
+        "project_constraints",
         "source_documents",
         "source_segments",
         "source_claims",

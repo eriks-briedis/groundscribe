@@ -15,7 +15,14 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from groundscribe.domain.enums import BranchStatus, ClaimClassification, SelectionStatus
+from groundscribe.domain.enums import (
+    ArticleDepth,
+    BranchStatus,
+    ClaimClassification,
+    SegmentKind,
+    SelectionStatus,
+    SourceFormat,
+)
 
 
 class _Entity(BaseModel):
@@ -53,21 +60,82 @@ class Project(_Entity):
     description: str = ""
 
 
+class EditorialConstraints(BaseModel):
+    """The bounds a project publishes under (phase 06 §1).
+
+    A *value*, not a record: :class:`ProjectConstraints` is the versioned row that
+    holds one of these. Splitting them is what lets ingestion ask "are these the
+    constraints already in force?" by comparing values, and version them only when
+    the answer is no.
+
+    ``allowed_providers`` is an allow-list. A project that has not named a
+    provider has not consented to it seeing the material, so the default is that
+    nothing external may — local-first by default (plan/00), enforced end to end
+    in phase 13.
+    """
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    audience: str
+    platform: str
+    depth: ArticleDepth
+    target_length_words: int | None = None
+    first_person_allowed: bool = True
+    confidential_names: tuple[str, ...] = ()
+    allowed_providers: tuple[str, ...] = ()
+    trace_retention_consent: bool = False
+
+    def permits_provider(self, provider: str) -> bool:
+        """Whether ``provider`` may be sent this project's material."""
+        return provider in self.allowed_providers
+
+
+class ProjectConstraints(_Lineage, EditorialConstraints):
+    """One version of a project's constraints.
+
+    Branching rather than editing: a brief generated under an 1800-word limit was
+    generated under that limit, and rewriting the row would make the artefact's
+    own record wrong.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: str
+
+
 class SourceDocument(_Lineage):
-    """A piece of raw source material; a re-ingested version branches from it."""
+    """A piece of raw source material; a re-ingested version branches from it.
+
+    ``content_hash`` addresses the *whole* document as ingested, so a claim of the
+    form "this was extracted from that source" is checkable byte-for-byte;
+    ``snapshot_id`` points at the stored content itself.
+    """
 
     project_id: str
     title: str
     media_type: str = "text/plain"
+    source_format: SourceFormat = SourceFormat.PLAIN_TEXT
     uri: str | None = None
+    content_hash: str = ""
+    snapshot_id: str | None = None
+    confidential: bool = False
 
 
 class SourceSegment(_Entity):
-    """An addressable span of a source document; claims cite these."""
+    """An addressable span of a source document; claims cite these.
+
+    The character offsets are into the document as ingested, and are what makes a
+    citation verifiable rather than merely plausible: the text can be sliced back
+    out of the original and compared to ``content_hash``.
+    """
 
     document_id: str
     ordinal: int
     text: str
+    kind: SegmentKind = SegmentKind.PARAGRAPH
+    content_hash: str = ""
+    char_start: int = 0
+    char_end: int = 0
 
 
 class SourceClaim(_Entity):

@@ -28,6 +28,48 @@ class ClaimClassification(StrEnum):
     UNSUPPORTED_CLAIM = "unsupported_claim"
 
 
+class SourceFormat(StrEnum):
+    """How a source document arrived, which decides how it is segmented.
+
+    From *Editorial workflow §1 Source ingestion*: Markdown, plain text and pasted
+    notes are the three supported inputs. The distinction is kept after parsing
+    because it explains the segmentation: a heading in Markdown is a structural
+    fact, whereas the same line in pasted notes is just a line.
+    """
+
+    MARKDOWN = "markdown"
+    PLAIN_TEXT = "plain_text"
+    PASTED_NOTES = "pasted_notes"
+
+
+class SegmentKind(StrEnum):
+    """What one parsed passage of a source document is.
+
+    Recorded per segment because extraction treats them differently — a code
+    block is evidence to quote verbatim, a heading is structure, a blockquote is
+    usually someone else's words and may not be attributable to the author.
+    """
+
+    HEADING = "heading"
+    PARAGRAPH = "paragraph"
+    LIST = "list"
+    CODE = "code"
+    QUOTE = "quote"
+
+
+class ArticleDepth(StrEnum):
+    """How deep the finished article goes, declared per project.
+
+    A project constraint rather than a stage decision: it bounds scope for every
+    stage at once (extraction's token budget, the architecture's article count,
+    the brief's length), and letting each stage infer it would let them disagree.
+    """
+
+    OVERVIEW = "overview"
+    PRACTITIONER = "practitioner"
+    DEEP_DIVE = "deep_dive"
+
+
 class BranchStatus(StrEnum):
     """Lifecycle of one branch in an artefact's lineage.
 

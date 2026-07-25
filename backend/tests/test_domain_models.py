@@ -22,7 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.domain import models, schemas
-from groundscribe.domain.enums import ArtifactType, BranchStatus, ClaimClassification
+from groundscribe.domain.enums import (
+    ArticleDepth,
+    ArtifactType,
+    BranchStatus,
+    ClaimClassification,
+)
 from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
 
@@ -44,6 +49,32 @@ def _seed_connected_graph(session: Session) -> dict[str, schemas._Entity]:
 
     project = schemas.Project(id="p1", user_id="u1", title="Caching write-up")
     add("Project", project, models.Project(**project.model_dump()))
+
+    # Tuple-valued constraints are JSON columns; the ORM takes lists and the
+    # schema validates them back into tuples, which is exactly what parity has to
+    # prove for this entity (phase 06 §1).
+    constraints = schemas.ProjectConstraints(
+        id="pc1",
+        project_id="p1",
+        audience="senior backend engineers",
+        platform="personal blog",
+        depth=ArticleDepth.PRACTITIONER,
+        target_length_words=1800,
+        confidential_names=("Northwind",),
+        allowed_providers=("ollama",),
+        trace_retention_consent=True,
+    )
+    add(
+        "ProjectConstraints",
+        constraints,
+        models.ProjectConstraints(
+            **constraints.model_dump()
+            | {
+                "confidential_names": list(constraints.confidential_names),
+                "allowed_providers": list(constraints.allowed_providers),
+            }
+        ),
+    )
 
     doc = schemas.SourceDocument(id="d1", project_id="p1", title="Benchmark notes")
     add("SourceDocument", doc, models.SourceDocument(**doc.model_dump()))
@@ -114,6 +145,7 @@ def _seed_connected_graph(session: Session) -> dict[str, schemas._Entity]:
 SCHEMA_FOR: dict[str, type[BaseModel]] = {
     "User": schemas.User,
     "Project": schemas.Project,
+    "ProjectConstraints": schemas.ProjectConstraints,
     "SourceDocument": schemas.SourceDocument,
     "SourceSegment": schemas.SourceSegment,
     "SourceClaim": schemas.SourceClaim,

@@ -24,16 +24,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import JSON as JSONColumn
 from sqlalchemy import Column, ForeignKey, Integer, String, Table
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from groundscribe.db import Base, enum_column
 from groundscribe.domain.enums import (
+    ArticleDepth,
     ArtifactType,
     BranchStatus,
     ClaimClassification,
+    SegmentKind,
     SelectionStatus,
+    SourceFormat,
 )
 
 
@@ -97,15 +101,49 @@ class Project(EntityMixin, Base):
     user: Mapped[User] = relationship()
 
 
+class ProjectConstraints(LineageMixin, EntityMixin, Base):
+    """One version of the bounds a project publishes under (phase 06 §1).
+
+    Lineage rather than in-place edits: a brief generated under an 1800-word limit
+    *was* generated under that limit, and rewriting the row would make the
+    artefact's own record wrong. The list-valued constraints are JSON columns —
+    they are read as a whole, never joined on, and two extra tables would buy
+    nothing but joins.
+    """
+
+    __tablename__ = "project_constraints"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    audience: Mapped[str] = mapped_column(String, nullable=False)
+    platform: Mapped[str] = mapped_column(String, nullable=False)
+    depth: Mapped[ArticleDepth] = mapped_column(enum_column(ArticleDepth), nullable=False)
+    target_length_words: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    first_person_allowed: Mapped[bool] = mapped_column(default=True, nullable=False)
+    confidential_names: Mapped[list[str]] = mapped_column(JSONColumn, default=list, nullable=False)
+    allowed_providers: Mapped[list[str]] = mapped_column(JSONColumn, default=list, nullable=False)
+    trace_retention_consent: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    project: Mapped[Project] = relationship()
+
+
 class SourceDocument(LineageMixin, EntityMixin, Base):
     __tablename__ = "source_documents"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     media_type: Mapped[str] = mapped_column(String, default="text/plain", nullable=False)
+    source_format: Mapped[SourceFormat] = mapped_column(
+        enum_column(SourceFormat), default=SourceFormat.PLAIN_TEXT, nullable=False
+    )
     uri: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String, default="", nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
+    confidential: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     project: Mapped[Project] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
 class SourceSegment(EntityMixin, Base):
@@ -114,6 +152,14 @@ class SourceSegment(EntityMixin, Base):
     document_id: Mapped[str] = mapped_column(ForeignKey("source_documents.id"), nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[SegmentKind] = mapped_column(
+        enum_column(SegmentKind), default=SegmentKind.PARAGRAPH, nullable=False
+    )
+    content_hash: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # Offsets into the document as ingested: what makes a citation verifiable
+    # rather than merely plausible.
+    char_start: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     document: Mapped[SourceDocument] = relationship()
     claims: Mapped[list[SourceClaim]] = relationship(
