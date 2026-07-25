@@ -47,6 +47,19 @@ routing-policy version it ran under, and every workflow transition records the
 workflow-policy version behind it, so a change here never makes an existing
 provenance record ambiguous.
 
+A superseded prompt version is kept rather than deleted: a run that produced an
+artefact under `v1` must still be able to name and re-render the prompt it
+actually used, which is why `metadata.yaml` declares `current_version` instead of
+the store inferring it from the highest file on disk.
+
+### Golden data
+
+`evaluations/golden/` holds representative source material and the structured
+output a good model returns for it — the same data phase 12's evaluation suite
+scores against. Golden responses reference source segments by label (`S0`, `S1`,
+…) because ids are generated per run; the tests substitute the real ids of a
+freshly ingested document.
+
 ## Tech stack (fixed by spec)
 
 - **Backend:** Python 3.12+, FastAPI, Pydantic, SQLAlchemy, Alembic, Jinja2, Typer.

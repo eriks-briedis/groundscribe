@@ -21,13 +21,24 @@ import pytest
 from sqlalchemy.orm import Session
 
 from groundscribe.domain.enums import ArtifactType
+from groundscribe.llm.routing import default_routing_policy
+from groundscribe.prompts import PromptStore, prompts_root
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, ExecutionStatus
+from groundscribe.stages.architecture import ARCHITECTURE_STAGE
 from groundscribe.stages.base import PipelineContext, PipelineStage, StageResult, StageRunner
+from groundscribe.stages.brief import BRIEF_STAGE
+from groundscribe.stages.extraction import EXTRACTION_STAGE
+from groundscribe.stages.questions import GAP_STAGE
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.errors import ArtifactProvenanceError
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from stage_helpers import build_context
+
+#: The phase-06 stages that call a model. Each one's name is simultaneously its
+#: prompt template id and its routing key, so this tuple is the whole list of
+#: names that must exist in three places at once.
+MODEL_STAGES = (EXTRACTION_STAGE, GAP_STAGE, ARCHITECTURE_STAGE, BRIEF_STAGE)
 
 
 class _RecordingStage:
@@ -180,3 +191,26 @@ async def test_a_stage_may_declare_no_workflow_edges(
     assert result.execution.status is ExecutionStatus.SUCCEEDED
     assert context.engine.state is WorkflowState.SOURCE_INGESTED
     assert context.engine.machine.history == []
+
+
+def test_every_model_stage_ships_a_prompt_and_an_explicit_route() -> None:
+    """A stage's name is its template id and its routing key; all three must agree.
+
+    An unrouted stage does not fail — it silently resolves to the conservative
+    default and records ``used_default``. That is the right behaviour at runtime
+    and the wrong thing to discover in production, so the shipped config is held
+    to naming every stage that calls a model.
+    """
+    prompts = PromptStore(prompts_root())
+    routing = default_routing_policy()
+
+    for stage in MODEL_STAGES:
+        metadata = prompts.metadata(stage)
+        assert metadata.current_version in metadata.versions
+        template = prompts_root() / stage / f"{metadata.current_version}.jinja2"
+        assert template.is_file(), f"{stage} declares {metadata.current_version} but has no file"
+
+        resolved = routing.resolve(stage)
+        assert resolved.used_default is False, f"{stage} is not routed explicitly"
+        assert resolved.primary.model
+        assert resolved.fallback is not None, f"{stage} has no fallback to degrade to"
