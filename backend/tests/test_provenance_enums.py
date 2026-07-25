@@ -25,7 +25,7 @@ from groundscribe.provenance import enums
 EDITORIAL_ARTIFACT_TYPES = {
     "source_document",
     "source_model",
-    "source_model_diff",
+    "structured_diff",
     "source_gap_report",
     "content_architecture",
     "article_concept",

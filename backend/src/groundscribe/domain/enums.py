@@ -158,10 +158,13 @@ class ArtifactType(StrEnum):
     # Editorial artefacts (phase 02, extended in phase 06).
     SOURCE_DOCUMENT = "source_document"
     SOURCE_MODEL = "source_model"
-    # A source model is *rebuilt* from answers rather than patched, so the diff
-    # between two versions is its own artefact: it is what a person reviews, and
-    # what an answer record points at to show what it changed (phase 06 §3).
-    SOURCE_MODEL_DIFF = "source_model_diff"
+    # Artefacts are rebuilt or overridden rather than edited, so the diff between
+    # two versions is its own artefact: it is what a person reviews, and what an
+    # answer or override record points at to show what it changed (phase 06 §3, §5).
+    # One kind for every structured artefact — the ExecutionArtifact's role says
+    # which artefact a given diff is *of*, and a type per artefact would multiply
+    # the vocabulary without adding a distinction anything routes on.
+    STRUCTURED_DIFF = "structured_diff"
     SOURCE_GAP_REPORT = "source_gap_report"
     CONTENT_ARCHITECTURE = "content_architecture"
     ARTICLE_CONCEPT = "article_concept"

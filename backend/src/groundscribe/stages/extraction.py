@@ -271,7 +271,7 @@ class ExtractSourceTruth:
         )
         snapshot = context.recorder.record_output(
             execution,
-            artifact_type=ArtifactType.SOURCE_MODEL_DIFF,
+            artifact_type=ArtifactType.STRUCTURED_DIFF,
             content=diff.model_dump(mode="json"),
             role="source_model_diff",
         )
