@@ -235,6 +235,7 @@ class ExtractSourceTruth:
             value=model,
             outputs=outputs,
             invocations=generated.attempts,
+            usage=generated.usage,
             detail={
                 "claims": len(model.claims),
                 "segments_offered": len(window.selected),

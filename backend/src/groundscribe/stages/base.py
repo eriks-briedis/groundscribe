@@ -36,10 +36,10 @@ from sqlalchemy.orm import Session
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.llm.generation import StructuredGenerator
-from groundscribe.llm.protocol import TokenUsage
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.provenance.recorder import ProvenanceRecorder
+from groundscribe.provenance.schemas import TokenUsage
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.engine import WorkflowEngine
 from groundscribe.workflow.states import WorkflowAction

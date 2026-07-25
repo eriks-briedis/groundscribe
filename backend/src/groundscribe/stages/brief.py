@@ -137,6 +137,7 @@ class GenerateArticleBrief:
             value=BriefOutcome(brief=brief, row=row),
             outputs=(snapshot,),
             invocations=generated.attempts,
+            usage=generated.usage,
             detail={
                 "sections": len(brief.argument_structure),
                 "mandatory_criteria": len(brief.mandatory_criteria),

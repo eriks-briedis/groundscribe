@@ -136,6 +136,7 @@ class ProposeContentArchitecture:
             ),
             outputs=(snapshot,),
             invocations=generated.attempts,
+            usage=generated.usage,
             detail={
                 "articles": len(proposal.articles),
                 "selected": proposal.decision.selected,

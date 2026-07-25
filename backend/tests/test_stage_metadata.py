@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json, with_segment_ids
 from groundscribe.domain.enums import ArtifactType
-from groundscribe.llm.protocol import TokenUsage
 from groundscribe.provenance.enums import (
     ActorType,
     ExecutionStatus,
@@ -32,6 +31,7 @@ from groundscribe.provenance.enums import (
     RetryType,
     ToolInitiator,
 )
+from groundscribe.provenance.schemas import TokenUsage
 from groundscribe.stages.base import StageRunner
 from groundscribe.stages.extraction import EXTRACTION_STAGE, ExtractSourceTruth
 from groundscribe.storage.snapshot_store import SnapshotStore
@@ -82,6 +82,7 @@ async def test_a_stage_execution_records_the_whole_field_set(
     # Model, provider and the params that shaped the call.
     assert second.provider == SHIPPED_PROVIDER
     assert second.model
+    assert second.request_snapshot is not None
     request = json.loads(snapshot_store.read(second.request_snapshot).decode("utf-8"))
     assert request["provider_config"]["temperature"] == 0.0
     assert request["provider_config"]["seed"]

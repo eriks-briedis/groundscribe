@@ -49,7 +49,7 @@ from groundscribe.llm.errors import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig, ToolCall
+from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig, TokenUsage, ToolCall
 from groundscribe.llm.routing import ResolvedRoute, RouteOverride, RoutingPolicy
 from groundscribe.prompts import PromptStore, RenderedPrompt
 from groundscribe.provenance import models
@@ -172,6 +172,21 @@ class GenerationResult[T: BaseModel]:
     attempts: tuple[models.ModelInvocation, ...]
     route: ResolvedRoute
     request: EffectiveRequest = field(repr=False)
+
+    @property
+    def usage(self) -> TokenUsage:
+        """What every attempt consumed, including the ones that failed.
+
+        Summed from the records rather than tracked alongside them, so the total
+        cannot drift from what was stored. Cost stays ``None`` unless at least one
+        attempt reported one: zero is a claim that the calls were free.
+        """
+        costs = [call.cost_usd for call in self.attempts if call.cost_usd is not None]
+        return TokenUsage(
+            input_tokens=sum(call.input_tokens for call in self.attempts),
+            output_tokens=sum(call.output_tokens for call in self.attempts),
+            cost_usd=sum(costs) if costs else None,
+        )
 
 
 @dataclass(frozen=True)
@@ -297,6 +312,7 @@ class StructuredGenerator:
                 continue
 
             raw = response.raw_text
+            usage = response.usage
 
             if response.refusal is not None:
                 # Not retried: a refusal is a deliberate provider decision, and
@@ -310,6 +326,7 @@ class StructuredGenerator:
                     parent,
                     retry_type,
                     response.refusal,
+                    usage=usage,
                 )
                 attempts.append(invocation)
                 raise self._escalate(
@@ -322,7 +339,14 @@ class StructuredGenerator:
 
             if response.tool_calls:
                 invocation = self._record(
-                    execution, request, runtime, InvocationOutcome.ACCEPTED, raw, parent, retry_type
+                    execution,
+                    request,
+                    runtime,
+                    InvocationOutcome.ACCEPTED,
+                    raw,
+                    parent,
+                    retry_type,
+                    usage=usage,
                 )
                 attempts.append(invocation)
                 raise ToolCallRequested(
@@ -344,6 +368,7 @@ class StructuredGenerator:
                     raw,
                     parent,
                     retry_type,
+                    usage=usage,
                     parsed=attempted.parsed,
                     validated=attempted.value.model_dump(mode="json"),
                 )
@@ -366,6 +391,7 @@ class StructuredGenerator:
                 parent,
                 retry_type,
                 "; ".join(errors),
+                usage=usage,
                 parsed=attempted.parsed,
             )
             attempts.append(invocation)
@@ -523,6 +549,7 @@ class StructuredGenerator:
         retry_type: RetryType | None = None,
         error: str | None = None,
         *,
+        usage: TokenUsage | None = None,
         parsed: dict[str, Any] | None = None,
         validated: dict[str, Any] | None = None,
     ) -> models.ModelInvocation:
@@ -538,6 +565,7 @@ class StructuredGenerator:
             validated_response=validated,
             parent=parent,
             retry_type=retry_type,
+            usage=usage,
             error_message=error,
         )
 

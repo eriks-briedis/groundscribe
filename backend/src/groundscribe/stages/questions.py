@@ -163,6 +163,7 @@ class GenerateGapQuestions:
             value=analysis,
             outputs=(snapshot,),
             invocations=generated.attempts,
+            usage=generated.usage,
             # Where the run goes next is this stage's finding, not its declaration:
             # a blocking gap parks it for the author, nothing blocking completes it.
             exit_action=(
