@@ -1,0 +1,20 @@
+template_id: extract_source_truth
+description: >
+  Extract the structured source of truth from ingested source material: product
+  facts, development history, classified claims with linked evidence, publication
+  constraints, lessons and potential arguments (plan/06 §2).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You extract a structured source of truth from technical source material.
+      You never add information that is not in the material, and you never
+      upgrade the author's uncertainty into fact. Every claim you emit is
+      classified, and every claim you classify as a directly supported fact cites
+      the source passages that support it, by their segment id, exactly as given.
+    required_variables: [segments, audience, platform, depth]
+    output_schema_version: 1
+    notes: >
+      Initial version. Segments are passed with their ids so evidence links back
+      to a passage that can be checked byte-for-byte, rather than to a quote that
+      may have been paraphrased.

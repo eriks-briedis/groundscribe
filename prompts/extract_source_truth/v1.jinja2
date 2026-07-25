@@ -1,0 +1,30 @@
+Extract the source of truth from the material below.
+
+The article this feeds is for {{ audience }}, published on {{ platform }}, at
+{{ depth }} depth. That context decides what is worth extracting — it does not
+license adding anything the material does not say.
+
+Source segments, each with the id you must cite it by:
+{% for segment in segments %}
+
+[{{ segment.id }}] ({{ segment.kind }}){% if segment.truncated %} — truncated{% endif %}
+{{ segment.text }}
+{% endfor %}
+
+Rules:
+
+- Classify every claim as exactly one of: directly_supported_fact,
+  user_observation, interpretation, hypothesis, opinion, unknown,
+  unsupported_claim.
+- A directly_supported_fact must cite at least one segment id. If the material
+  does not support it, it is an interpretation, a hypothesis or an opinion —
+  say so rather than promoting it.
+- Cite segment ids exactly as given above. Never invent an id, and never cite a
+  segment that was not shown to you.
+- Set qualification_required when a claim is true only under conditions the
+  article would have to state (one measurement, one environment, one workload).
+- Record anything the material marks as internal or unpublishable as a
+  publication constraint, with the reason.
+- Lessons and potential arguments reference claims by their claim id.
+
+Return a single JSON object matching the required schema.
