@@ -324,46 +324,39 @@ class StructuredGenerator:
                     attempts=tuple(attempts),
                 )
 
-            parsed, parse_error = _parse(raw)
-            if parse_error is None and parsed is not None:
-                try:
-                    value = schema.model_validate(parsed)
-                except ValidationError as exc:
-                    outcome = InvocationOutcome.INVALID_SCHEMA
-                    errors = format_validation_errors(exc)
-                else:
-                    invocation = self._record(
-                        execution,
-                        request,
-                        runtime,
-                        InvocationOutcome.ACCEPTED,
-                        raw,
-                        parent,
-                        retry_type,
-                        parsed=parsed,
-                        validated=value.model_dump(mode="json"),
-                    )
-                    attempts.append(invocation)
-                    return GenerationResult(
-                        value=value,
-                        invocation=invocation,
-                        attempts=tuple(attempts),
-                        route=route,
-                        request=request,
-                    )
-            else:
-                outcome, errors = InvocationOutcome.INVALID_JSON, [parse_error or "unparseable"]
+            attempted = _evaluate(raw, schema)
+            if attempted.value is not None:
+                invocation = self._record(
+                    execution,
+                    request,
+                    runtime,
+                    InvocationOutcome.ACCEPTED,
+                    raw,
+                    parent,
+                    retry_type,
+                    parsed=attempted.parsed,
+                    validated=attempted.value.model_dump(mode="json"),
+                )
+                attempts.append(invocation)
+                return GenerationResult(
+                    value=attempted.value,
+                    invocation=invocation,
+                    attempts=tuple(attempts),
+                    route=route,
+                    request=request,
+                )
 
+            errors = attempted.errors
             invocation = self._record(
                 execution,
                 request,
                 runtime,
-                outcome,
+                attempted.outcome,
                 raw,
                 parent,
                 retry_type,
                 "; ".join(errors),
-                parsed=parsed,
+                parsed=attempted.parsed,
             )
             attempts.append(invocation)
             rejected_output = raw
@@ -371,7 +364,7 @@ class StructuredGenerator:
             exhausted = rung_index >= len(rungs) or len(attempts) >= self._repair.max_total_attempts
             if exhausted:
                 raise self._escalate(
-                    execution, stage, outcome.value, "; ".join(errors), tuple(attempts)
+                    execution, stage, attempted.outcome.value, "; ".join(errors), tuple(attempts)
                 )
 
             rung = rungs[rung_index]
@@ -627,6 +620,37 @@ def _classify_transport(exc: LLMError) -> _Transport:
         if isinstance(exc, error_type):
             return transport
     return _Transport(InvocationOutcome.PROVIDER_ERROR, RetryType.PROVIDER_ERROR)
+
+
+@dataclass(frozen=True)
+class _Attempted[T: BaseModel]:
+    """What one response turned out to be, before anything is recorded.
+
+    Keeps parsing and validation off the ladder's control flow: the loop then
+    reads as "what happened, record it, decide the next rung" instead of nesting
+    the accepted path three levels inside two failure branches.
+    """
+
+    outcome: InvocationOutcome
+    parsed: dict[str, Any] | None
+    value: T | None
+    errors: list[str]
+
+
+def _evaluate[T: BaseModel](raw: str, schema: type[T]) -> _Attempted[T]:
+    """Parse and validate one response body, keeping every failure as data."""
+    parsed, parse_error = _parse(raw)
+    if parsed is None:
+        return _Attempted(
+            InvocationOutcome.INVALID_JSON, None, None, [parse_error or "unparseable response"]
+        )
+    try:
+        value = schema.model_validate(parsed)
+    except ValidationError as exc:
+        return _Attempted(
+            InvocationOutcome.INVALID_SCHEMA, parsed, None, format_validation_errors(exc)
+        )
+    return _Attempted(InvocationOutcome.ACCEPTED, parsed, value, [])
 
 
 def _parse(raw: str) -> tuple[dict[str, Any] | None, str | None]:
