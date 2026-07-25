@@ -18,10 +18,15 @@ from enum import StrEnum
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.provenance import enums
 
-#: The editorial artefact kinds pinned by phase 02.
+#: The editorial artefact kinds pinned by phase 02, plus the two the phase-06
+#: stages add: a source model is rebuilt rather than patched, so the diff between
+#: two versions is an artefact a person reviews and an answer record points at,
+#: and the gap report is the analysis a prioritisation decision was made from.
 EDITORIAL_ARTIFACT_TYPES = {
     "source_document",
     "source_model",
+    "source_model_diff",
+    "source_gap_report",
     "content_architecture",
     "article_concept",
     "article_brief",

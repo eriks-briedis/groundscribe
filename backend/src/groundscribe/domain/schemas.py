@@ -16,9 +16,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from groundscribe.domain.enums import (
+    AnswerResponse,
     ArticleDepth,
     BranchStatus,
     ClaimClassification,
+    GapPriority,
     SegmentKind,
     SelectionStatus,
     SourceFormat,
@@ -153,18 +155,40 @@ class SourceClaim(_Entity):
 
 
 class SourceGap(_Entity):
-    """A missing piece of information the source does not answer."""
+    """A missing piece of information the source does not answer.
+
+    ``surfaced`` records the prioritisation decision itself: a gap the policy
+    suppressed and a gap the author was never offered look identical from the
+    priority alone, and only one of those is a bug.
+    """
 
     project_id: str
     description: str
+    question: str = ""
+    why_it_matters: str = ""
+    priority: GapPriority = GapPriority.OPTIONAL
+    group: str = ""
+    ordinal: int = 0
+    surfaced: bool = False
     resolved: bool = False
 
 
 class UserAnswer(_Entity):
-    """The author's answer to a source gap."""
+    """The author's response to a question, kept with the question it answers.
+
+    The question and its reason are copied here rather than read back through
+    ``gap_id``: a later round may re-word the question, and an answer that
+    silently re-pointed at the new wording would misrepresent what the author was
+    actually asked.
+    """
 
     gap_id: str
     text: str
+    question: str = ""
+    why_it_matters: str = ""
+    response_type: AnswerResponse = AnswerResponse.ANSWERED
+    answered_by: str = ""
+    diff_snapshot_id: str | None = None
 
 
 class ContentArchitecture(_Lineage):

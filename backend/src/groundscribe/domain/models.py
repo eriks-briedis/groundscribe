@@ -31,10 +31,12 @@ from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from groundscribe.db import Base, enum_column
 from groundscribe.domain.enums import (
+    AnswerResponse,
     ArticleDepth,
     ArtifactType,
     BranchStatus,
     ClaimClassification,
+    GapPriority,
     SegmentKind,
     SelectionStatus,
     SourceFormat,
@@ -187,22 +189,74 @@ class SourceClaim(EntityMixin, Base):
 
 
 class SourceGap(EntityMixin, Base):
+    """Something the source does not say, and the question that would settle it.
+
+    ``surfaced`` records the prioritisation *decision*, not just its input: a gap
+    the policy suppressed and a gap the author was never offered look identical
+    from the priority alone, and only one of them is a bug.
+    """
+
     __tablename__ = "source_gaps"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
+    question: Mapped[str] = mapped_column(String, default="", nullable=False)
+    why_it_matters: Mapped[str] = mapped_column(String, default="", nullable=False)
+    priority: Mapped[GapPriority] = mapped_column(
+        enum_column(GapPriority), default=GapPriority.OPTIONAL, nullable=False
+    )
+    group: Mapped[str] = mapped_column(String, default="", nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    surfaced: Mapped[bool] = mapped_column(default=False, nullable=False)
     resolved: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     project: Mapped[Project] = relationship()
 
 
+# One answer may close several grouped questions, and a question may be answered
+# more than once across rounds; the link is many-to-many for the first reason.
+user_answer_gaps = Table(
+    "user_answer_gaps",
+    Base.metadata,
+    Column("answer_id", ForeignKey("user_answers.id"), primary_key=True),
+    Column("gap_id", ForeignKey("source_gaps.id"), primary_key=True),
+)
+
+
 class UserAnswer(EntityMixin, Base):
+    """The author's response to a question, kept with the question it answers.
+
+    The question and its reason are copied onto the answer rather than read back
+    through ``gap_id``: a later round may re-word the question, and an answer that
+    silently re-pointed at the new wording would misrepresent what the author was
+    actually asked.
+
+    ``gap_id`` is the question that was *put*; ``gaps`` is everything the answer
+    closed. They are different facts — one answer to a grouped question can settle
+    several gaps — and collapsing them would lose which question the author saw.
+    """
+
     __tablename__ = "user_answers"
 
     gap_id: Mapped[str] = mapped_column(ForeignKey("source_gaps.id"), nullable=False)
     text: Mapped[str] = mapped_column(String, nullable=False)
+    question: Mapped[str] = mapped_column(String, default="", nullable=False)
+    why_it_matters: Mapped[str] = mapped_column(String, default="", nullable=False)
+    response_type: Mapped[AnswerResponse] = mapped_column(
+        enum_column(AnswerResponse), default=AnswerResponse.ANSWERED, nullable=False
+    )
+    answered_by: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # Set once the rebuild this answer caused has produced its diff; nullable
+    # because the answer exists before the model has been rebuilt.
+    diff_snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
 
-    gap: Mapped[SourceGap] = relationship()
+    gap: Mapped[SourceGap] = relationship(foreign_keys=[gap_id])
+    gaps: Mapped[list[SourceGap]] = relationship(
+        secondary=user_answer_gaps, order_by=SourceGap.ordinal
+    )
+    diff_snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[diff_snapshot_id])
 
 
 class ContentArchitecture(LineageMixin, EntityMixin, Base):

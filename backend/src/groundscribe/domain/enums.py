@@ -70,6 +70,59 @@ class ArticleDepth(StrEnum):
     DEEP_DIVE = "deep_dive"
 
 
+class GapPriority(StrEnum):
+    """How badly a missing piece of information is needed (phase 06 §3).
+
+    The three levels exist to bound *questioning*, which plan/06 names as this
+    stage's risk. Blocking gaps surface on their own; high-value ones surface only
+    when the author picks them; optional ones never surface unasked. Without the
+    distinction every gap is equally urgent, which in practice means the author
+    answers none of them.
+    """
+
+    BLOCKING = "blocking"
+    HIGH_VALUE = "high_value"
+    OPTIONAL = "optional"
+
+
+class AnswerResponse(StrEnum):
+    """What the author did with a question (phase 06 §3).
+
+    All six are answers in the sense that matters: each one tells the pipeline
+    something it did not know, and each is recorded. They differ in two ways that
+    the code depends on — whether the question is closed, and whether the text may
+    be sent to a model.
+
+    ``DEFERRED`` is the only one that leaves the question pending: postponing is
+    not resolving, and marking it closed would erase the record that the author
+    meant to come back. ``CONFIDENTIAL`` is the only one whose text is deliberately
+    withheld from the provider while still being kept locally — it is an answer to
+    the pipeline and a refusal to the model at the same time.
+    """
+
+    ANSWERED = "answered"
+    SKIPPED = "skipped"
+    UNKNOWN = "unknown"
+    CONFIDENTIAL = "confidential"
+    DEFERRED = "deferred"
+    PREMISE_INCORRECT = "premise_incorrect"
+
+    @property
+    def closes_the_gap(self) -> bool:
+        """Whether this response resolves the question it answers."""
+        return self is not AnswerResponse.DEFERRED
+
+    @property
+    def may_be_sent(self) -> bool:
+        """Whether the answer text may be included in a prompt.
+
+        Only the two responses that carry *information the model can use*: an
+        answer, and a correction of a wrong premise. A skip and an unknown have
+        nothing to say, and confidential material must not leave the machine.
+        """
+        return self in (AnswerResponse.ANSWERED, AnswerResponse.PREMISE_INCORRECT)
+
+
 class BranchStatus(StrEnum):
     """Lifecycle of one branch in an artefact's lineage.
 
@@ -102,9 +155,14 @@ class ArtifactType(StrEnum):
     dedups against the original instead of storing it twice.
     """
 
-    # Editorial artefacts (phase 02).
+    # Editorial artefacts (phase 02, extended in phase 06).
     SOURCE_DOCUMENT = "source_document"
     SOURCE_MODEL = "source_model"
+    # A source model is *rebuilt* from answers rather than patched, so the diff
+    # between two versions is its own artefact: it is what a person reviews, and
+    # what an answer record points at to show what it changed (phase 06 §3).
+    SOURCE_MODEL_DIFF = "source_model_diff"
+    SOURCE_GAP_REPORT = "source_gap_report"
     CONTENT_ARCHITECTURE = "content_architecture"
     ARTICLE_CONCEPT = "article_concept"
     ARTICLE_BRIEF = "article_brief"

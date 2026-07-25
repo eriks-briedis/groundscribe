@@ -35,6 +35,7 @@ EDITORIAL_TABLES: frozenset[str] = frozenset(
         "source_claim_segments",
         "source_gaps",
         "user_answers",
+        "user_answer_gaps",
         "content_architectures",
         "article_concepts",
         "article_briefs",
