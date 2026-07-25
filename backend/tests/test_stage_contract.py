@@ -115,6 +115,7 @@ async def test_the_stage_execution_records_the_stage_and_its_implementation_vers
     result = await StageRunner(context).run(_RecordingStage())
 
     execution = result.execution
+    assert execution is not None
     assert execution.stage == "extract_source_truth"
     assert execution.impl_version == "1.0"
     assert execution.status is ExecutionStatus.SUCCEEDED
@@ -175,6 +176,7 @@ async def test_a_stage_may_declare_no_workflow_edges(
 
     result = await StageRunner(context).run(_EdgelessStage())
 
+    assert result.execution is not None
     assert result.execution.status is ExecutionStatus.SUCCEEDED
     assert context.engine.state is WorkflowState.SOURCE_INGESTED
     assert context.engine.machine.history == []
