@@ -408,3 +408,19 @@ def test_overrides_apply_in_order() -> None:
     assert [article.id for article in result.articles] == ["a1"]
     assert result.articles[0].title == "First"
     assert result.articles[0].thesis == "A cache key is a specification."
+
+
+async def test_an_anonymous_approval_is_refused(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Approval is the human control point; an unsigned one records nothing useful."""
+    context, model_client = scripted_context(db_session, snapshot_store)
+    proposed = await propose(context, model_client)
+
+    with pytest.raises(ValueError, match="approved_by"):
+        approve_architecture(
+            context,
+            architecture=proposed.value.architecture,
+            snapshot=proposed.outputs[0],
+            approved_by="",
+        )

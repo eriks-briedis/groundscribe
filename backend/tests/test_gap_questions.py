@@ -367,3 +367,17 @@ async def test_the_rebuilt_model_supersedes_its_parent_rather_than_replacing_it(
     (model_snapshot,) = [s for s in rebuilt.outputs if s.artifact_type is ArtifactType.SOURCE_MODEL]
     assert model_snapshot.parent_snapshot_id == extracted.snapshot.id
     assert snapshot_store.verify(extracted.snapshot) is True
+
+
+async def test_an_unattributed_answer_is_refused(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """plan/03: an intervention nobody can be identified as is unreviewable."""
+    context, model_client = scripted_context(db_session, snapshot_store)
+    await extract_and_analyse(context, model_client)
+    queue = open_question_queue(context)
+
+    with pytest.raises(ValueError, match="answered_by"):
+        queue.respond(
+            queue.pending[0], response=AnswerResponse.ANSWERED, text="690ms", answered_by=""
+        )
