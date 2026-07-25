@@ -259,7 +259,10 @@ class WorkflowEngine:
         if result.escalated:
             self._request_intervention(
                 reason=result.reason,
-                payload={"category": category.value, "limit": result.outcome.limit},
+                payload={
+                    "category": category.value,
+                    "limit": result.outcome.limit.value if result.outcome.limit else None,
+                },
             )
         return RecordedRoute(route=result, decision=decision, event=event)
 
