@@ -128,9 +128,8 @@ def test_state_vocabulary_is_exactly_the_spec_list() -> None:
 
 def test_terminal_states_are_the_three_endings() -> None:
     """A run ends by finishing, failing, or being stopped — nothing else."""
-    assert TERMINAL_STATES == frozenset(
-        {WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED}
-    )
+    endings = {WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED}
+    assert set(TERMINAL_STATES) == endings
 
 
 def test_terminal_states_offer_no_actions() -> None:
