@@ -22,20 +22,24 @@ from typing import Any
 from groundscribe.paths import repo_root
 from groundscribe.stages.ingestion import IngestedSource
 
-#: Where the phase-06 golden source and expected outputs live.
-GOLDEN_ROOT = repo_root() / "evaluations" / "golden" / "source_to_brief"
+#: Where the golden suites live, one directory per stretch of the pipeline.
+GOLDEN_ROOT = repo_root() / "evaluations" / "golden"
+
+#: The suite a caller gets when it does not say: phase 06's source-to-brief data,
+#: which is what most tests start from even when they are testing a later stage.
+DEFAULT_SUITE = "source_to_brief"
 
 _LABEL = re.compile(r"^S(\d+)$")
 
 
-def golden_text(name: str) -> str:
+def golden_text(name: str, *, suite: str = DEFAULT_SUITE) -> str:
     """Read one golden file verbatim."""
-    return (GOLDEN_ROOT / name).read_text(encoding="utf-8")
+    return (GOLDEN_ROOT / suite / name).read_text(encoding="utf-8")
 
 
-def golden_json(name: str) -> dict[str, Any]:
+def golden_json(name: str, *, suite: str = DEFAULT_SUITE) -> dict[str, Any]:
     """Read one golden JSON document."""
-    loaded = json.loads(golden_text(name))
+    loaded = json.loads(golden_text(name, suite=suite))
     assert isinstance(loaded, dict)
     return loaded
 
@@ -62,4 +66,4 @@ def _substitute(value: Any, ids: dict[str, str]) -> Any:
     return value
 
 
-__all__ = ["GOLDEN_ROOT", "golden_json", "golden_text", "with_segment_ids"]
+__all__ = ["DEFAULT_SUITE", "GOLDEN_ROOT", "golden_json", "golden_text", "with_segment_ids"]

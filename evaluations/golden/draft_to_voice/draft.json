@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "title": "Your cache key is a specification",
+  "thesis": "A cache key enumerates everything the render depends on, so getting it wrong is a correctness bug rather than a performance one.",
+  "body": "We put a read-through cache in front of the render pipeline in March, and p99 on the article pages fell from 810ms to 120ms — measured over the seven days either side of the change, on warm cache. That number is the reason anyone would read this. The rest of it is the reason I would not repeat the week that followed.\n\n## Why it was slow, and why a cache was even possible\n\nEvery request re-rendered the whole document tree, including the parts nobody had touched since the last publish. Profiling put 78% of wall time inside the Markdown-to-AST step. That step is deterministic for a given input, which is the only reason a cache was on the table at all: if the same input can render differently, a cache is not a latency win, it is a staleness generator with a hit rate.\n\n## The key that named two of its three inputs\n\nThe first version keyed on the document path:\n\n```python\ndef cache_key(request):\n    return request.path\n```\n\nTwo things fell out of that within the week. Readers on a non-default locale were served the English render, because locale was an input to the render and not to the key. And an error page rendered during a deploy was cached and served for forty minutes, because status was an input to whether the response should be cached at all.\n\nNeither of those is a caching bug in the usual sense. Nothing expired late; nothing was evicted early. The key simply did not name everything the render depended on, and a cache key that under-names its inputs is not a performance shortcut with a bug in it — it is a wrong answer, served fast.\n\n## What I would do differently\n\nI think the real mistake was treating invalidation as the task after the cache rather than as part of its design. Writing the key first, as a list of everything the render reads, would have caught both bugs before either shipped.\n\nWrite the key as a specification of the render's inputs, and invalidation stops being a separate task you get to later.\n",
+  "claims_used": ["c1", "c2", "c3", "c4", "c5"],
+  "qualifications_applied": ["c1"],
+  "unresolved": [],
+  "omitted": [
+    {
+      "description": "The deploy postmortem's account of the forty-minute error-page window.",
+      "reason": "The source marks the internal postmortem as unpublishable.",
+      "claim_ids": []
+    },
+    {
+      "description": "The determinism argument, developed at length.",
+      "reason": "Reserved by the brief for the follow-up article; stated here, not developed.",
+      "claim_ids": ["c3"]
+    }
+  ],
+  "finish_reason": "stop"
+}
