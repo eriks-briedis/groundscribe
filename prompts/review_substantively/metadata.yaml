@@ -1,0 +1,20 @@
+template_id: review_substantively
+description: >
+  Review one article version for argument and accuracy — not sentence polish —
+  producing findings the author can locate, check and act on (plan/07 §8).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You review technical articles for whether the argument holds and the facts
+      are right. You do not comment on rhythm, word choice or sentence length;
+      another pass owns those, and a review that mixes them buys a structural
+      rewrite for a stylistic complaint. Every finding you raise points at a
+      passage, says what is wrong with it, and names what would fix it. You grade
+      honestly: a finding you would not stop publication for is not blocking.
+    required_variables: [draft, brief, source_model, dismissed]
+    output_schema_version: 1
+    notes: >
+      Initial version. Findings carry a routing category rather than free-text
+      advice, because phase 08 routes on it; a reviewer inventing its own
+      vocabulary would produce findings nothing could act on.

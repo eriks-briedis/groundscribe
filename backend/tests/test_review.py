@@ -130,13 +130,19 @@ def test_a_blocking_finding_must_say_it_blocks_publication() -> None:
         SubstantiveReview.model_validate(payload)
 
 
-def test_a_finding_must_carry_the_evidence_it_rests_on() -> None:
-    """A criticism with nothing behind it is an opinion the author cannot weigh."""
+def test_a_finding_must_point_at_something() -> None:
+    """A criticism with nothing behind it is an opinion the author cannot weigh.
+
+    Evidence, a source claim, or a brief clause — any one will do. A reader-fit
+    finding legitimately rests on the brief rather than on the source, which is why
+    the rule is "point at something" rather than "cite the source model".
+    """
     payload = golden_review()
     payload["issues"][0]["evidence"] = "   "
     payload["issues"][0]["source_ref"] = ""
+    payload["issues"][0]["brief_ref"] = ""
 
-    with pytest.raises(ValueError, match="evidence"):
+    with pytest.raises(ValueError, match="points at no evidence"):
         SubstantiveReview.model_validate(payload)
 
 
@@ -169,7 +175,7 @@ async def test_the_review_is_stored_with_its_findings_and_parks_for_the_author(
     assert row.article_version_id == drafted.result.value.version.id
     assert row.verdict == result.value.review.verdict
     assert row.round == 0
-    assert [issue.id for issue in result.value.findings] == ["i1", "i2", "i3", "i4"]
+    assert [issue.ref for issue in result.value.findings] == ["i1", "i2", "i3", "i4"]
     assert all(finding.status is FindingStatus.PROPOSED for finding in result.value.findings)
     assert result.value.findings[0].fingerprint
 
@@ -248,8 +254,7 @@ async def test_a_rejected_finding_stays_visible_and_is_not_re_raised_unchanged(
             brief=drafted.briefed.brief,
             source_model=drafted.briefed.source_model,
             previous_findings=first.value.findings,
-            entry_action=None,
-            exit_action=None,
+            transitions=False,
         )
     )
 
@@ -263,7 +268,7 @@ async def test_a_rejected_finding_stays_visible_and_is_not_re_raised_unchanged(
 
     # It is still *there*: suppression is a status, not a deletion.
     assert repeated.description == first.value.findings[1].description
-    assert [f.id for f in second.value.findings] == ["i1", "i2", "i3", "i4"]
+    assert [f.ref for f in second.value.findings] == ["i1", "i2", "i3", "i4"]
 
 
 async def test_a_repeated_finding_with_new_evidence_is_raised_again(
@@ -287,8 +292,7 @@ async def test_a_repeated_finding_with_new_evidence_is_raised_again(
             brief=drafted.briefed.brief,
             source_model=drafted.briefed.source_model,
             previous_findings=first.value.findings,
-            entry_action=None,
-            exit_action=None,
+            transitions=False,
         )
     )
 

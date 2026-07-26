@@ -1,0 +1,46 @@
+Review this draft for argument and accuracy.
+
+The draft:
+{{ draft }}
+
+The brief it is bound by:
+{{ brief }}
+
+The source model — the only thing it may state as fact:
+{{ source_model }}
+{% if dismissed %}
+
+The author has already considered and dismissed the following. Do not raise them
+again unless you have evidence that was not available when they were dismissed —
+and if you do, say what the new evidence is.
+{% for item in dismissed %}
+- {{ item.description }} (dismissed: {{ item.reason }})
+{% endfor %}
+{% endif %}
+
+Assess at least: factual fidelity against the source model, adherence to the
+brief's scope, the structure of the argument, whether each claim has enough
+evidence, and whether the reader the brief names is served.
+
+Do not comment on rhythm, word choice, sentence length or transitions. A separate
+pass owns those, and a stylistic complaint raised here buys a structural rewrite
+nobody asked for.
+
+Grade each finding by what it costs to publish without fixing it:
+
+- blocking — the article would be wrong, unsupported or in breach of the brief.
+  A blocking finding must also set blocks_publication.
+- major — the article would be noticeably weaker, and is publishable.
+- minor — worth fixing while something else is being fixed.
+- optional — a suggestion. It will not buy a revision round, so do not use it for
+  anything you actually want changed.
+
+Every finding names the passage it concerns, the evidence behind it (a source
+claim id, a brief clause, or an observation about the draft itself), what would
+correct it, and the category of stage that should do the correcting:
+factual_gap, architecture_issue, substantive_issue, style_issue or minor_local.
+
+State your confidence in each finding as a number between 0 and 1 that you would
+defend to the author.
+
+Return a single JSON object matching the required schema.

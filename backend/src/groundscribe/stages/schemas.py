@@ -26,11 +26,13 @@ the ingested document or it does not, and the stage checks which.
 from __future__ import annotations
 
 from enum import StrEnum
+from hashlib import sha256
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from groundscribe.domain.enums import ClaimClassification, GapPriority
+from groundscribe.domain.enums import ClaimClassification, GapPriority, IssueSeverity
+from groundscribe.workflow.policy import FailureCategory
 
 
 class _Output(BaseModel):
@@ -501,6 +503,117 @@ class ArticleDraft(_Output):
         return len(self.body.split())
 
 
+class ReviewFinding(BaseModel):
+    """One thing a substantive review found, with everything needed to weigh it.
+
+    The field set is plan/07's, and the length of it is the point: a finding the
+    author cannot locate, cannot check, and cannot act on is a complaint. Every
+    field here answers one of "where", "why should I believe you" and "what would
+    fix it".
+
+    ``suggested_route`` is a :class:`~groundscribe.workflow.policy.FailureCategory`
+    rather than free text, because phase 08 routes on it. A reviewer that invented
+    its own routing vocabulary would produce findings nothing could act on.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    severity: IssueSeverity
+    category: str
+    location: str = ""
+    passage: str = ""
+    description: str
+    evidence: str = ""
+    source_ref: str = ""
+    brief_ref: str = ""
+    recommended_correction: str = ""
+    suggested_route: FailureCategory
+    blocks_publication: bool = False
+    reviewer_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _findings_are_weighable(self) -> Self:
+        if self.severity is IssueSeverity.BLOCKING and not self.blocks_publication:
+            raise ValueError(
+                f"finding {self.id!r} is blocking but says blocks_publication is false; "
+                "those are one judgement, and two answers to it cannot both be acted on"
+            )
+        if not any((self.evidence.strip(), self.source_ref.strip(), self.brief_ref.strip())):
+            raise ValueError(
+                f"finding {self.id!r} points at no evidence, source claim or brief clause; "
+                "a criticism with nothing behind it is an opinion the author cannot weigh"
+            )
+        return self
+
+    def fingerprint(self) -> str:
+        """A stable identity for "the same finding", across rounds.
+
+        Built from what the finding *says* — its category, where it points, and the
+        evidence behind it — and deliberately not from its id, which the reviewer
+        renumbers freely between rounds. Evidence is included so that raising the
+        same point with something new behind it produces a different fingerprint:
+        that is what lets a dismissed finding be reopened honestly (plan/07 → not
+        reintroduced without new evidence).
+        """
+        material = "\u241f".join(
+            (self.category, self.location, self.passage, self.source_ref, self.evidence.strip())
+        )
+        return sha256(material.encode("utf-8")).hexdigest()[:32]
+
+
+class SubstantiveReview(_Output):
+    """A review of one article version: argument and accuracy, not sentence polish."""
+
+    verdict: str
+    summary: str = ""
+    dimensions_assessed: tuple[str, ...] = ()
+    issues: tuple[ReviewFinding, ...] = ()
+
+    @model_validator(mode="after")
+    def _finding_ids_are_unique(self) -> Self:
+        ids = [issue.id for issue in self.issues]
+        duplicated = sorted({key for key in ids if ids.count(key) > 1})
+        if duplicated:
+            raise ValueError(f"finding ids must be unique; repeated: {', '.join(duplicated)}")
+        return self
+
+    @property
+    def iteration_forcing(self) -> tuple[ReviewFinding, ...]:
+        """The findings that are worth another revision round."""
+        return tuple(issue for issue in self.issues if issue.severity.forces_iteration)
+
+    @property
+    def requires_iteration(self) -> bool:
+        """Whether this review asks for a rewrite at all."""
+        return bool(self.iteration_forcing)
+
+    def cited_claim_ids(self) -> frozenset[str]:
+        """Every source claim the findings point at."""
+        return frozenset(issue.source_ref for issue in self.issues if issue.source_ref)
+
+
+class ReviewIssueReport(BaseModel):
+    """What the author did with a round's findings, summarised for the planner."""
+
+    model_config = ConfigDict(frozen=True)
+
+    accepted: tuple[str, ...] = ()
+    rejected: tuple[str, ...] = ()
+    edited: tuple[str, ...] = ()
+    suppressed: tuple[str, ...] = ()
+
+    @property
+    def actionable(self) -> tuple[str, ...]:
+        """Findings the revision plan is built from: accepted, and accepted-with-edits."""
+        return (*self.accepted, *self.edited)
+
+    @property
+    def dismissed(self) -> tuple[str, ...]:
+        """Findings the author argued with, kept so the next round can see them."""
+        return self.rejected
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
@@ -519,10 +632,13 @@ __all__ = [
     "ProposedArticle",
     "PublicationConstraint",
     "RejectedAlternative",
+    "ReviewFinding",
+    "ReviewIssueReport",
     "RiskLevel",
     "SeriesConsiderations",
     "SourceGapQuestion",
     "SourceModel",
+    "SubstantiveReview",
     "UnresolvedMarker",
     "VoiceProfileDocument",
 ]

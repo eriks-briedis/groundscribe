@@ -9,7 +9,7 @@
 # Only the stages phase 04 knows about are listed. Later phases add their own
 # entries as the stages arrive; anything unlisted resolves to `default` and is
 # flagged as having done so.
-version: "3"
+version: "4"
 description: >
   Local-first defaults: a strong structured model for extraction, a prose model
   for drafting, and a cheap deterministic model for validation.
@@ -178,6 +178,29 @@ stages:
       structured_output_mode: json_mode
       max_output_tokens: 8192
       timeout_seconds: 300.0
+
+  # Review judges rather than creates, so temperature 0 with a fixed seed: two
+  # reviews of the same draft that disagree with each other would make the
+  # revision loop's progress unmeasurable. The strong model, because this is where
+  # a missed factual error becomes a published one.
+  review_substantively:
+    rationale: >
+      Judging fidelity needs the strong model; determinism is what makes round-to-
+      round improvement measurable rather than noise.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+    fallback:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.0
+      structured_output_mode: json_mode
+      timeout_seconds: 180.0
 
   # Validation must be boring and repeatable. A cheaper model run at temperature
   # 0 is the right trade: this stage judges, it does not create.
