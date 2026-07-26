@@ -405,12 +405,24 @@ class ReviewIssue(EntityMixin, Base):
 
 
 class RevisionPlan(EntityMixin, Base):
+    """What a rewrite will do, and what it must leave alone (phase 07 §9).
+
+    Its own artefact rather than a field on the review: plan/07 requires a record
+    that explains what was combined, deferred and rejected, and a plan folded into
+    the review would make "what the reviewer said" and "what we decided to do about
+    it" the same document.
+    """
+
     __tablename__ = "revision_plans"
 
     review_id: Mapped[str] = mapped_column(ForeignKey("reviews.id"), nullable=False)
     summary: Mapped[str] = mapped_column(String, nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
 
     review: Mapped[Review] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
 class VoiceProfile(LineageMixin, EntityMixin, Base):

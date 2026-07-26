@@ -282,10 +282,15 @@ class ReviewIssue(_Entity):
 
 
 class RevisionPlan(_Entity):
-    """The plan for addressing a review's issues."""
+    """The plan for addressing a review's issues.
+
+    The plan *document* — changes, reconciliations, what must not change — lives in
+    the snapshot; this row is its identity and its link back to the review.
+    """
 
     review_id: str
     summary: str
+    snapshot_id: str | None = None
 
 
 class VoiceProfile(_Lineage):
