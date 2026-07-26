@@ -69,6 +69,21 @@
       "suggested_route": "style_issue",
       "blocks_publication": false,
       "reviewer_confidence": 0.35
+    },
+    {
+      "id": "i5",
+      "severity": "major",
+      "category": "reader_fit",
+      "location": "Section: Why it was slow",
+      "passage": "if the same input can render differently, a cache is not a latency win",
+      "description": "The determinism point is asserted rather than explained; a reader who has not thought about cache correctness will not follow why it matters.",
+      "evidence": "The brief's reader knowledge assumes familiarity with invalidation, not with determinism as a precondition.",
+      "source_ref": "c3",
+      "brief_ref": "Reader knowledge",
+      "recommended_correction": "Expand the determinism passage with a concrete example of a non-deterministic render.",
+      "suggested_route": "substantive_issue",
+      "blocks_publication": false,
+      "reviewer_confidence": 0.55
     }
   ]
 }

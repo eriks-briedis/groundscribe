@@ -50,7 +50,13 @@ from test_drafting import Drafted, draft
 
 
 def golden_review(**overrides: Any) -> dict[str, Any]:
-    """The golden review, with one field varied per test."""
+    """The golden review, with one field varied per test.
+
+    Five findings, and two of them deliberately contradict: i2 asks to cut the
+    determinism passage as out of scope while i5 asks to expand it for clarity.
+    That contradiction is what phase 07 §9's reconciliation is for, so the golden
+    data has to contain one.
+    """
     return golden_json("review.json", suite="draft_to_voice") | overrides
 
 
@@ -91,6 +97,7 @@ async def test_a_draft_reviews_into_structured_findings(
         IssueSeverity.MAJOR,
         IssueSeverity.MINOR,
         IssueSeverity.OPTIONAL,
+        IssueSeverity.MAJOR,
     ]
 
     blocking = assessed.issues[0]
@@ -113,7 +120,7 @@ def test_severity_decides_whether_a_finding_buys_an_iteration() -> None:
 
     review = SubstantiveReview.model_validate(golden_review())
     assert review.requires_iteration is True
-    assert [issue.id for issue in review.iteration_forcing] == ["i1", "i2"]
+    assert [issue.id for issue in review.iteration_forcing] == ["i1", "i2", "i5"]
 
     polish_only = SubstantiveReview.model_validate(
         golden_review(issues=[golden_review()["issues"][3]])
@@ -175,7 +182,7 @@ async def test_the_review_is_stored_with_its_findings_and_parks_for_the_author(
     assert row.article_version_id == drafted.result.value.version.id
     assert row.verdict == result.value.review.verdict
     assert row.round == 0
-    assert [issue.ref for issue in result.value.findings] == ["i1", "i2", "i3", "i4"]
+    assert [issue.ref for issue in result.value.findings] == ["i1", "i2", "i3", "i4", "i5"]
     assert all(finding.status is FindingStatus.PROPOSED for finding in result.value.findings)
     assert result.value.findings[0].fingerprint
 
@@ -202,7 +209,7 @@ async def test_the_author_accepts_rejects_and_edits_individual_findings(
     """plan/07: reviewer output is evidence, not an unquestionable instruction."""
     drafted, result = await review(db_session, snapshot_store)
     ledger = open_review_ledger(drafted.context)
-    blocking, major, minor, optional = result.value.findings
+    blocking, major, minor, optional = result.value.findings[:4]
 
     ledger.accept(blocking, decided_by=AUTHOR)
     ledger.reject(major, decided_by=AUTHOR, reason="The follow-up article was cancelled.")
@@ -268,7 +275,7 @@ async def test_a_rejected_finding_stays_visible_and_is_not_re_raised_unchanged(
 
     # It is still *there*: suppression is a status, not a deletion.
     assert repeated.description == first.value.findings[1].description
-    assert [f.ref for f in second.value.findings] == ["i1", "i2", "i3", "i4"]
+    assert [f.ref for f in second.value.findings] == ["i1", "i2", "i3", "i4", "i5"]
 
 
 async def test_a_repeated_finding_with_new_evidence_is_raised_again(

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "summary": "Qualify the headline number where it is first stated, and cut the determinism passage to the single sentence the brief reserves it to. The two findings about that passage pull in opposite directions; the brief settles it.",
+  "changes": [
+    {
+      "id": "ch1",
+      "description": "Move the warm-cache condition into the sentence that states the 810ms-to-120ms figure, rather than two clauses later.",
+      "finding_refs": ["i1"],
+      "required": true,
+      "sections": ["Opening paragraph"]
+    },
+    {
+      "id": "ch2",
+      "description": "Reduce the determinism passage to one sentence stating that the render must be deterministic, and remove the worked-through explanation.",
+      "finding_refs": ["i2"],
+      "required": true,
+      "sections": ["Why it was slow, and why a cache was even possible"]
+    },
+    {
+      "id": "ch3",
+      "description": "Attribute the forty-minute figure to the deploy window explicitly.",
+      "finding_refs": ["i3"],
+      "required": false,
+      "sections": ["The key that named two of its three inputs"]
+    }
+  ],
+  "preserve_sections": [
+    "The key that named two of its three inputs",
+    "What I would do differently"
+  ],
+  "claims_that_must_not_change": ["c1", "c4"],
+  "sections_to_remove": [],
+  "sections_to_move": [],
+  "reopen_brief": false,
+  "reopen_architecture": false,
+  "expected_score_effect": "Factual fidelity should rise; scope adherence should rise; readability is unchanged or slightly better for the cut.",
+  "reconciliations": [
+    {
+      "kind": "combined",
+      "finding_refs": ["i2", "i5"],
+      "rationale": "One finding asks to cut the determinism passage as out of scope and the other asks to expand it for clarity. The brief reserves the argument for the follow-up article, so the scope finding wins and the clarity concern is served by making the one remaining sentence explicit."
+    },
+    {
+      "kind": "deferred",
+      "finding_refs": ["i4"],
+      "rationale": "The closing generalisation is worth adding but is optional, and this round is already changing the opening and a section; deferring keeps the diff readable."
+    }
+  ]
+}
