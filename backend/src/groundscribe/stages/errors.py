@@ -72,6 +72,16 @@ class PlanContractError(StageError):
     """
 
 
+class RewriteContractError(StageError):
+    """A rewrite departed from the plan it was given.
+
+    Distinct from :class:`DraftContractError`, which is about promises the *brief*
+    and the source model make. This is about the promises the revision plan makes:
+    that the required changes are applied, and that the claims it protected are
+    still argued. Both are ways of quietly overriding a decision a person made.
+    """
+
+
 __all__ = [
     "ArchitectureLocked",
     "BriefContractError",
@@ -79,5 +89,6 @@ __all__ = [
     "EvidenceError",
     "PlanContractError",
     "ProviderNotPermitted",
+    "RewriteContractError",
     "StageError",
 ]

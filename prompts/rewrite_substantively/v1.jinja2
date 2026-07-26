@@ -1,0 +1,36 @@
+Rewrite this article against the approved revision plan.
+
+The plan — a decision the author approved, not a suggestion:
+{{ plan }}
+
+The version you are rewriting:
+{{ previous }}
+
+The brief it is still bound by:
+{{ brief }}
+
+The source model — still the only thing it may state as fact:
+{{ source_model }}
+
+Voice:
+{{ voice }}
+
+Rules:
+
+- Apply every required change, and list its id under `changes_applied`.
+- You may skip an optional change. List it under `changes_skipped` and give your
+  reason under `skip_reasons`. A skipped change with no reason cannot be told
+  from a forgotten one.
+- The claims the plan lists as unchangeable must still be argued. Reword around
+  them freely; do not drop them and do not alter what they assert.
+- Preserve the sections the plan names. A rewrite that touches everything is a
+  redraft, and it throws away work that was already right.
+- Everything drafting forbade is still forbidden: nothing the source model does
+  not support, nothing the brief excluded, and every claim needing qualification
+  still qualified.
+
+You may restructure, reorder, change how much evidence a section carries, reword
+the thesis, add or remove examples, and narrow scope — where the plan asks for it.
+
+Return a single JSON object matching the required schema, with the full rewritten
+article in `body`.

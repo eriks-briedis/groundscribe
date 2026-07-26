@@ -700,6 +700,32 @@ class RevisionPlanDocument(_Output):
         return frozenset(applied | explained)
 
 
+class RewrittenArticle(ArticleDraft):
+    """A draft rewritten against an approved revision plan (phase 07 §10).
+
+    The same shape as the draft it replaces — a rewrite is still an article, and a
+    second schema would mean two definitions of what an article version is — plus
+    what it did with the plan.
+
+    Declaring skipped changes is what keeps the rewriter honest. An optional change
+    may be skipped; skipping it *silently* may not, because the difference between
+    "I judged this unnecessary" and "I forgot" is the whole reason the plan named it.
+    """
+
+    changes_applied: tuple[str, ...] = ()
+    changes_skipped: tuple[str, ...] = ()
+    skip_reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _skips_are_explained(self) -> Self:
+        if self.changes_skipped and not self.skip_reasons:
+            raise ValueError(
+                f"the rewrite skipped {', '.join(self.changes_skipped)} without a reason; "
+                "a skipped change with no reason cannot be told from a forgotten one"
+            )
+        return self
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
@@ -724,6 +750,7 @@ __all__ = [
     "ReviewFinding",
     "ReviewIssueReport",
     "RevisionPlanDocument",
+    "RewrittenArticle",
     "RiskLevel",
     "SeriesConsiderations",
     "SourceGapQuestion",

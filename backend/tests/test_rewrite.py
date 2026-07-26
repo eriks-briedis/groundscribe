@@ -114,12 +114,14 @@ async def test_a_rewrite_that_drops_a_required_change_is_refused(
         )
 
 
-async def test_a_rewrite_skipping_a_change_without_a_reason_is_refused(
-    db_session: Session, snapshot_store: SnapshotStore
-) -> None:
-    """An optional change may be skipped; skipping it silently may not."""
-    with pytest.raises(ValueError, match="reason"):
-        await rewrite(db_session, snapshot_store, golden_rewrite(skip_reasons=[]))
+def test_a_rewrite_skipping_a_change_without_a_reason_is_refused() -> None:
+    """An optional change may be skipped; skipping it silently may not.
+
+    A schema rule rather than a stage check, so a model that forgets is told
+    through the repair ladder rather than failing the stage for a fixable omission.
+    """
+    with pytest.raises(ValueError, match="without a reason"):
+        RewrittenArticle.model_validate(golden_rewrite(skip_reasons=[]))
 
 
 async def test_a_rewrite_abandoning_a_protected_claim_is_refused(
@@ -174,29 +176,37 @@ async def test_two_rewrites_may_branch_from_the_same_parent(
     This is what phase 12's experimentation rests on, so it is pinned here rather
     than assumed from phase 02's lineage support.
     """
-    drafted, first = await rewrite(db_session, snapshot_store)
+    drafted, planned = await plan(db_session, snapshot_store)
+    approve_revision_plan(drafted.context, plan=planned.value, approved_by=AUTHOR)
     parent = drafted.result.value.version
 
-    drafted.model_client.script_response(
-        REWRITE_STAGE, golden_rewrite(title="A cache key is a specification")
-    )
-    second = await StageRunner(drafted.context).run(
-        RewriteSubstantively(
-            plan=(await _plan_of(drafted)),
-            plan_snapshot=first.value.version.snapshot,
-            previous=drafted.result.value.draft,
-            parent=parent,
-            concept=drafted.briefed.concept,
-            brief=drafted.briefed.brief,
-            source_model=drafted.briefed.source_model,
-            voice=VOICE,
-            transitions=False,
+    arms: list[StageResult[DraftOutcome]] = []
+    for title in ("Your cache key is a specification", "A cache key is a specification"):
+        drafted.model_client.script_response(REWRITE_STAGE, golden_rewrite(title=title))
+        arms.append(
+            await StageRunner(drafted.context).run(
+                RewriteSubstantively(
+                    plan=planned.value.plan,
+                    plan_snapshot=planned.value.snapshot,
+                    previous=drafted.result.value.draft,
+                    parent=parent,
+                    concept=drafted.briefed.concept,
+                    brief=drafted.briefed.brief,
+                    source_model=drafted.briefed.source_model,
+                    voice=VOICE,
+                    # Only the first arm advances the run; the second is a
+                    # comparison, and moving the machine twice for one revision
+                    # would make the loop's own history a fiction.
+                    transitions=not arms,
+                )
+            )
         )
-    )
+    first, second = arms
 
     assert second.value.version.parent_id == parent.id
+    assert first.value.version.parent_id == parent.id
     assert second.value.version.id != first.value.version.id
-    assert second.value.version.ordinal == 2
+    assert {v.value.version.ordinal for v in arms} == {1, 2}
     children = list(
         db_session.execute(
             select(domain_models.ArticleVersion).where(
@@ -211,7 +221,7 @@ async def test_the_rewrite_never_touches_the_source_model(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """plan/07 invariant: rewrite and voice stages never modify the source model."""
-    drafted, result = await rewrite(db_session, snapshot_store)
+    _, result = await rewrite(db_session, snapshot_store)
     execution = result.execution
 
     assert execution is not None
@@ -228,18 +238,3 @@ async def test_the_rewrite_never_touches_the_source_model(
     )
     assert len(models) == 1
     assert snapshot_store.verify(models[0]) is True
-
-
-async def _plan_of(drafted: Drafted) -> Any:
-    """The plan this run approved, read back from its snapshot."""
-    import json
-
-    for execution in drafted.context.engine.run.stage_executions:
-        for artifact in execution.outputs:
-            if artifact.snapshot.artifact_type is ArtifactType.REVISION_PLAN:
-                from groundscribe.stages.schemas import RevisionPlanDocument
-
-                return RevisionPlanDocument.model_validate(
-                    json.loads(drafted.context.snapshots.read(artifact.snapshot).decode("utf-8"))
-                )
-    raise AssertionError("the run produced no revision plan")
