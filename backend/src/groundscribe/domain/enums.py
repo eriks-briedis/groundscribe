@@ -123,6 +123,50 @@ class AnswerResponse(StrEnum):
         return self in (AnswerResponse.ANSWERED, AnswerResponse.PREMISE_INCORRECT)
 
 
+class IssueSeverity(StrEnum):
+    """How badly a review finding matters (phase 07 §8).
+
+    The four levels exist to bound *iteration*, the way :class:`GapPriority` bounds
+    questioning. Blocking and major buy a revision round; minor and optional do
+    not. A review of four optional findings has not asked for a rewrite, and a loop
+    that treated it as though it had would keep spending rounds on suggestions
+    nobody wanted.
+    """
+
+    BLOCKING = "blocking"
+    MAJOR = "major"
+    MINOR = "minor"
+    OPTIONAL = "optional"
+
+    @property
+    def forces_iteration(self) -> bool:
+        """Whether a finding at this severity is worth another revision round."""
+        return self in (IssueSeverity.BLOCKING, IssueSeverity.MAJOR)
+
+
+class FindingStatus(StrEnum):
+    """What the author decided about one review finding (phase 07 §8).
+
+    Five states because a criticism has five fates, and collapsing any two of them
+    loses something the next round needs. ``REJECTED`` is the author disagreeing;
+    ``SUPPRESSED`` is the *system* holding back a finding the author already
+    dismissed, raised again with nothing new behind it. Neither deletes anything:
+    plan/07 requires resolved criticism to stay visible, so a dismissed finding is
+    kept with the reason it was dismissed for.
+    """
+
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EDITED = "edited"
+    SUPPRESSED = "suppressed"
+
+    @property
+    def is_actionable(self) -> bool:
+        """Whether a revision plan should be built from this finding."""
+        return self in (FindingStatus.ACCEPTED, FindingStatus.EDITED)
+
+
 class BranchStatus(StrEnum):
     """Lifecycle of one branch in an artefact's lineage.
 

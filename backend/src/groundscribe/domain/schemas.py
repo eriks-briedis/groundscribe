@@ -20,7 +20,9 @@ from groundscribe.domain.enums import (
     ArticleDepth,
     BranchStatus,
     ClaimClassification,
+    FindingStatus,
     GapPriority,
+    IssueSeverity,
     SegmentKind,
     SelectionStatus,
     SourceFormat,
@@ -248,14 +250,35 @@ class Review(_Lineage):
 
     article_version_id: str
     verdict: str
+    round: int = 0
+    snapshot_id: str | None = None
 
 
 class ReviewIssue(_Entity):
-    """A single issue raised by a review."""
+    """A single finding, and what the author decided about it.
+
+    ``fingerprint`` identifies "the same finding" across rounds, derived from what
+    the finding says rather than from its id — which the reviewer renumbers freely.
+    """
 
     review_id: str
-    severity: str
+    ref: str = ""
+    severity: IssueSeverity
+    category: str = ""
+    location: str = ""
+    passage: str = ""
     description: str
+    evidence: str = ""
+    source_ref: str = ""
+    brief_ref: str = ""
+    recommended_correction: str = ""
+    suggested_route: str = ""
+    blocks_publication: bool = False
+    reviewer_confidence: float = 0.5
+    fingerprint: str = ""
+    status: FindingStatus = FindingStatus.PROPOSED
+    decided_by: str = ""
+    decision_reason: str = ""
 
 
 class RevisionPlan(_Entity):

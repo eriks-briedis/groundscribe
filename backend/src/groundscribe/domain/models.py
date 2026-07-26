@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON as JSONColumn
-from sqlalchemy import Column, ForeignKey, Integer, String, Table
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Table
 from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -36,7 +36,9 @@ from groundscribe.domain.enums import (
     ArtifactType,
     BranchStatus,
     ClaimClassification,
+    FindingStatus,
     GapPriority,
+    IssueSeverity,
     SegmentKind,
     SelectionStatus,
     SourceFormat,
@@ -339,24 +341,67 @@ class ArticleVersion(LineageMixin, EntityMixin, Base):
 
 
 class Review(LineageMixin, EntityMixin, Base):
+    """One substantive review of one article version (phase 07 §8)."""
+
     __tablename__ = "reviews"
 
     article_version_id: Mapped[str] = mapped_column(
         ForeignKey("article_versions.id"), nullable=False
     )
     verdict: Mapped[str] = mapped_column(String, nullable=False)
+    # Which pass over this version this was. A version can be reviewed more than
+    # once — after an edit, or by a second reviewer — and "the same finding again"
+    # only means anything against a round number.
+    round: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
 
     article_version: Mapped[ArticleVersion] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
+    issues: Mapped[list[ReviewIssue]] = relationship(back_populates="review")
 
 
 class ReviewIssue(EntityMixin, Base):
+    """One finding, and what the author decided about it (phase 07 §8).
+
+    A row rather than an element of the review's payload, because a finding has a
+    *lifecycle*: proposed, then accepted, rejected or edited by a person, and
+    possibly suppressed in a later round. A lifecycle inside a JSON blob is a
+    lifecycle nothing can query.
+
+    ``fingerprint`` is what makes "the same finding again" answerable across
+    rounds. It is derived from what the finding says and the evidence behind it,
+    never from its id, which the reviewer renumbers freely.
+    """
+
     __tablename__ = "review_issues"
 
     review_id: Mapped[str] = mapped_column(ForeignKey("reviews.id"), nullable=False)
-    severity: Mapped[str] = mapped_column(String, nullable=False)
+    # The reviewer's own label for the finding ("i1"), unique only within its
+    # review. The row id is generated, because the reviewer renumbers from one on
+    # every round and two rounds of findings have to coexist.
+    ref: Mapped[str] = mapped_column(String, default="", nullable=False)
+    severity: Mapped[IssueSeverity] = mapped_column(enum_column(IssueSeverity), nullable=False)
+    category: Mapped[str] = mapped_column(String, default="", nullable=False)
+    location: Mapped[str] = mapped_column(String, default="", nullable=False)
+    passage: Mapped[str] = mapped_column(String, default="", nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
+    evidence: Mapped[str] = mapped_column(String, default="", nullable=False)
+    source_ref: Mapped[str] = mapped_column(String, default="", nullable=False)
+    brief_ref: Mapped[str] = mapped_column(String, default="", nullable=False)
+    recommended_correction: Mapped[str] = mapped_column(String, default="", nullable=False)
+    suggested_route: Mapped[str] = mapped_column(String, default="", nullable=False)
+    blocks_publication: Mapped[bool] = mapped_column(default=False, nullable=False)
+    reviewer_confidence: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String, default="", nullable=False)
+    status: Mapped[FindingStatus] = mapped_column(
+        enum_column(FindingStatus), default=FindingStatus.PROPOSED, nullable=False
+    )
+    decided_by: Mapped[str] = mapped_column(String, default="", nullable=False)
+    decision_reason: Mapped[str] = mapped_column(String, default="", nullable=False)
 
-    review: Mapped[Review] = relationship()
+    review: Mapped[Review] = relationship(back_populates="issues")
 
 
 class RevisionPlan(EntityMixin, Base):
