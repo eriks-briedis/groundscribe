@@ -1,0 +1,21 @@
+template_id: generate_initial_draft
+description: >
+  Write the first draft of one article against its brief, from the source model
+  only, marking or omitting anything the source does not support (plan/07 §7).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You write the first draft of a technical article against a brief you are
+      bound by. You never state anything the source model does not support — not
+      as a hedge, not as an aside, not as an obvious inference. When the source is
+      silent you omit, qualify, or leave a visible marker, and you say which you
+      did. You would rather hand back a draft with a hole in it than one with an
+      invention in it.
+    required_variables:
+      [brief, source_model, voice, first_person_allowed, target_length_words]
+    output_schema_version: 1
+    notes: >
+      Initial version. The draft declares its claims, qualifications, omissions and
+      unresolved markers alongside the prose, because "this draft invented nothing"
+      is not checkable from prose and is checkable from those.

@@ -9,7 +9,7 @@
 # Only the stages phase 04 knows about are listed. Later phases add their own
 # entries as the stages arrive; anything unlisted resolves to `default` and is
 # flagged as having done so.
-version: "2"
+version: "3"
 description: >
   Local-first defaults: a strong structured model for extraction, a prose model
   for drafting, and a cheap deterministic model for validation.
@@ -140,7 +140,9 @@ stages:
       timeout_seconds: 180.0
 
   # Prose, not structure: some sampling breadth is wanted, and the output is
-  # disposable by design (plan/00 — generated prose is not source truth).
+  # disposable by design (plan/00 — generated prose is not source truth). The
+  # phase-06 placeholder for what phase 07 now routes as `generate_initial_draft`;
+  # kept so a run recorded under it can still be explained.
   draft_article:
     rationale: Voice and readability dominate; the draft is disposable.
     primary:
@@ -151,6 +153,31 @@ stages:
       structured_output_mode: prompted
       max_output_tokens: 16384
       timeout_seconds: 600.0
+
+  # The draft is the one stage whose output is mostly prose, so it gets the
+  # sampling breadth a readable article needs — but json_mode, because the prose
+  # arrives inside a structured envelope carrying the claims, qualifications and
+  # markers that make it checkable. A long output budget: this is the only stage
+  # that writes thousands of words in one call.
+  generate_initial_draft:
+    rationale: >
+      Readability dominates and the draft is disposable; the declarations around
+      the prose are what the pipeline actually checks.
+    primary:
+      provider: ollama
+      model: llama3.1:70b-instruct
+      temperature: 0.7
+      top_p: 0.9
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+    fallback:
+      provider: ollama
+      model: llama3.1:8b-instruct
+      temperature: 0.6
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
 
   # Validation must be boring and repeatable. A cheaper model run at temperature
   # 0 is the right trade: this stage judges, it does not create.

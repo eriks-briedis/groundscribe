@@ -28,7 +28,6 @@ from groundscribe.stages.ingestion import IngestedSource
 from groundscribe.stages.override import approve_architecture
 from groundscribe.stages.schemas import ArticleBriefDocument, ProposedArticle, SourceModel
 from groundscribe.workflow.states import WorkflowAction
-from stage_helpers import DEFAULT_CONSTRAINTS
 from test_extraction import ingest_golden, script
 
 #: The seeded project's author, and the person every human action is attributed to.

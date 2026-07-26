@@ -52,9 +52,20 @@ class BriefContractError(StageError):
     """
 
 
+class DraftContractError(StageError):
+    """A draft broke a promise the brief or the source model made on its behalf.
+
+    The prose-level sibling of :class:`BriefContractError`: a qualification the
+    source demanded and the draft stated flat, or material the brief excluded and
+    the draft printed. Both read as perfectly good English, which is why nothing
+    downstream would catch them.
+    """
+
+
 __all__ = [
     "ArchitectureLocked",
     "BriefContractError",
+    "DraftContractError",
     "EvidenceError",
     "ProviderNotPermitted",
     "StageError",

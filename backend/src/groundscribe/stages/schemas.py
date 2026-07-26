@@ -414,10 +414,98 @@ class ArticleBriefDocument(_Output):
         )
 
 
+class VoiceProfileDocument(BaseModel):
+    """The voice an article is written in (phase 07 consumes; phase 10 learns).
+
+    Deliberately thin. Phase 10 builds the real profile — learned from the author's
+    own writing, with precedence rules and drift detection — and this is the
+    minimum a drafting or voice-alignment prompt needs until then. It carries a
+    version so an article can name the profile it was written under even while the
+    profile itself is still a placeholder.
+
+    ``avoid`` is the one field that earns its place early: the generic-AI phrasing
+    plan/07 lists among the things a voice pass exists to remove is easier to name
+    than to describe.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: int = 1
+    name: str = "default"
+    version: str = "1"
+    description: str = ""
+    tone: str = ""
+    avoid: tuple[str, ...] = ()
+    first_person: bool = True
+
+
+class UnresolvedMarker(BaseModel):
+    """A fact the draft could not settle, marked where the reader can see it.
+
+    ``blocking`` separates "the article is worse without this" from "the article is
+    *wrong* without this". Only the second is worth stopping a person for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    marker: str
+    question: str
+    blocking: bool = False
+    claim_ids: tuple[str, ...] = ()
+
+
+class OmittedMaterial(BaseModel):
+    """Something the draft deliberately left out, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    reason: str
+    claim_ids: tuple[str, ...] = ()
+
+
+class ArticleDraft(_Output):
+    """One version of the article: prose, plus what the drafter did to produce it.
+
+    ``body`` is the only free-text field in the system (plan/00 → structured
+    outputs where decisions matter, free-form text only for article prose).
+    Everything beside it exists because "the draft did not invent anything" is not
+    checkable by reading the prose: the declarations are, against the source model
+    and the brief.
+    """
+
+    title: str
+    thesis: str
+    body: str
+    claims_used: tuple[str, ...] = ()
+    qualifications_applied: tuple[str, ...] = ()
+    unresolved: tuple[UnresolvedMarker, ...] = ()
+    omitted: tuple[OmittedMaterial, ...] = ()
+    finish_reason: str = "stop"
+
+    @model_validator(mode="after")
+    def _markers_are_visible(self) -> Self:
+        for item in self.unresolved:
+            if not item.marker.strip():
+                raise ValueError("an unresolved marker needs text a reader can see")
+            if item.marker not in self.body:
+                raise ValueError(
+                    f"the unresolved marker {item.marker!r} does not appear in the body; "
+                    "a marker nobody can see is an invented fact with extra steps"
+                )
+        return self
+
+    @property
+    def word_count(self) -> int:
+        """Words in the body, as a reader would count them."""
+        return len(self.body.split())
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
     "ArticleBriefDocument",
+    "ArticleDraft",
     "BriefSection",
     "DevelopmentEvent",
     "DoneCriterion",
@@ -425,6 +513,7 @@ __all__ = [
     "ExtractedClaim",
     "GapReport",
     "Lesson",
+    "OmittedMaterial",
     "PotentialArgument",
     "ProductFact",
     "ProposedArticle",
@@ -434,4 +523,6 @@ __all__ = [
     "SeriesConsiderations",
     "SourceGapQuestion",
     "SourceModel",
+    "UnresolvedMarker",
+    "VoiceProfileDocument",
 ]

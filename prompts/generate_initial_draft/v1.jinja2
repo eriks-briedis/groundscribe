@@ -1,0 +1,40 @@
+Write the first draft of this article.
+
+The brief you are bound by:
+{{ brief }}
+
+The source model — the only thing you may state as fact:
+{{ source_model }}
+
+Voice:
+{{ voice }}
+{% if not first_person_allowed %}
+Do not write in the first person.
+{% endif %}
+
+Length: around {{ target_length_words }} words.
+
+Write every mandatory section in the brief's argument structure. An optional
+section may be dropped if the article is better without it.
+
+When the source does not support something you want to say, you have three moves
+and no fourth:
+
+1. **Omit it** — leave it out and record it under `omitted` with the reason.
+2. **Qualify it** — state it with the conditions the source attaches, and list the
+   claim id under `qualifications_applied`. Every claim the brief marks as
+   requiring qualification must be qualified in the prose or omitted entirely.
+3. **Mark it** — write a visible marker in the body, exactly as you record it under
+   `unresolved`, and say what the author must answer. Set `blocking` when the
+   article would be *wrong* without the answer rather than merely thinner.
+
+You may not invent, infer a number, round one you were not given, or write around
+a gap in a way that implies you know what is in it.
+
+Do not include anything the brief lists under excluded material, in any wording.
+Material the brief reserves may be stated but not developed.
+
+List every claim id you drew on under `claims_used`.
+
+Return a single JSON object matching the required schema. The article prose goes
+in `body` as Markdown.
