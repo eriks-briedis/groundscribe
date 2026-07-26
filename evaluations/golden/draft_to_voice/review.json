@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "verdict": "revise",
+  "summary": "The argument holds and the evidence is sound, but the strongest number is under-qualified and the determinism section promises more than the brief reserves for it.",
+  "dimensions_assessed": [
+    "factual_fidelity",
+    "scope_adherence",
+    "argument_structure",
+    "evidence_sufficiency",
+    "reader_fit"
+  ],
+  "issues": [
+    {
+      "id": "i1",
+      "severity": "blocking",
+      "category": "factual_fidelity",
+      "location": "Opening paragraph",
+      "passage": "p99 on the article pages fell from 810ms to 120ms",
+      "description": "The measurement window is stated but the workload is not; the source qualifies this figure as warm-cache only on article pages.",
+      "evidence": "Source claim c1 is marked as requiring qualification.",
+      "source_ref": "c1",
+      "brief_ref": "Every stated number carries the conditions it was measured under.",
+      "recommended_correction": "State the warm-cache condition in the same sentence as the figure, not two clauses later.",
+      "suggested_route": "factual_gap",
+      "blocks_publication": true,
+      "reviewer_confidence": 0.9
+    },
+    {
+      "id": "i2",
+      "severity": "major",
+      "category": "scope_adherence",
+      "location": "Section: Why it was slow",
+      "passage": "if the same input can render differently, a cache is not a latency win",
+      "description": "The determinism argument is developed over a full paragraph, but the brief reserves it for the follow-up article and permits only a statement of it.",
+      "evidence": "Brief reserved material: the determinism argument is reserved for the follow-up article.",
+      "source_ref": "c3",
+      "brief_ref": "Reserved material",
+      "recommended_correction": "Cut to a single sentence that states the dependency and moves on.",
+      "suggested_route": "substantive_issue",
+      "blocks_publication": false,
+      "reviewer_confidence": 0.75
+    },
+    {
+      "id": "i3",
+      "severity": "minor",
+      "category": "evidence_sufficiency",
+      "location": "Section: The key that named two of its three inputs",
+      "passage": "served for forty minutes",
+      "description": "The forty-minute figure appears without the incident context the source gives it.",
+      "evidence": "Source claim c4 covers the locale failure; the duration comes from the same list item.",
+      "source_ref": "c4",
+      "brief_ref": "",
+      "recommended_correction": "Attribute the duration to the deploy window explicitly.",
+      "suggested_route": "minor_local",
+      "blocks_publication": false,
+      "reviewer_confidence": 0.6
+    },
+    {
+      "id": "i4",
+      "severity": "optional",
+      "category": "reader_fit",
+      "location": "Closing",
+      "passage": "invalidation stops being a separate task you get to later",
+      "description": "The close lands, but a senior reader might want the generalisation made explicit.",
+      "evidence": "",
+      "source_ref": "",
+      "brief_ref": "A closing line the reader could quote back.",
+      "recommended_correction": "Optional: add a sentence naming the general rule.",
+      "suggested_route": "style_issue",
+      "blocks_publication": false,
+      "reviewer_confidence": 0.35
+    }
+  ]
+}
