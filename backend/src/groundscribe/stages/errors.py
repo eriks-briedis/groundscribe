@@ -62,11 +62,22 @@ class DraftContractError(StageError):
     """
 
 
+class PlanContractError(StageError):
+    """A revision plan would send the rewriter off with the wrong instructions.
+
+    plan/07 names the risk directly: a rewriter that blindly applies reviewer
+    suggestions. A plan that dropped a finding the author accepted, or promised to
+    preserve a claim that does not exist, is that failure one stage earlier — and
+    one stage earlier is where it can still be caught.
+    """
+
+
 __all__ = [
     "ArchitectureLocked",
     "BriefContractError",
     "DraftContractError",
     "EvidenceError",
+    "PlanContractError",
     "ProviderNotPermitted",
     "StageError",
 ]

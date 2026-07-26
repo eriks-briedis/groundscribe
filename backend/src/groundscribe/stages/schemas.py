@@ -614,6 +614,92 @@ class ReviewIssueReport(BaseModel):
         return self.rejected
 
 
+class ReconciliationKind(StrEnum):
+    """What a planner did with feedback it could not simply apply (phase 07 §9).
+
+    Three, because there are three honest answers to two findings that disagree:
+    resolve them into one change, hold one back for a later round, or decline it.
+    A fourth — apply both — is what produces the article that argues with itself.
+    """
+
+    COMBINED = "combined"
+    DEFERRED = "deferred"
+    REJECTED = "rejected"
+
+
+class PlanChange(BaseModel):
+    """One change the rewrite must make, and the findings that asked for it.
+
+    ``required`` is the distinction the rewriter acts on: a required change is the
+    plan, an optional one is a suggestion the rewrite may take if it is already in
+    the neighbourhood.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    description: str
+    finding_refs: tuple[str, ...] = Field(min_length=1)
+    required: bool = True
+    sections: tuple[str, ...] = ()
+
+
+class Reconciliation(BaseModel):
+    """Feedback that could not be applied as given, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: ReconciliationKind
+    finding_refs: tuple[str, ...] = Field(min_length=1)
+    rationale: str
+
+    @model_validator(mode="after")
+    def _reconciliations_are_explained(self) -> Self:
+        if not self.rationale.strip():
+            raise ValueError(
+                f"a {self.kind.value} reconciliation needs a rationale: without one it is "
+                "two findings in a box, and nobody can judge whether the contradiction was "
+                "resolved the right way"
+            )
+        return self
+
+
+class RevisionPlanDocument(_Output):
+    """What the rewrite will do, and what it must leave alone (phase 07 §9).
+
+    The plan exists because a rewriter handed raw review findings applies them
+    blindly — including the two that contradict each other. Everything here is
+    either an instruction the rewrite follows or a boundary it may not cross.
+    """
+
+    summary: str
+    changes: tuple[PlanChange, ...] = ()
+    preserve_sections: tuple[str, ...] = ()
+    claims_that_must_not_change: tuple[str, ...] = ()
+    sections_to_remove: tuple[str, ...] = ()
+    sections_to_move: tuple[str, ...] = ()
+    reopen_brief: bool = False
+    reopen_architecture: bool = False
+    expected_score_effect: str = ""
+    reconciliations: tuple[Reconciliation, ...] = ()
+
+    @property
+    def required_changes(self) -> tuple[PlanChange, ...]:
+        """The changes the rewrite must make."""
+        return tuple(change for change in self.changes if change.required)
+
+    @property
+    def optional_changes(self) -> tuple[PlanChange, ...]:
+        """The changes the rewrite may make if it is already there."""
+        return tuple(change for change in self.changes if not change.required)
+
+    def addressed_findings(self) -> frozenset[str]:
+        """Every finding this plan acts on or explains away."""
+        applied = {ref for change in self.changes for ref in change.finding_refs}
+        explained = {ref for item in self.reconciliations for ref in item.finding_refs}
+        return frozenset(applied | explained)
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
@@ -627,13 +713,17 @@ __all__ = [
     "GapReport",
     "Lesson",
     "OmittedMaterial",
+    "PlanChange",
     "PotentialArgument",
     "ProductFact",
     "ProposedArticle",
     "PublicationConstraint",
+    "Reconciliation",
+    "ReconciliationKind",
     "RejectedAlternative",
     "ReviewFinding",
     "ReviewIssueReport",
+    "RevisionPlanDocument",
     "RiskLevel",
     "SeriesConsiderations",
     "SourceGapQuestion",

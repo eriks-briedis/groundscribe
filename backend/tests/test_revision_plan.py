@@ -36,8 +36,8 @@ from groundscribe.stages.base import StageResult, StageRunner
 from groundscribe.stages.errors import PlanContractError
 from groundscribe.stages.planning import (
     PLAN_STAGE,
-    PlanOutcome,
     CreateRevisionPlan,
+    PlanOutcome,
     approve_revision_plan,
 )
 from groundscribe.stages.review import open_review_ledger
@@ -46,7 +46,7 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.states import WorkflowState
 from pipeline_helpers import AUTHOR
 from test_drafting import Drafted
-from test_review import REVIEW_STAGE, golden_review, review
+from test_review import review
 
 
 def golden_plan(**overrides: Any) -> dict[str, Any]:
@@ -118,9 +118,7 @@ async def test_contradictory_findings_are_reconciled_with_a_stated_reason(
     # And the same reasoning reaches provenance, attributed to the stage's policy.
     execution = result.execution
     assert execution is not None
-    (record,) = [
-        row for row in execution.decision_records if row.decision_type == "revision_plan"
-    ]
+    (record,) = [row for row in execution.decision_records if row.decision_type == "revision_plan"]
     assert record.decided_by_type is ActorType.POLICY
     assert record.policy_version
     assert [entry["kind"] for entry in record.inputs["reconciliations"]] == [
@@ -197,10 +195,12 @@ async def test_the_plan_is_its_own_artefact_and_waits_for_approval(
     assert [artifact.role for artifact in execution.inputs] == ["review"]
 
     # Planning does not move the run: approving the plan is the author's act.
-    assert drafted.context.engine.state is WorkflowState.REVISION_PLAN_REQUIRED
-
+    before = drafted.context.engine.state
     approve_revision_plan(drafted.context, plan=result.value, approved_by=AUTHOR)
-    assert drafted.context.engine.state is WorkflowState.SUBSTANTIVE_REWRITING
+    after = drafted.context.engine.state
+
+    assert before is WorkflowState.REVISION_PLAN_REQUIRED
+    assert after is WorkflowState.SUBSTANTIVE_REWRITING
     interventions = [
         row
         for stage in drafted.context.engine.run.stage_executions
@@ -220,9 +220,7 @@ async def test_a_plan_that_reopens_the_brief_says_so_in_its_record(
 
     assert execution is not None
     assert result.value.plan.reopen_brief is True
-    (record,) = [
-        row for row in execution.decision_records if row.decision_type == "revision_plan"
-    ]
+    (record,) = [row for row in execution.decision_records if row.decision_type == "revision_plan"]
     assert record.inputs["reopen_brief"] is True
     assert any(event.event_type == "intervention.requested" for event in execution.trace_events)
 
