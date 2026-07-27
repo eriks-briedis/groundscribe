@@ -1,0 +1,90 @@
+# The editorial scoring rubric (plan/08).
+#
+# What an article is scored on, how much each dimension counts for a given kind
+# of article, and the conditions it must meet to pass.
+#
+# Edited by hand. Every evaluation records the `version` below, so bump it
+# whenever a weight or a threshold changes — superseded versions live in git
+# history, and a run that cannot name the rubric it scored under cannot be told
+# apart from a rubric that got more generous.
+#
+# The overall score is a weighted combination on a 0-100 scale. It is a summary
+# for comparing versions and spotting trends, *not* an objective measurement of
+# article quality, and nothing in the pipeline treats it as one: passing is a
+# conjunction of the conditions under `passing`, and the score is only one of
+# them.
+version: "1"
+description: >
+  Seven dimensions, weighted by content type, with hard floors on the four that
+  a good average must never be allowed to hide.
+
+# Weight sets by content type. `default` applies to any content type without one
+# of its own and is the spec's percentages; the others adjust from it where the
+# kind of article genuinely changes what matters. Each set must name every
+# dimension and sum to 1.0 — the loader refuses anything else, because a set that
+# sums to 0.9 rescales every score it produces without failing.
+weights:
+  # plan/08's percentages. Fidelity is the largest single weight by some margin:
+  # it is the dimension the whole product exists to protect, and the one where a
+  # failure is not a worse article but a wrong one.
+  default:
+    factual_fidelity: 0.25
+    thesis_and_focus: 0.15
+    structure_and_coherence: 0.15
+    evidence_and_specificity: 0.15
+    reader_value: 0.10
+    scope_discipline: 0.10
+    voice_adherence: 0.10
+
+  # An overview is judged on whether a reader leaves it oriented. Evidence
+  # density matters less — an overview citing every number would be a deep dive
+  # that failed to notice — and reader value and focus matter more, because the
+  # failure mode of an overview is a list of things rather than a point.
+  overview:
+    factual_fidelity: 0.25
+    thesis_and_focus: 0.20
+    structure_and_coherence: 0.15
+    evidence_and_specificity: 0.05
+    reader_value: 0.15
+    scope_discipline: 0.10
+    voice_adherence: 0.10
+
+  # A deep dive is bought for its evidence, so specificity is weighted up and
+  # taken from reader value and voice: a deep dive that is thorough and slightly
+  # dry is doing its job, and one that reads beautifully on thin evidence is not.
+  deep_dive:
+    factual_fidelity: 0.25
+    thesis_and_focus: 0.15
+    structure_and_coherence: 0.15
+    evidence_and_specificity: 0.25
+    reader_value: 0.05
+    scope_discipline: 0.10
+    voice_adherence: 0.05
+
+# Every condition must hold. These are not a score to beat: an article scoring 87
+# with an unsupported major claim fails, and the interface shows both numbers,
+# because "how good is it" and "may it be published" are different questions.
+#
+# The floors exist because a weight is the wrong instrument for a hard
+# requirement. Voice adherence is a tenth of the overall, so a terrible voice
+# score moves the number it would be judged by by about as much as rounding —
+# which is exactly how a critical weakness gets masked by a good average.
+passing:
+  # plan/08: overall >= 85.
+  overall: 85.0
+  minimums:
+    # The highest floor in the rubric. An article that is 89% factually faithful
+    # is one that is wrong somewhere, and no amount of craft elsewhere makes
+    # publishing it acceptable.
+    factual_fidelity: 90.0
+    # A drifting thesis is the failure the brief exists to prevent, so it is held
+    # to a floor rather than left to the average.
+    thesis_and_focus: 80.0
+    # Scope discipline is the other half of that: the article that quietly became
+    # three articles scores well on every dimension except this one.
+    scope_discipline: 80.0
+    # Lower than the rest, deliberately. Voice is the most subjective reading in
+    # the rubric and the cheapest to correct — a style pass fixes it without
+    # touching the argument — so it blocks publication only when it is clearly
+    # wrong rather than merely imperfect.
+    voice_adherence: 75.0

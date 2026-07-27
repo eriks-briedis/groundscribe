@@ -6,7 +6,7 @@ hard-failure-not-masked tests).
 
 Two things are deliberately kept apart here, and the separation is the whole
 design. The **overall score** is a weighted combination of seven dimensions on a
-0–100 scale. The **verdict** is a set of conditions every one of which must hold.
+0-100 scale. The **verdict** is a set of conditions every one of which must hold.
 A high average cannot buy its way past a failing dimension, because averaging is
 not how the verdict is computed — plan/08's "an artefact may score 87 yet route
 `fail`" is not an edge case to be handled, it is the normal consequence of
@@ -92,7 +92,7 @@ def test_the_overall_score_is_the_weighted_combination(rubric: ScoringRubric) ->
     """plan/08 test-first spec: weighted overall computed correctly."""
     sheet = scores(factual_fidelity=50.0, reader_value=0.0)
 
-    # 0.4×50 + 0.1×100×5 + 0.1×0 = 20 + 50 = 70.
+    # 0.4*50 + 0.1*100*5 + 0.1*0 = 20 + 50 = 70.
     assert rubric.overall(sheet) == pytest.approx(70.0)
     assert rubric.overall(PERFECT) == pytest.approx(100.0)
 
@@ -163,7 +163,7 @@ def test_a_rubric_without_a_default_weight_set_is_refused(tmp_path: Path) -> Non
 
 
 def test_a_score_outside_the_scale_is_refused(rubric: ScoringRubric) -> None:
-    """0–100 is the scale; a dimension at 120 would lift an overall past it."""
+    """0-100 is the scale; a dimension at 120 would lift an overall past it."""
     with pytest.raises(ScoringRubricError, match="0 and 100"):
         rubric.overall(scores(reader_value=120.0))
 
