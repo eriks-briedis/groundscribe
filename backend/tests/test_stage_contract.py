@@ -28,17 +28,33 @@ from groundscribe.provenance.enums import ActorType, ExecutionStatus
 from groundscribe.stages.architecture import ARCHITECTURE_STAGE
 from groundscribe.stages.base import PipelineContext, PipelineStage, StageResult, StageRunner
 from groundscribe.stages.brief import BRIEF_STAGE
+from groundscribe.stages.drafting import DRAFT_STAGE
 from groundscribe.stages.extraction import EXTRACTION_STAGE
+from groundscribe.stages.planning import PLAN_STAGE
 from groundscribe.stages.questions import GAP_STAGE
+from groundscribe.stages.review import REVIEW_STAGE
+from groundscribe.stages.rewriting import REWRITE_STAGE
+from groundscribe.stages.voice import VOICE_STAGE
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.errors import ArtifactProvenanceError
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from stage_helpers import build_context
 
-#: The phase-06 stages that call a model. Each one's name is simultaneously its
-#: prompt template id and its routing key, so this tuple is the whole list of
-#: names that must exist in three places at once.
-MODEL_STAGES = (EXTRACTION_STAGE, GAP_STAGE, ARCHITECTURE_STAGE, BRIEF_STAGE)
+#: Every stage that calls a model. Each one's name is simultaneously its prompt
+#: template id and its routing key, so this tuple is the whole list of names that
+#: must exist in three places at once. Later phases append to it as their stages
+#: arrive — a stage added here without config is exactly the mistake this catches.
+MODEL_STAGES = (
+    EXTRACTION_STAGE,
+    GAP_STAGE,
+    ARCHITECTURE_STAGE,
+    BRIEF_STAGE,
+    DRAFT_STAGE,
+    REVIEW_STAGE,
+    PLAN_STAGE,
+    REWRITE_STAGE,
+    VOICE_STAGE,
+)
 
 
 class _RecordingStage:
