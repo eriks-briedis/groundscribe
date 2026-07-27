@@ -296,3 +296,44 @@ def test_the_shipped_thresholds_are_the_ones_the_spec_names() -> None:
         ScoreDimension.SCOPE_DISCIPLINE: pytest.approx(80.0),
         ScoreDimension.VOICE_ADHERENCE: pytest.approx(75.0),
     }
+
+
+def test_an_unknown_content_type_in_the_weights_is_refused(tmp_path: Path) -> None:
+    """A typo would otherwise be a weight set that silently never applies.
+
+    Which looks exactly like a rubric that does not work: the tuned numbers are
+    right there in the file, and every article is scored by the default.
+    """
+    path = tmp_path / "scoring-rubric.yaml"
+    path.write_text(CONFIG.replace("  deep_dive:", "  deepdive:", 1), encoding="utf-8")
+
+    with pytest.raises(ScoringRubricError, match="deepdive"):
+        ScoringRubric.from_yaml(path)
+
+
+def test_a_missing_rubric_file_is_reported_as_a_rubric_error(tmp_path: Path) -> None:
+    """The caller asked for a rubric; an OSError tells it nothing about which."""
+    with pytest.raises(ScoringRubricError, match="cannot read"):
+        ScoringRubric.from_yaml(tmp_path / "absent.yaml")
+
+
+def test_malformed_yaml_is_reported_as_a_rubric_error(tmp_path: Path) -> None:
+    """One exception type for "this rubric is unusable", whatever made it so."""
+    path = tmp_path / "scoring-rubric.yaml"
+    path.write_text("version: [unclosed\n", encoding="utf-8")
+
+    with pytest.raises(ScoringRubricError, match="invalid YAML"):
+        ScoringRubric.from_yaml(path)
+
+
+def test_scoring_a_sheet_missing_a_dimension_is_refused(rubric: ScoringRubric) -> None:
+    """A dimension defaulted to zero would read as "judged and found worthless".
+
+    It means "not judged", and the two differ by 100 points on a dimension that
+    might be weighted at a quarter of the whole score.
+    """
+    sheet = dict(PERFECT)
+    del sheet[ScoreDimension.SCOPE_DISCIPLINE]
+
+    with pytest.raises(ScoringRubricError, match="scope_discipline"):
+        rubric.assess(sheet)

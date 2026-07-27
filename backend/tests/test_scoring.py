@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json
 from groundscribe.domain.enums import IssueSeverity
+from groundscribe.llm.routing import RouteOverride
 from groundscribe.scoring.rubric import ScoreDimension
 from groundscribe.scoring.scoring import SCORE_STAGE, ScoreArticle, ScoreOutcome
 from groundscribe.stages.base import StageResult, StageRunner
@@ -40,6 +41,7 @@ from groundscribe.stages.schemas import ArticleScore
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.policy import FailureCategory
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
+from pipeline_helpers import AUTHOR
 from test_drafting import VOICE, Drafted, draft
 
 
@@ -482,3 +484,48 @@ async def test_the_dispersion_is_recorded_with_the_score(
     # Each pass is kept as its own artefact: an average nobody can decompose is a
     # number with no evidence behind it.
     assert len(result.outputs) == 2
+
+
+async def test_repeat_passes_may_run_against_different_models(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """plan/08: repeated *or multi-model* scoring.
+
+    At temperature 0 with a fixed seed — which is how scoring is routed — the
+    second sample of one model is the first sample again. Two models disagreeing
+    is the only repeat that carries information, so the passes after the first
+    take their own routes.
+    """
+    drafted = await draft(db_session, snapshot_store)
+    drafted.context.engine.apply(WorkflowAction.ACCEPT_REVIEW)
+    drafted.context.engine.apply(WorkflowAction.SUBMIT_VOICE_PASS)
+    for _ in range(2):
+        drafted.model_client.script_response(SCORE_STAGE, golden_score())
+
+    result = await StageRunner(drafted.context).run(
+        ScoreArticle(
+            draft=drafted.result.value.draft,
+            version=drafted.result.value.version,
+            version_snapshot=drafted.result.outputs[0],
+            brief=drafted.briefed.brief,
+            brief_snapshot=drafted.briefed.brief_snapshot,
+            source_model=drafted.briefed.source_model,
+            source_model_snapshot=drafted.briefed.source_model_snapshot,
+            voice=VOICE,
+            repeats=2,
+            repeat_overrides=(
+                RouteOverride(
+                    model="llama3.1:8b-instruct",
+                    requested_by=AUTHOR,
+                    reason="a second model, because one model at temperature 0 agrees with itself",
+                ),
+            ),
+        )
+    )
+    execution = result.execution
+    assert execution is not None
+    first, second = execution.model_invocations
+
+    assert first.model == "llama3.1:70b-instruct"
+    assert second.model == "llama3.1:8b-instruct"
+    assert len(result.value.confidence.repeat_scores) == 2
