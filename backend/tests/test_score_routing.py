@@ -175,7 +175,7 @@ async def test_a_stalled_run_offers_every_escalation_it_can_actually_take(
     offered = escalations_for(engine)
 
     assert {escalation.option for escalation in offered} == set(EscalationOption)
-    available = set(engine.available_actions)
+    available = set(engine.available_actions())
     for escalation in offered:
         if escalation.action is not None:
             assert escalation.action in available, escalation.option
@@ -184,7 +184,7 @@ async def test_a_stalled_run_offers_every_escalation_it_can_actually_take(
         EscalationOption.LOWER_THRESHOLD,
     }
     assert all(escalation.detail for escalation in offered)
-    assert ESCALATION_OPTIONS == tuple(EscalationOption)
+    assert tuple(EscalationOption) == ESCALATION_OPTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ async def test_the_history_is_read_back_from_the_stored_evaluations(
     stored evaluations is what makes a stalled run explainable: every round the
     detector fired on can be traced back to the score that produced it.
     """
-    drafted, result = await score(db_session, snapshot_store)
+    drafted, _ = await score(db_session, snapshot_store)
 
     history = score_history(drafted.context)
 

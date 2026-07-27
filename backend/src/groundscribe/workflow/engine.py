@@ -26,7 +26,7 @@ the worker, and the resumption that needs it stored.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -228,6 +228,7 @@ class WorkflowEngine:
         *,
         prefer: WorkflowState | None = None,
         approval: RewriteApproval | None = None,
+        evidence: Mapping[str, Any] | None = None,
     ) -> RecordedRoute:
         """Route a failing article, recording the policy or person behind it.
 
@@ -236,6 +237,12 @@ class WorkflowEngine:
         recording it as though it did would misdirect the next person asking why
         this run went further than the limits allow. The same reasoning as
         phase 04's model-routing override.
+
+        ``evidence`` is merged into the record's inputs by the caller that knows
+        *why* the article failed. The engine knows the category and nothing else;
+        phase 08 supplies the score, the failing conditions and the evaluation
+        behind them, because "where did this go" and "why did it go there" are
+        different questions and the record has to answer both.
         """
         result = self.machine.route(category, prefer=prefer, approval=approval)
         approver = result.approval
@@ -254,6 +261,7 @@ class WorkflowEngine:
                 "requested_target": result.outcome.target.value,
                 "limit": result.outcome.limit.value if result.outcome.limit else None,
                 "escalated": result.escalated,
+                **(dict(evidence) if evidence is not None else {}),
             },
         )
         if result.escalated:
