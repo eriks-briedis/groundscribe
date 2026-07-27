@@ -27,6 +27,9 @@ eventually be compared against, and the comparison will look perfectly fine.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from statistics import fmean, stdev
 from typing import Any, ClassVar
 
 from groundscribe.domain import models as domain_models
@@ -34,8 +37,10 @@ from groundscribe.domain.enums import ArtifactType, IssueSeverity
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
+from groundscribe.provenance.schemas import TokenUsage
 from groundscribe.scoring.rubric import (
     ScoreAssessment,
+    ScoreDimension,
     ScoringRubric,
     default_scoring_rubric,
 )
@@ -79,10 +84,26 @@ _SEVERITY_RANK = {
 }
 
 
+@dataclass(frozen=True)
+class ScoreConfidence:
+    """How stable the score was across repeated passes (plan/08).
+
+    ``dispersion`` and ``stdev`` are ``None`` for a single pass rather than 0.0.
+    Zero spread across three passes means three scorers agreed; across one it
+    means nothing was compared, and reporting the same number for both would let
+    "we did not check" read as "we checked and it was stable" — precisely the
+    false precision plan/08 names as this phase's risk.
+    """
+
+    repeat_scores: tuple[float, ...]
+    dispersion: float | None = None
+    stdev: float | None = None
+
+
 class ScoreOutcome:
     """The score sheet, the verdict, the failure class, and the record of both."""
 
-    __slots__ = ("assessment", "category", "evaluation", "score")
+    __slots__ = ("assessment", "category", "confidence", "evaluation", "score")
 
     def __init__(
         self,
@@ -91,11 +112,13 @@ class ScoreOutcome:
         assessment: ScoreAssessment,
         evaluation: models.EvaluationRun,
         category: FailureCategory | None,
+        confidence: ScoreConfidence,
     ) -> None:
         self.score = score
         self.assessment = assessment
         self.evaluation = evaluation
         self.category = category
+        self.confidence = confidence
 
 
 class ScoreArticle:
@@ -121,6 +144,8 @@ class ScoreArticle:
         brief_snapshot: ArtifactSnapshot | None = None,
         source_model_snapshot: ArtifactSnapshot | None = None,
         rubric: ScoringRubric | None = None,
+        repeats: int = 1,
+        repeat_overrides: Sequence[RouteOverride] = (),
         transitions: bool = True,
         template_version: str | None = None,
         override: RouteOverride | None = None,
@@ -134,6 +159,8 @@ class ScoreArticle:
         self._source_model_snapshot = source_model_snapshot
         self._voice = voice
         self._rubric = rubric if rubric is not None else default_scoring_rubric()
+        self._repeats = repeats
+        self._repeat_overrides = tuple(repeat_overrides)
         self._transitions = transitions
         self._template_version = template_version
         self._override = override
@@ -145,51 +172,57 @@ class ScoreArticle:
         require_permitted_provider(context, SCORE_STAGE, override=self._override)
         context.recorder.record_input(execution, self._version_snapshot, role="article_version")
 
-        generated = await context.generator.generate(
-            execution,
-            stage=SCORE_STAGE,
-            template_id=SCORE_STAGE,
-            template_version=self._template_version,
-            variables={
-                "draft": self._draft.model_dump(mode="json"),
-                "brief": self._brief.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
-                "voice": self._voice.model_dump(mode="json"),
-                "dimensions": [dimension.value for dimension in self._rubric_dimensions()],
-            },
-            schema=ArticleScore,
-            override=self._override,
-        )
-        scored = generated.value
-        assessment = self._rubric.assess(
-            scored.scores,
-            depth=context.constraints.depth,
-            blocking_issues=[deduction.mismatch for deduction in scored.blocking],
-            unsupported_claims=scored.unsupported_claims,
-            unmet_requirements=[
-                deduction.requirement or deduction.mismatch
-                for deduction in scored.deductions
-                if deduction.rubric_required
-            ],
-        )
-        category = failure_category(scored) if not assessment.passed else None
+        sheets: list[ArticleScore] = []
+        snapshots: list[ArtifactSnapshot] = []
+        invocations: list[models.ModelInvocation] = []
+        for ordinal in range(max(self._repeats, 1)):
+            generated = await context.generator.generate(
+                execution,
+                stage=SCORE_STAGE,
+                template_id=SCORE_STAGE,
+                template_version=self._template_version,
+                variables={
+                    "draft": self._draft.model_dump(mode="json"),
+                    "brief": self._brief.model_dump(mode="json"),
+                    "source_model": self._source_model.model_dump(mode="json"),
+                    "voice": self._voice.model_dump(mode="json"),
+                    "dimensions": [dimension.value for dimension in self._rubric_dimensions()],
+                },
+                schema=ArticleScore,
+                override=self._override_for(ordinal),
+            )
+            sheets.append(generated.value)
+            invocations.extend(generated.attempts)
+            snapshots.append(
+                context.recorder.record_output(
+                    execution,
+                    artifact_type=ArtifactType.ARTICLE_SCORE,
+                    content=generated.value.model_dump(mode="json"),
+                    role="article_score",
+                    parent=self._version_snapshot,
+                )
+            )
 
-        snapshot = context.recorder.record_output(
-            execution,
-            artifact_type=ArtifactType.ARTICLE_SCORE,
-            content=scored.model_dump(mode="json"),
-            role="article_score",
-            parent=self._version_snapshot,
-        )
-        evaluation = self._record(context, execution, scored, assessment, category)
+        confidence = self._confidence(sheets, context)
+        assessment = self._assess(sheets, context)
+        category = failure_category(sheets[0]) if not assessment.passed else None
+        evaluation = self._record(context, execution, sheets, assessment, category, confidence)
 
         return StageResult(
             value=ScoreOutcome(
-                score=scored, assessment=assessment, evaluation=evaluation, category=category
+                score=sheets[0],
+                assessment=assessment,
+                evaluation=evaluation,
+                category=category,
+                confidence=confidence,
             ),
-            outputs=(snapshot,),
-            invocations=generated.attempts,
-            usage=generated.usage,
+            outputs=tuple(snapshots),
+            invocations=tuple(invocations),
+            # Totalled from the stored records rather than accumulated alongside
+            # them, exactly as one generation does it: a figure tracked separately
+            # can drift from what was written, and the written form is the one
+            # anybody auditing cost will read.
+            usage=_total_usage(invocations),
             exit_action=self._exit_for(assessment),
             detail={
                 "overall": assessment.overall,
@@ -198,7 +231,63 @@ class ScoreArticle:
                 "category": category.value if category is not None else None,
                 "rubric_version": assessment.rubric_version,
                 "content_type": assessment.weights.content_type,
+                "repeats": len(sheets),
+                "dispersion": confidence.dispersion,
             },
+        )
+
+    def _override_for(self, ordinal: int) -> RouteOverride | None:
+        """The route one pass runs under.
+
+        Repeat passes may name different models — plan/08's *multi-model scoring* —
+        because two models disagreeing is stronger evidence of an unstable score
+        than one model sampled twice, especially at temperature 0 where the second
+        sample is the first one again.
+        """
+        if ordinal == 0 or not self._repeat_overrides:
+            return self._override
+        return self._repeat_overrides[min(ordinal - 1, len(self._repeat_overrides) - 1)]
+
+    def _assess(self, sheets: list[ArticleScore], context: PipelineContext) -> ScoreAssessment:
+        """Assess the mean of the passes, against the union of what they objected to.
+
+        The mean because a single sample of a stochastic judge is the worst
+        estimate available, and running three passes to keep one would spend the
+        calls for nothing.
+
+        The *union* of the blocking issues and unmet requirements, though — not the
+        majority. A blocker one scorer of three noticed is still a blocker, and
+        requiring agreement would mean the more passes are run the easier the
+        article is to publish.
+        """
+        return self._rubric.assess(
+            _mean_scores(sheets),
+            depth=context.constraints.depth,
+            blocking_issues=sorted(
+                {deduction.mismatch for sheet in sheets for deduction in sheet.blocking}
+            ),
+            unsupported_claims=sorted(
+                {claim for sheet in sheets for claim in sheet.unsupported_claims}
+            ),
+            unmet_requirements=sorted(
+                {
+                    deduction.requirement or deduction.mismatch
+                    for sheet in sheets
+                    for deduction in sheet.deductions
+                    if deduction.rubric_required
+                }
+            ),
+        )
+
+    def _confidence(self, sheets: list[ArticleScore], context: PipelineContext) -> ScoreConfidence:
+        """What each pass scored, and how far apart they were."""
+        overalls = tuple(
+            self._rubric.overall(sheet.scores, depth=context.constraints.depth) for sheet in sheets
+        )
+        return ScoreConfidence(
+            repeat_scores=overalls,
+            dispersion=max(overalls) - min(overalls) if len(overalls) > 1 else None,
+            stdev=stdev(overalls) if len(overalls) > 1 else None,
         )
 
     def _rubric_dimensions(self) -> tuple[Any, ...]:
@@ -220,9 +309,10 @@ class ScoreArticle:
         self,
         context: PipelineContext,
         execution: models.StageExecution,
-        scored: ArticleScore,
+        sheets: list[ArticleScore],
         assessment: ScoreAssessment,
         category: FailureCategory | None,
+        confidence: ScoreConfidence,
     ) -> models.EvaluationRun:
         """Write the evaluation, refusing one that cannot say what produced it."""
         linkage = {
@@ -265,8 +355,16 @@ class ScoreArticle:
                     for failure in assessment.failures
                 ],
                 "deductions": [
-                    deduction.model_dump(mode="json") for deduction in scored.deductions
+                    deduction.model_dump(mode="json")
+                    for sheet in sheets
+                    for deduction in sheet.deductions
                 ],
+                "confidence": {
+                    "repeats": len(confidence.repeat_scores),
+                    "repeat_scores": list(confidence.repeat_scores),
+                    "dispersion": confidence.dispersion,
+                    "stdev": confidence.stdev,
+                },
                 "routed_as": category.value if category is not None else None,
                 "linkage": linkage,
             },
@@ -317,6 +415,24 @@ def check_linkage(linkage: dict[str, Any]) -> None:
         )
 
 
+def _total_usage(invocations: Sequence[models.ModelInvocation]) -> TokenUsage:
+    """What every pass consumed, including its repair attempts."""
+    costs = [call.cost_usd for call in invocations if call.cost_usd is not None]
+    return TokenUsage(
+        input_tokens=sum(call.input_tokens for call in invocations),
+        output_tokens=sum(call.output_tokens for call in invocations),
+        cost_usd=sum(costs) if costs else None,
+    )
+
+
+def _mean_scores(sheets: Sequence[ArticleScore]) -> dict[ScoreDimension, float]:
+    """The mean score per dimension across every pass."""
+    return {
+        dimension: fmean([sheet.dimensions[dimension].score for sheet in sheets])
+        for dimension in ScoreDimension
+    }
+
+
 def _snapshot_id(snapshot: ArtifactSnapshot | None) -> str | None:
     return snapshot.id if snapshot is not None else None
 
@@ -335,6 +451,7 @@ __all__ = [
     "REQUIRED_LINKAGE",
     "SCORE_STAGE",
     "ScoreArticle",
+    "ScoreConfidence",
     "ScoreOutcome",
     "check_linkage",
     "failure_category",

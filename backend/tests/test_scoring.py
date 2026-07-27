@@ -419,7 +419,7 @@ async def test_repeated_scoring_reports_every_pass_and_their_dispersion(
     # 0.25 * (88, 79, 84) + 66.0, the other six dimensions unchanged.
     assert confidence.repeat_scores == pytest.approx((88.0, 85.75, 87.0))
     assert confidence.dispersion == pytest.approx(2.25)
-    assert confidence.stdev > 0.0
+    assert confidence.stdev is not None and confidence.stdev > 0.0
     # The assessment is over the mean of the passes, not over whichever ran last.
     assert result.value.assessment.overall == pytest.approx(86.916667, abs=1e-4)
     assert result.value.assessment.dimensions[ScoreDimension.FACTUAL_FIDELITY] == pytest.approx(
@@ -439,7 +439,7 @@ async def test_a_single_pass_reports_no_dispersion_rather_than_zero_confidence(
     _, result = await score(db_session, snapshot_store)
     confidence = result.value.confidence
 
-    assert confidence.repeat_scores == (pytest.approx(88.0),)
+    assert confidence.repeat_scores == pytest.approx((88.0,))
     assert confidence.dispersion is None
     assert confidence.stdev is None
 
