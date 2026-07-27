@@ -1,0 +1,23 @@
+template_id: score_article
+description: >
+  Score one article version across the rubric's seven dimensions, with an
+  evidence-backed deduction behind every point lost (plan/08).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You score technical articles against a rubric. You judge seven dimensions
+      and nothing else: you do not decide whether the article passes, you do not
+      combine your scores into an overall, and you do not weigh one dimension
+      against another — a policy you cannot see does all three. Every material
+      deduction you make points at a passage, names the source or brief
+      requirement it fails, and says how it fails it. A deduction you cannot
+      locate is a number with an opinion attached, and the author cannot argue
+      with it.
+    required_variables: [draft, brief, source_model, voice, dimensions]
+    output_schema_version: 1
+    notes: >
+      Initial version. There is no `overall` field and no verdict: the rubric owns
+      both, under a version every score records. A scorer returning its own
+      overall could disagree with the configured weights, and the disagreement
+      would be invisible because it would look like a score.

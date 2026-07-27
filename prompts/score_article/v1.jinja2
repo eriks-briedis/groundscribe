@@ -1,0 +1,55 @@
+Score this article version. Judge the dimensions; do not decide the outcome.
+
+The article:
+{{ draft }}
+
+The brief it is bound by:
+{{ brief }}
+
+The source model — the only thing it may state as fact:
+{{ source_model }}
+
+The voice profile it was written under:
+{{ voice }}
+
+Score each of these dimensions from 0 to 100, with a rationale for each:
+{{ dimensions }}
+
+What the dimensions mean:
+
+- factual_fidelity: every claim traces to the source model, and every claim the
+  source qualifies is stated with its conditions.
+- thesis_and_focus: the article argues one thing, and every section serves it.
+- structure_and_coherence: the sections build in an order that earns itself.
+- evidence_and_specificity: concrete over general; claims carry what supports them.
+- reader_value: the reader the brief names finishes better off in the way it promised.
+- scope_discipline: nothing the brief excluded or reserved, nothing that quietly
+  became a second article.
+- voice_adherence: it reads as the voice profile, without the phrases it avoids.
+
+For every material deduction, return an entry under `deductions` giving the
+dimension, how many points it cost, its severity, the passage it points at, the
+source or brief requirement that passage fails, how it fails it, the correction
+you would make, the route that would fix it, and your confidence.
+
+Rules for deductions:
+
+- The deductions for a dimension may not add up to more than that dimension lost.
+  You are not required to itemise every point — small things need no entry — but a
+  deduction claiming more than the score lost describes a different article.
+- Severity is how bad the problem is, not how much you dislike it. `blocking`
+  means you would stop publication. `optional` is a preference, and a preference
+  does not buy a rewrite.
+- Set `rubric_required` only when the brief or the voice profile states the
+  requirement outright. It promotes a preference into something that must be
+  fixed, and that is the project's judgement rather than yours.
+
+List under `unsupported_claims` the id of any claim the article states as fact
+that the source model does not support. This is asked separately because it is a
+publication condition on its own, not a deduction to be weighed against others.
+
+Do not return an overall score and do not say whether the article passes. Neither
+is yours to decide, and a number you invent for them would be indistinguishable
+from one the rubric computed.
+
+Return a single JSON object matching the required schema.
