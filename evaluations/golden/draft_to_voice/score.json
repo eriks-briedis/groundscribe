@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "summary": "Accurate and well shaped, but the strongest number is stated without the condition it was measured under, and the determinism passage runs past what the brief reserves for it.",
+  "dimensions": {
+    "factual_fidelity": {
+      "score": 88.0,
+      "rationale": "Every claim traces to the source model, but the headline latency figure is stated flat where the source marks it warm-cache only."
+    },
+    "thesis_and_focus": {
+      "score": 90.0,
+      "rationale": "The thesis is stated early and every section serves it; the determinism aside is the only place attention wanders."
+    },
+    "structure_and_coherence": {
+      "score": 92.0,
+      "rationale": "The sections build in the order the brief set out and each transition earns itself."
+    },
+    "evidence_and_specificity": {
+      "score": 86.0,
+      "rationale": "Concrete numbers throughout; the incident context behind the forty-minute figure is missing."
+    },
+    "reader_value": {
+      "score": 89.0,
+      "rationale": "A practitioner finishes this able to audit their own cache keys, which is what it promised."
+    },
+    "scope_discipline": {
+      "score": 78.0,
+      "rationale": "The determinism argument is developed over a full paragraph where the brief reserves it for the follow-up and permits only a statement of it."
+    },
+    "voice_adherence": {
+      "score": 91.0,
+      "rationale": "Direct and unceremonious throughout; no phrases from the avoid list."
+    }
+  },
+  "deductions": [
+    {
+      "dimension": "factual_fidelity",
+      "points": 12.0,
+      "severity": "blocking",
+      "passage": "p99 on the article pages fell from 810ms to 120ms",
+      "requirement": "Source claim c1 is marked as requiring qualification: warm cache, article pages only.",
+      "mismatch": "The figure is stated flat in the opening and the warm-cache condition arrives two clauses later, which reads as a general result.",
+      "recommended_correction": "State the warm-cache condition in the same sentence as the figure.",
+      "suggested_route": "factual_gap",
+      "source_ref": "c1",
+      "confidence": 0.9,
+      "rubric_required": true
+    },
+    {
+      "dimension": "scope_discipline",
+      "points": 22.0,
+      "severity": "major",
+      "passage": "if the same input can render differently, a cache is not a latency win",
+      "requirement": "Brief reserved material: the determinism argument is reserved for the follow-up article and may only be stated.",
+      "mismatch": "The argument is developed over a full paragraph, which spends the follow-up article's material.",
+      "recommended_correction": "Cut to a single sentence that states the dependency and moves on.",
+      "suggested_route": "substantive_issue",
+      "brief_ref": "Reserved material",
+      "confidence": 0.75,
+      "rubric_required": true
+    },
+    {
+      "dimension": "evidence_and_specificity",
+      "points": 14.0,
+      "severity": "minor",
+      "passage": "served for forty minutes",
+      "requirement": "Source claim c4 gives the forty-minute figure inside an incident window.",
+      "mismatch": "The duration appears without the incident context that makes it meaningful.",
+      "recommended_correction": "Name the deploy window the figure came from.",
+      "suggested_route": "minor_local",
+      "source_ref": "c4",
+      "confidence": 0.6,
+      "rubric_required": false
+    },
+    {
+      "dimension": "voice_adherence",
+      "points": 9.0,
+      "severity": "optional",
+      "passage": "It is worth noting that the key omitted the theme.",
+      "requirement": "Voice profile avoids ceremony and hedging openers.",
+      "mismatch": "A hedging opener where the sentence would be stronger without it.",
+      "recommended_correction": "Delete the opener and start at 'The key omitted'.",
+      "suggested_route": "style_issue",
+      "confidence": 0.5,
+      "rubric_required": false
+    }
+  ]
+}
