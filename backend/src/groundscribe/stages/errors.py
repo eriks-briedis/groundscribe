@@ -82,6 +82,17 @@ class RewriteContractError(StageError):
     """
 
 
+class VoiceContractError(StageError):
+    """A style pass did something a style pass may not do.
+
+    The prohibited *changes* are unrepresentable by construction — the voice schema
+    has no field for a claim or a thesis — so what is left is a pass misreporting
+    itself: an edit whose "before" was never in the prose, an edit whose "after" is
+    not in the result, or a marker quietly deleted. Each publishes something the
+    record says is not there.
+    """
+
+
 __all__ = [
     "ArchitectureLocked",
     "BriefContractError",
@@ -91,4 +102,5 @@ __all__ = [
     "ProviderNotPermitted",
     "RewriteContractError",
     "StageError",
+    "VoiceContractError",
 ]

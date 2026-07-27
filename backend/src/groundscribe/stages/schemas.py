@@ -726,6 +726,70 @@ class RewrittenArticle(ArticleDraft):
         return self
 
 
+class VoiceChangeKind(StrEnum):
+    """The edits a voice pass is permitted to make (phase 07 §11).
+
+    This enum *is* the permission list. plan/07 names what a style pass may change
+    and what it may not, and expressing the permitted set as a closed vocabulary
+    means a prohibited change — a new claim, a changed thesis, a removed
+    qualification — has no member to be declared as. Refusing prohibited changes
+    would still leave them representable; this way they are not.
+    """
+
+    RHYTHM = "rhythm"
+    WORD_CHOICE = "word_choice"
+    FLOW = "flow"
+    REPETITION = "repetition"
+    FORMALITY = "formality"
+    TRANSITION = "transition"
+    PHRASING = "phrasing"
+    ABSTRACTION = "abstraction"
+    AI_PATTERN = "ai_pattern"
+
+
+class VoiceChange(BaseModel):
+    """One stylistic edit, quoted from both sides so it can be checked."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: VoiceChangeKind
+    before: str
+    after: str = ""
+    reason: str = ""
+
+
+class StructuralProblem(BaseModel):
+    """Something a style pass found that a style pass must not fix."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    location: str
+    description: str
+    suggested_route: FailureCategory = FailureCategory.SUBSTANTIVE_ISSUE
+
+
+class VoicePass(_Output):
+    """A style-only pass: new prose, the edits that produced it, and what it could not fix.
+
+    Deliberately without a thesis, claims or qualifications. The next version is
+    built by copying the previous one and replacing its ``body``, so there is
+    nothing here through which a voice pass could change what the article asserts.
+    """
+
+    body: str
+    changes: tuple[VoiceChange, ...] = ()
+    structural_problems: tuple[StructuralProblem, ...] = ()
+
+    @model_validator(mode="after")
+    def _edits_are_declared(self) -> Self:
+        if not self.changes and not self.structural_problems:
+            raise ValueError(
+                "a voice pass must declare at least one change, or report the structural "
+                "problem that stopped it; an undeclared edit cannot be checked"
+            )
+        return self
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
@@ -755,7 +819,11 @@ __all__ = [
     "SeriesConsiderations",
     "SourceGapQuestion",
     "SourceModel",
+    "StructuralProblem",
     "SubstantiveReview",
     "UnresolvedMarker",
+    "VoiceChange",
+    "VoiceChangeKind",
+    "VoicePass",
     "VoiceProfileDocument",
 ]
