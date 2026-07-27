@@ -371,3 +371,114 @@ async def test_a_score_that_cannot_name_its_inputs_is_refused(
                 # version* of it. An unnamed input is the linkage failure.
             )
         )
+
+
+# ---------------------------------------------------------------------------
+# Score confidence and instability
+# ---------------------------------------------------------------------------
+
+
+async def test_repeated_scoring_reports_every_pass_and_their_dispersion(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """plan/08: repeated scoring for high-stakes reviews reports repeats + dispersion.
+
+    The dispersion is the product, not a diagnostic. plan/08's named risk is false
+    score precision, and three passes landing on 88, 79 and 84 say something a
+    single 84 cannot: that this article is on a boundary the scorer itself cannot
+    locate, and the number should be read with that in mind.
+    """
+    drafted = await draft(db_session, snapshot_store)
+    drafted.context.engine.apply(WorkflowAction.ACCEPT_REVIEW)
+    drafted.context.engine.apply(WorkflowAction.SUBMIT_VOICE_PASS)
+    for fidelity in (88.0, 79.0, 84.0):
+        sheet = golden_score()
+        sheet["dimensions"]["factual_fidelity"] |= {"score": fidelity}
+        sheet["deductions"] = [
+            deduction
+            for deduction in sheet["deductions"]
+            if deduction["dimension"] != "factual_fidelity"
+        ]
+        drafted.model_client.script_response(SCORE_STAGE, sheet)
+
+    result = await StageRunner(drafted.context).run(
+        ScoreArticle(
+            draft=drafted.result.value.draft,
+            version=drafted.result.value.version,
+            version_snapshot=drafted.result.outputs[0],
+            brief=drafted.briefed.brief,
+            brief_snapshot=drafted.briefed.brief_snapshot,
+            source_model=drafted.briefed.source_model,
+            source_model_snapshot=drafted.briefed.source_model_snapshot,
+            voice=VOICE,
+            repeats=3,
+        )
+    )
+    confidence = result.value.confidence
+
+    # 0.25 * (88, 79, 84) + 66.0, the other six dimensions unchanged.
+    assert confidence.repeat_scores == pytest.approx((88.0, 85.75, 87.0))
+    assert confidence.dispersion == pytest.approx(2.25)
+    assert confidence.stdev > 0.0
+    # The assessment is over the mean of the passes, not over whichever ran last.
+    assert result.value.assessment.overall == pytest.approx(86.916667, abs=1e-4)
+    assert result.value.assessment.dimensions[ScoreDimension.FACTUAL_FIDELITY] == pytest.approx(
+        83.666667, abs=1e-4
+    )
+
+
+async def test_a_single_pass_reports_no_dispersion_rather_than_zero_confidence(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """One sample has no spread; saying its dispersion is 0.0 would claim agreement.
+
+    A dispersion of zero across three passes means three scorers agreed. Across
+    one it means nothing was compared, and reporting the same number for both
+    would let "we did not check" read as "we checked and it was stable".
+    """
+    _, result = await score(db_session, snapshot_store)
+    confidence = result.value.confidence
+
+    assert confidence.repeat_scores == (pytest.approx(88.0),)
+    assert confidence.dispersion is None
+    assert confidence.stdev is None
+
+
+async def test_the_dispersion_is_recorded_with_the_score(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """A confidence figure computed and not stored is one nobody reading the run sees."""
+    drafted = await draft(db_session, snapshot_store)
+    drafted.context.engine.apply(WorkflowAction.ACCEPT_REVIEW)
+    drafted.context.engine.apply(WorkflowAction.SUBMIT_VOICE_PASS)
+    for fidelity in (88.0, 80.0):
+        sheet = golden_score()
+        sheet["dimensions"]["factual_fidelity"] |= {"score": fidelity}
+        sheet["deductions"] = [
+            deduction
+            for deduction in sheet["deductions"]
+            if deduction["dimension"] != "factual_fidelity"
+        ]
+        drafted.model_client.script_response(SCORE_STAGE, sheet)
+
+    result = await StageRunner(drafted.context).run(
+        ScoreArticle(
+            draft=drafted.result.value.draft,
+            version=drafted.result.value.version,
+            version_snapshot=drafted.result.outputs[0],
+            brief=drafted.briefed.brief,
+            brief_snapshot=drafted.briefed.brief_snapshot,
+            source_model=drafted.briefed.source_model,
+            source_model_snapshot=drafted.briefed.source_model_snapshot,
+            voice=VOICE,
+            repeats=2,
+        )
+    )
+    stored = result.value.evaluation.scores["confidence"]
+
+    assert stored["repeats"] == 2
+    assert stored["repeat_scores"] == pytest.approx([88.0, 86.0])
+    assert stored["dispersion"] == pytest.approx(2.0)
+    # Each pass is kept as its own artefact: an average nobody can decompose is a
+    # number with no evidence behind it.
+    assert len(result.outputs) == 2
