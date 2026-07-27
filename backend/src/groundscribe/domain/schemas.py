@@ -306,3 +306,4 @@ class ValidationReport(_Lineage):
 
     article_version_id: str
     passed: bool
+    snapshot_id: str | None = None

@@ -436,14 +436,26 @@ class VoiceProfile(LineageMixin, EntityMixin, Base):
 
 
 class ValidationReport(LineageMixin, EntityMixin, Base):
+    """The deterministic final check of one article version (phase 08).
+
+    ``passed`` stays on the row rather than living only inside the document: "has
+    this version been validated, and did it pass" is asked of the *table* — by the
+    export guard, by the approval queue — and answering it from a JSON blob would
+    mean reading every blob.
+    """
+
     __tablename__ = "validation_reports"
 
     article_version_id: Mapped[str] = mapped_column(
         ForeignKey("article_versions.id"), nullable=False
     )
     passed: Mapped[bool] = mapped_column(nullable=False)
+    snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("artifact_snapshots.id"), nullable=True
+    )
 
     article_version: Mapped[ArticleVersion] = relationship()
+    snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
 class ArtifactSnapshot(EntityMixin, Base):
