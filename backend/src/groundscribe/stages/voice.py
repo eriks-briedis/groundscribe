@@ -40,7 +40,7 @@ from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
-from groundscribe.stages.drafting import DraftOutcome, store_version
+from groundscribe.stages.drafting import DraftOutcome, check_excluded_material, store_version
 from groundscribe.stages.errors import VoiceContractError
 from groundscribe.stages.extraction import require_permitted_provider
 from groundscribe.stages.schemas import (
@@ -108,7 +108,7 @@ class AlignVoice:
             override=self._override,
         )
         passed = generated.value
-        check_voice_pass(passed, self._previous)
+        check_voice_pass(passed, self._previous, self._brief)
 
         # The new version is the old one with its prose replaced. Nothing else can
         # change, because nothing else came back from the model.
@@ -183,13 +183,15 @@ class AlignVoice:
         return True
 
 
-def check_voice_pass(passed: VoicePass, previous: ArticleDraft) -> None:
-    """Refuse a pass that misreports its own edits or drops a marker.
+def check_voice_pass(
+    passed: VoicePass, previous: ArticleDraft, brief: ArticleBriefDocument
+) -> None:
+    """Refuse a pass that misreports its own edits, drops a marker, or reopens the brief.
 
-    Only the prose is worth re-checking. Every other declaration — the claims, the
-    qualifications, the omissions — is copied from the previous version rather than
-    returned by the model, so re-running the draft checks over them would compare
-    each declaration against itself.
+    The prose is the only thing worth re-checking. Every other declaration — the
+    claims, the qualifications, the omissions — is copied from the previous version
+    rather than returned by the model, so re-running the draft checks over them
+    would compare each declaration against itself.
     """
     for change in passed.changes:
         if change.before and change.before not in previous.body:
@@ -209,6 +211,8 @@ def check_voice_pass(passed: VoicePass, previous: ArticleDraft) -> None:
             f"the pass removed the unresolved marker(s) {', '.join(lost)}; deleting a marker "
             "publishes a hole as though it were an answer"
         )
+
+    check_excluded_material(passed.body, brief)
 
 
 __all__ = ["VOICE_STAGE", "AlignVoice", "check_voice_pass"]

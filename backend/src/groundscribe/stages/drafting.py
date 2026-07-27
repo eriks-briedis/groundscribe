@@ -306,7 +306,22 @@ def check_draft(
             "model exists to prevent"
         )
 
-    leaked = [excluded for excluded in brief.excluded_material if excluded in draft.body]
+    check_excluded_material(draft.body, brief)
+
+
+def check_excluded_material(body: str, brief: ArticleBriefDocument) -> None:
+    """Refuse prose containing material the brief excluded by name.
+
+    Separate from the rest of :func:`check_draft` because it is the only one of
+    those checks that reads the *prose*. Every later stage that returns a new body —
+    a rewrite, a voice pass — can reintroduce an excluded phrase without adding a
+    single claim, so the check has to travel with the body rather than with the
+    declarations around it.
+
+    Matched against what the brief excluded by name, not against a general notion
+    of confidentiality; phase 13 owns that.
+    """
+    leaked = [excluded for excluded in brief.excluded_material if excluded in body]
     if leaked:
         raise DraftContractError(
             f"the draft contains material the brief excluded: {'; '.join(leaked)}"
@@ -318,5 +333,6 @@ __all__ = [
     "DraftOutcome",
     "GenerateInitialDraft",
     "check_draft",
+    "check_excluded_material",
     "store_version",
 ]
