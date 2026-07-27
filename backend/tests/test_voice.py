@@ -26,9 +26,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from golden import golden_json
+from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import StageResult, StageRunner
@@ -287,3 +289,31 @@ async def test_the_voice_pass_is_a_new_version_branching_from_its_parent(
     assert execution is not None
     assert result.detail["changes"] == 1
     assert result.detail["voice_profile"] == "default"
+
+
+async def test_the_voice_pass_never_touches_the_source_model(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """plan/07 invariant: rewrite and voice stages never modify the source model.
+
+    The rewrite half of this is pinned in ``test_rewrite``. Asserted here too
+    because the two stages arrive at it differently: the rewrite is *given* the
+    source model and is trusted not to write it, while the voice pass is never
+    handed one at all. The second is the stronger arrangement, and a refactor that
+    passed one in for convenience would quietly downgrade it to the first.
+    """
+    _, result = await align(db_session, snapshot_store)
+    execution = result.execution
+
+    assert execution is not None
+    produced = {artifact.snapshot.artifact_type for artifact in execution.outputs}
+    assert produced == {ArtifactType.ARTICLE_VERSION}
+    models = list(
+        db_session.execute(
+            select(domain_models.ArtifactSnapshot).where(
+                domain_models.ArtifactSnapshot.artifact_type == ArtifactType.SOURCE_MODEL
+            )
+        ).scalars()
+    )
+    assert len(models) == 1
+    assert snapshot_store.verify(models[0]) is True
