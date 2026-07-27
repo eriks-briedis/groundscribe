@@ -35,7 +35,6 @@ from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
-from groundscribe.stages.drafting import store_version
 from groundscribe.stages.schemas import ArticleBriefDocument, ArticleDraft, SourceModel
 from groundscribe.validation.checks import (
     SafeCorrection,
@@ -126,7 +125,6 @@ class ValidateFinalOutput:
         passed_version: domain_models.ArticleVersion,
         brief: ArticleBriefDocument,
         source_model: SourceModel,
-        concept: domain_models.ArticleConcept | None = None,
         prohibited_terms: Sequence[str] = (),
         transitions: bool = True,
     ) -> None:
@@ -136,7 +134,6 @@ class ValidateFinalOutput:
         self._passed_version = passed_version
         self._brief = brief
         self._source_model = source_model
-        self._concept = concept
         self._prohibited_terms = tuple(prohibited_terms)
         self._transitions = transitions
 
@@ -244,17 +241,7 @@ class ValidateFinalOutput:
             role="article_version",
             parent=self._version_snapshot,
         )
-        if self._concept is not None:
-            _, version = store_version(
-                context,
-                execution,
-                corrected,
-                snapshot,
-                concept=self._concept,
-                parent=self._version,
-            )
-        else:
-            version = _version_row(context, execution, snapshot, parent=self._version)
+        version = _version_row(context, execution, snapshot, parent=self._version)
         return CorrectedVersion(draft=corrected, version=version, snapshot=snapshot)
 
     def _store(
@@ -344,12 +331,16 @@ def _version_row(
     *,
     parent: domain_models.ArticleVersion,
 ) -> domain_models.ArticleVersion:
-    """A corrected version under the parent's article, when no concept was supplied.
+    """The corrected version, under the article its parent already belongs to.
 
-    The validator is handed a version rather than a concept, and inventing an
-    article row from a title would scatter one article across several identities
-    (the reason :func:`store_version` keys on the concept). Reusing the parent's
-    article id is the same decision reached from the other end.
+    Not :func:`~groundscribe.stages.drafting.store_version`, which keys the article
+    on a *concept* because a rewrite may retitle the piece. The validator changes
+    no title — it changes no word — so the parent's article id is known to be
+    right, and taking a concept the stage does not otherwise need would be asking
+    the caller for something only to answer a question that is already settled.
+
+    The parent is not marked superseded either. It is the version that passed
+    review, and the report describing it has to keep pointing at something active.
     """
     version = domain_models.ArticleVersion(
         id=uuid.uuid4().hex,

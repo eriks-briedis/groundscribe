@@ -30,7 +30,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
 from groundscribe.domain import models as domain_models
 from groundscribe.domain import schemas as domain_schemas
@@ -268,23 +267,10 @@ def _parent_overall(
     return overalls.get(version.parent_id)
 
 
-def escalation_payload(escalations: tuple[Escalation, ...]) -> list[dict[str, Any]]:
-    """The offered options in a form an intervention request can carry."""
-    return [
-        {
-            "option": escalation.option.value,
-            "detail": escalation.detail,
-            "action": escalation.action.value if escalation.action is not None else None,
-        }
-        for escalation in escalations
-    ]
-
-
 __all__ = [
     "ESCALATION_OPTIONS",
     "Escalation",
     "EscalationOption",
-    "escalation_payload",
     "escalations_for",
     "route_score",
     "score_history",
