@@ -217,6 +217,10 @@ class ArtifactType(StrEnum):
     REVIEW = "review"
     REVISION_PLAN = "revision_plan"
     VOICE_PROFILE = "voice_profile"
+    # A score sheet is an artefact rather than a column on the evaluation row: it
+    # is what a person reads to argue with a number, it is content-addressed like
+    # every other artefact, and phase 12 replays it (phase 08).
+    ARTICLE_SCORE = "article_score"
     VALIDATION_REPORT = "validation_report"
 
     # Provenance payloads (phase 03). Kept as three distinct response kinds

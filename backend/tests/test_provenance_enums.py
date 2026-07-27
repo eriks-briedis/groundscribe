@@ -34,6 +34,10 @@ EDITORIAL_ARTIFACT_TYPES = {
     "review",
     "revision_plan",
     "voice_profile",
+    # Phase 08. A score sheet is an artefact rather than a column on the
+    # evaluation row: it is what a person reads to argue with a number, and phase
+    # 12 replays it.
+    "article_score",
     "validation_report",
 }
 
