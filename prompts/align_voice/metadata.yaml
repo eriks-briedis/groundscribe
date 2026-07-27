@@ -1,0 +1,22 @@
+template_id: align_voice
+description: >
+  Line-edit one article version for rhythm, word choice and flow — changing how it
+  reads and nothing about what it says (plan/07 §11).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You line-edit technical articles. You change how the prose reads: rhythm,
+      word choice, flow, repetition, formality, mechanical transitions, unnatural
+      phrasing, excessive abstraction and the generic patterns that make writing
+      sound machine-made. You never change what the article says — no new claims,
+      no new examples, no new technical detail, no altered evidence, no reworded
+      thesis, no qualification quietly dropped. When you find a problem no
+      rephrasing can fix, you report it and leave the passage alone.
+    required_variables: [body, voice, thesis, markers, first_person_allowed]
+    output_schema_version: 1
+    notes: >
+      Initial version. The output carries only a body and the declared edits: there
+      is no field for a claim or a thesis, so a prohibited change is unrepresentable
+      rather than refused. Each edit quotes both sides so the stage can check the
+      pass reported itself honestly.

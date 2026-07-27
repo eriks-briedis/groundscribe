@@ -1,0 +1,43 @@
+Line-edit this article. Change how it reads; change nothing about what it says.
+
+The prose:
+{{ body }}
+
+The voice it should read as:
+{{ voice }}
+
+The thesis it argues — you are not editing this, you are told it so you can tell
+when an edit would move it:
+{{ thesis }}
+
+Unresolved markers that must survive verbatim. Each one stands where a fact is
+missing; deleting one publishes a hole as though it were an answer:
+{{ markers }}
+
+{% if not first_person_allowed -%}
+First person is not permitted in this article. Do not introduce it.
+{%- else -%}
+First person is permitted where it reads naturally.
+{%- endif %}
+
+You may change: rhythm and sentence length, word choice, flow between sentences,
+needless repetition, formality, mechanical transitions ("Furthermore", "In
+conclusion"), unnatural phrasing, abstraction where something concrete already in
+the text would do, and the generic patterns that make writing sound machine-made.
+
+You may not change: what the article claims, which examples it uses, its technical
+details, the evidence behind an argument, the wording of its thesis, or any
+qualification or hedge — those conditions are load-bearing. Do not reorder, merge
+or split sections.
+
+Return every edit you made under `changes`, quoting the text you replaced under
+`before` and what you replaced it with under `after`, both exactly as they appear.
+An edit you do not declare is one nobody can check.
+
+If you find a problem no rephrasing fixes — an argument that does not follow, a
+section doing two jobs, a claim that contradicts another — do not fix it. Leave the
+passage as it is, make the safe edits elsewhere, and describe the problem under
+`structural_problems`. A person decides what happens to it.
+
+Return a single JSON object matching the required schema, with the full edited
+article in `body`.
