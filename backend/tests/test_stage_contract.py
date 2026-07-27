@@ -25,6 +25,7 @@ from groundscribe.llm.routing import default_routing_policy
 from groundscribe.prompts import PromptStore, prompts_root
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, ExecutionStatus
+from groundscribe.scoring.scoring import SCORE_STAGE
 from groundscribe.stages.architecture import ARCHITECTURE_STAGE
 from groundscribe.stages.base import PipelineContext, PipelineStage, StageResult, StageRunner
 from groundscribe.stages.brief import BRIEF_STAGE
@@ -54,6 +55,7 @@ MODEL_STAGES = (
     PLAN_STAGE,
     REWRITE_STAGE,
     VOICE_STAGE,
+    SCORE_STAGE,
 )
 
 
