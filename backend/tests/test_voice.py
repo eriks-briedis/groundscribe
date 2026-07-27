@@ -33,7 +33,7 @@ from groundscribe.domain.enums import ArtifactType
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import StageResult, StageRunner
 from groundscribe.stages.drafting import DraftOutcome
-from groundscribe.stages.errors import VoiceContractError
+from groundscribe.stages.errors import DraftContractError, VoiceContractError
 from groundscribe.stages.schemas import ArticleDraft, VoiceChangeKind, VoicePass
 from groundscribe.stages.voice import VOICE_STAGE, AlignVoice
 from groundscribe.storage.snapshot_store import SnapshotStore
@@ -202,6 +202,37 @@ async def test_a_voice_pass_may_not_delete_an_unresolved_marker(
                 voice=VOICE,
             )
         )
+
+
+async def test_a_voice_pass_may_not_write_material_the_brief_excluded(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The brief still binds a pass that only rewrote sentences.
+
+    The prose is the one thing a voice pass returns, so it is the one thing worth
+    re-checking. Every other declaration is copied from the previous version rather
+    than generated, and checking those would compare each one against itself.
+
+    An excluded phrase does not have to be *added* to arrive here. A pass rewording
+    a nearby paragraph for flow can land on the sentence the brief named, which is
+    why this is checked against the result rather than against the diff.
+    """
+    body = golden_json("draft.json", suite="draft_to_voice")["body"]
+    leaked = body.replace(BEFORE, "The internal postmortem covering the deploy is not publishable.")
+    payload = golden_voice_pass(
+        body=leaked,
+        changes=[
+            {
+                "kind": "phrasing",
+                "before": BEFORE,
+                "after": "The internal postmortem covering the deploy is not publishable.",
+                "reason": "Reads as an aside; folded in the surrounding context.",
+            }
+        ],
+    )
+
+    with pytest.raises(DraftContractError, match="excluded"):
+        await align(db_session, snapshot_store, payload)
 
 
 async def test_a_structural_problem_routes_back_instead_of_being_fixed(
