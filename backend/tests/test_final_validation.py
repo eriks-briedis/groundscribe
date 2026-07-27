@@ -26,12 +26,13 @@ reason.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-import pytest
 from sqlalchemy.orm import Session
 
 from golden import golden_json
+from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType, IssueSeverity
 from groundscribe.stages.base import StageRunner
 from groundscribe.stages.schemas import ArticleBriefDocument, ArticleDraft
@@ -41,7 +42,7 @@ from groundscribe.validation.stage import VALIDATION_STAGE, ValidateFinalOutput,
 from groundscribe.workflow.policy import FailureCategory
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from stage_helpers import DEFAULT_CONSTRAINTS
-from test_drafting import VOICE, Drafted, draft
+from test_drafting import VOICE, Drafted
 from test_scoring import passing_score, score
 
 
@@ -58,22 +59,16 @@ def golden_article(**overrides: Any) -> ArticleDraft:
     )
 
 
-def checks_for(
-    article: ArticleDraft | None = None,
-    *,
-    brief: ArticleBriefDocument | None = None,
-    **overrides: Any,
-) -> ValidationInput:
+def checks_for(article: ArticleDraft | None = None, **overrides: Any) -> ValidationInput:
     """One validation input, with a field varied per test."""
-    source_model = golden_json("source_model.json")
-    return ValidationInput(
-        draft=article if article is not None else golden_article(),
-        brief=brief if brief is not None else sized_brief(),
-        source_text=str(source_model),
-        constraints=DEFAULT_CONSTRAINTS,
-        prohibited_terms=VOICE.avoid,
-        **overrides,
-    )
+    fields: dict[str, Any] = {
+        "draft": article if article is not None else golden_article(),
+        "brief": sized_brief(),
+        "source_text": str(golden_json("source_model.json")),
+        "constraints": DEFAULT_CONSTRAINTS,
+        "prohibited_terms": VOICE.avoid,
+    }
+    return ValidationInput(**(fields | overrides))
 
 
 def failed(article_input: ValidationInput) -> set[ValidationCheck]:
@@ -275,7 +270,10 @@ def test_a_safe_correction_is_applied_rather_than_failed() -> None:
 
     (finding,) = findings
     assert finding.correction is not None
-    assert finding.correction.after.startswith("## The key that named")
+    # One level down, not a leap back to the sibling level. The validator can see
+    # that the outline skips; it cannot see what the author meant, and the
+    # smallest change that removes the skip is the only one it can justify.
+    assert finding.correction.after.startswith("### The key that named")
     assert finding.correction.before.startswith("#### The key that named")
 
 
@@ -307,13 +305,29 @@ def test_a_failure_with_no_correction_offers_none() -> None:
 # ---------------------------------------------------------------------------
 
 
+def other_version(db_session: Session, drafted: Drafted) -> domain_models.ArticleVersion:
+    """A second version of the same article, so "the wrong one" is a real row."""
+    parent = drafted.result.value.version
+    version = domain_models.ArticleVersion(
+        id=uuid.uuid4().hex,
+        article_id=parent.article_id,
+        ordinal=parent.ordinal + 1,
+        snapshot_id=parent.snapshot_id,
+        created_by_execution_id=parent.created_by_execution_id,
+        parent_id=parent.id,
+    )
+    db_session.add(version)
+    db_session.flush()
+    return version
+
+
 async def validate(
     db_session: Session,
     snapshot_store: SnapshotStore,
     **kwargs: Any,
 ) -> tuple[Drafted, Any]:
     """Score the golden article to a pass, then validate the version that passed."""
-    drafted, scored = await score(db_session, snapshot_store, passing_score())
+    drafted, _ = await score(db_session, snapshot_store, passing_score())
     drafted.context.engine.apply(WorkflowAction.VALIDATE_FINAL)
     result = await StageRunner(drafted.context).run(
         ValidateFinalOutput(
@@ -406,16 +420,16 @@ async def test_validating_a_version_other_than_the_one_that_passed_is_refused(
     The whole chain of checks is about one specific version, so validating a
     different one would be a report that says "checked" about text nobody checked.
     """
-    drafted, scored = await score(db_session, snapshot_store, passing_score())
+    drafted, _ = await score(db_session, snapshot_store, passing_score())
     drafted.context.engine.apply(WorkflowAction.VALIDATE_FINAL)
-    other = await draft(db_session, snapshot_store)
+    other = other_version(db_session, drafted)
 
     result = await StageRunner(drafted.context).run(
         ValidateFinalOutput(
             draft=drafted.result.value.draft,
             version=drafted.result.value.version,
             version_snapshot=drafted.result.outputs[0],
-            passed_version=other.result.value.version,
+            passed_version=other,
             brief=sized_brief(),
             source_model=drafted.briefed.source_model,
             prohibited_terms=VOICE.avoid,
@@ -423,9 +437,7 @@ async def test_validating_a_version_other_than_the_one_that_passed_is_refused(
     )
 
     assert result.value.passed is False
-    assert ValidationCheck.EXPORTED_VERSION in {
-        finding.check for finding in result.value.report.findings
-    }
+    assert ValidationCheck.EXPORTED_VERSION in {finding.check for finding in result.value.findings}
 
 
 async def test_a_tampered_snapshot_fails_the_hash_check(
@@ -437,7 +449,7 @@ async def test_a_tampered_snapshot_fails_the_hash_check(
     whether the text is publishable; this asks whether the text is the text that
     was approved, which no amount of reading it would reveal.
     """
-    drafted, scored = await score(db_session, snapshot_store, passing_score())
+    drafted, _ = await score(db_session, snapshot_store, passing_score())
     drafted.context.engine.apply(WorkflowAction.VALIDATE_FINAL)
     snapshot = drafted.result.outputs[0]
     snapshot.content_hash = "0" * 64
@@ -456,9 +468,7 @@ async def test_a_tampered_snapshot_fails_the_hash_check(
     )
 
     assert result.value.passed is False
-    assert ValidationCheck.CONTENT_HASH in {
-        finding.check for finding in result.value.report.findings
-    }
+    assert ValidationCheck.CONTENT_HASH in {finding.check for finding in result.value.findings}
 
 
 async def test_the_validator_calls_no_model(
