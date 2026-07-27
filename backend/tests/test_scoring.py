@@ -339,7 +339,8 @@ async def test_the_score_names_every_version_it_was_computed_from(
     assert invocation.template_id == SCORE_STAGE
     assert invocation.template_version
     assert invocation.request_snapshot is not None
-    assert invocation.response_snapshot is not None
+    assert invocation.raw_response_snapshot is not None
+    assert invocation.validated_response_snapshot is not None
 
 
 async def test_a_score_that_cannot_name_its_inputs_is_refused(

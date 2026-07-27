@@ -25,6 +25,7 @@ the ingested document or it does not, and the stage checks which.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from hashlib import sha256
 from typing import Self
@@ -32,6 +33,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from groundscribe.domain.enums import ClaimClassification, GapPriority, IssueSeverity
+from groundscribe.scoring.rubric import ScoreDimension
 from groundscribe.workflow.policy import FailureCategory
 
 
@@ -790,13 +792,150 @@ class VoicePass(_Output):
         return self
 
 
+class DimensionScore(BaseModel):
+    """One dimension's score, and why it is that number.
+
+    The rationale is not decoration. A dimension score with no reasoning behind it
+    cannot be argued with, and plan/08's whole mitigation for false precision is
+    that a score is always shown with the reasoning and evidence that produced it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float = Field(ge=0.0, le=100.0)
+    rationale: str = Field(min_length=1)
+
+
+class ScoreDeduction(BaseModel):
+    """One material deduction, with everything needed to check it (phase 08).
+
+    The field set is plan/08's: dimension, passage, the source or brief requirement
+    it fails, how it fails it, severity, the route that would correct it, and the
+    scorer's confidence. The same reasoning as phase 07's ``ReviewFinding`` — a
+    deduction the author cannot locate and cannot check is a number with an opinion
+    attached.
+
+    ``rubric_required`` is deliberately separate from ``severity``. Severity is the
+    scorer's judgement of how bad something is; ``rubric_required`` is the
+    project's judgement of whether it is negotiable at all. A house style that
+    genuinely blocks publication is not made blocking by asking a model to feel
+    more strongly about it (plan/08 → *unless the rubric marks them required*).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dimension: ScoreDimension
+    points: float = Field(gt=0.0, le=100.0)
+    severity: IssueSeverity
+    passage: str = ""
+    requirement: str = ""
+    mismatch: str = Field(min_length=1)
+    recommended_correction: str = ""
+    suggested_route: FailureCategory
+    source_ref: str = ""
+    brief_ref: str = ""
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    rubric_required: bool = False
+
+    @model_validator(mode="after")
+    def _deductions_are_locatable(self) -> Self:
+        if not self.passage.strip() and not self.requirement.strip():
+            raise ValueError(
+                f"the {self.dimension.value} deduction names no passage and no requirement; "
+                "a deduction nobody can locate is a number with an opinion attached"
+            )
+        return self
+
+    @property
+    def forces_iteration(self) -> bool:
+        """Whether this deduction is worth another revision round.
+
+        Severity decides it, except where the rubric has taken the decision out of
+        the scorer's hands. An optional preference costs points and nothing else.
+        """
+        return self.severity.forces_iteration or self.rubric_required
+
+
+class ArticleScore(_Output):
+    """What a scorer judged about one article version (phase 08).
+
+    Conspicuously without an overall. The scorer judges the seven dimensions and
+    explains its deductions; the *rubric* combines them, under a named version,
+    with weights nobody asked a model about. A scorer returning its own overall
+    could disagree with the configured weights, and the disagreement would be
+    invisible — it would look like a score.
+
+    ``unsupported_claims`` is asked for directly rather than inferred from the
+    deductions. plan/08 makes "no unsupported major claims" a passing condition in
+    its own right, and a condition derived from a deduction's category would be a
+    condition a scorer could dodge by choosing a different category.
+    """
+
+    summary: str = ""
+    dimensions: Mapping[ScoreDimension, DimensionScore]
+    deductions: tuple[ScoreDeduction, ...] = ()
+    unsupported_claims: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _the_deductions_explain_the_scores(self) -> Self:
+        """Every dimension judged, and no deduction claiming more than was lost.
+
+        The second check is what keeps the deductions an *explanation* rather than
+        a parallel set of complaints. A scorer is not required to account for every
+        point — two off for something immaterial is fine — but thirty points off a
+        dimension that scored ninety describes a different article from the one it
+        just scored.
+        """
+        missing = sorted(
+            dimension.value for dimension in ScoreDimension if dimension not in self.dimensions
+        )
+        if missing:
+            raise ValueError(f"no score for dimension(s): {', '.join(missing)}")
+
+        for dimension in ScoreDimension:
+            claimed = sum(
+                deduction.points
+                for deduction in self.deductions
+                if deduction.dimension is dimension
+            )
+            lost = 100.0 - self.dimensions[dimension].score
+            if claimed > lost + 1e-9:
+                raise ValueError(
+                    f"the {dimension.value} deductions claim {claimed:g} points but the "
+                    f"dimension only lost {lost:g}; deductions that overshoot the score "
+                    "explain a different article from the one that was scored"
+                )
+        return self
+
+    @property
+    def scores(self) -> dict[ScoreDimension, float]:
+        """The bare numbers, in the shape the rubric combines."""
+        return {dimension: value.score for dimension, value in self.dimensions.items()}
+
+    @property
+    def forces_iteration(self) -> tuple[ScoreDeduction, ...]:
+        """The deductions worth another revision round."""
+        return tuple(deduction for deduction in self.deductions if deduction.forces_iteration)
+
+    @property
+    def blocking(self) -> tuple[ScoreDeduction, ...]:
+        """The deductions that block publication outright."""
+        return tuple(
+            deduction
+            for deduction in self.deductions
+            if deduction.severity is IssueSeverity.BLOCKING
+        )
+
+
 __all__ = [
     "ArchitectureDecision",
     "ArchitectureProposal",
     "ArticleBriefDocument",
     "ArticleDraft",
+    "ArticleScore",
     "BriefSection",
     "DevelopmentEvent",
+    "DimensionScore",
     "DoneCriterion",
     "Evidence",
     "ExtractedClaim",
@@ -816,6 +955,7 @@ __all__ = [
     "RevisionPlanDocument",
     "RewrittenArticle",
     "RiskLevel",
+    "ScoreDeduction",
     "SeriesConsiderations",
     "SourceGapQuestion",
     "SourceModel",

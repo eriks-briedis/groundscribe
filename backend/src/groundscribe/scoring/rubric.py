@@ -249,6 +249,7 @@ class ScoringRubric(BaseModel):
         depth: ArticleDepth | None = None,
         blocking_issues: Sequence[str] = (),
         unsupported_claims: Sequence[str] = (),
+        unmet_requirements: Sequence[str] = (),
     ) -> ScoreAssessment:
         """Score the article and decide the verdict, reporting both.
 
@@ -294,6 +295,14 @@ class ScoringRubric(BaseModel):
         failures.extend(
             ScoreFailure(detail=f"the article rests on the unsupported major claim {claim}")
             for claim in unsupported_claims
+        )
+        # plan/08: "optional stylistic preferences don't force a rewrite *unless the
+        # rubric marks them required*". A requirement the project stated outright is
+        # not a preference to be weighed against the score — it either holds or the
+        # article is not publishable, however well it reads.
+        failures.extend(
+            ScoreFailure(detail=f"a requirement the rubric marks as required is unmet: {unmet}")
+            for unmet in unmet_requirements
         )
 
         return ScoreAssessment(

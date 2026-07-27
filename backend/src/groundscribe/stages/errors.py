@@ -93,6 +93,17 @@ class VoiceContractError(StageError):
     """
 
 
+class ScoreContractError(StageError):
+    """A score would be stored that nothing could compare against.
+
+    Scores are only useful in relation to other scores — did this rewrite improve
+    on its parent, did the rubric change or did the article get worse — and every
+    one of those questions needs the score to name the article, the inputs, the
+    rubric and the thresholds behind it. A score missing any of them is not a
+    weaker record, it is one that will be compared against anyway.
+    """
+
+
 __all__ = [
     "ArchitectureLocked",
     "BriefContractError",
@@ -101,6 +112,7 @@ __all__ = [
     "PlanContractError",
     "ProviderNotPermitted",
     "RewriteContractError",
+    "ScoreContractError",
     "StageError",
     "VoiceContractError",
 ]
