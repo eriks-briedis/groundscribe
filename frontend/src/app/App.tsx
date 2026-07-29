@@ -12,9 +12,11 @@
  * whole app: editorial by default, debugging when a person is looking for what
  * went wrong (plan/11 → trace overload).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ModeProvider, useMode } from './mode';
+import { fetchSession, onUnauthorized, signOut } from '@/api/client';
+import { SignInScreen } from '@/screens/SignInScreen';
 import { ArchitectureBoardScreen } from '@/screens/ArchitectureBoardScreen';
 import { ArticleWorkspaceScreen } from '@/screens/ArticleWorkspaceScreen';
 import { DashboardScreen } from '@/screens/DashboardScreen';
@@ -78,9 +80,42 @@ function Screen({ hash }: { hash: string }) {
   );
 }
 
+/**
+ * Whether this browser is signed in, and a way to be told when it stops being.
+ *
+ * The answer comes from the backend because the cookie is `HttpOnly`. Any
+ * request can be the one that discovers a lapsed session, so the client reports
+ * that centrally and the whole app returns to the form — a screen left showing
+ * artefacts it can no longer refresh would be lying about what it knows.
+ */
+function useSession() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  const check = useCallback(() => {
+    fetchSession()
+      .then((session) => setAuthenticated(session.authenticated))
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  useEffect(() => {
+    check();
+    onUnauthorized(() => setAuthenticated(false));
+  }, [check]);
+
+  return { authenticated, check, setAuthenticated };
+}
+
 function Chrome() {
   const hash = useHash();
   const { mode, setMode } = useMode();
+  const session = useSession();
+
+  if (session.authenticated === null) {
+    return <p className="loading">Loading…</p>;
+  }
+  if (!session.authenticated) {
+    return <SignInScreen onSignedIn={session.check} />;
+  }
 
   return (
     <div className="app">
@@ -96,6 +131,14 @@ function Chrome() {
           onClick={() => setMode(mode === 'editorial' ? 'debugging' : 'editorial')}
         >
           {mode === 'editorial' ? 'switch to debugging' : 'switch to editorial'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void signOut().finally(() => session.setAuthenticated(false));
+          }}
+        >
+          sign out
         </button>
       </header>
       <main className="app__main">

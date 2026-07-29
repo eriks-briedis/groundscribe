@@ -13,6 +13,9 @@ import { App } from './App';
 import { fakeBackend } from '@/test/backend';
 import { ARTICLE_ID, articleWorkspace, dashboard, PROJECT_ID } from '@/test/fixtures';
 
+/** The shell is behind the sign-in screen, so every test here has a session. */
+const SIGNED_IN = { '/auth/session': { authenticated: true } };
+
 function go(hash: string) {
   window.location.hash = hash;
 }
@@ -22,6 +25,7 @@ beforeEach(() => go(''));
 describe('the shell', () => {
   it('shows the screen the address names', async () => {
     fakeBackend({
+      ...SIGNED_IN,
       [`/projects/${PROJECT_ID}/dashboard`]: dashboard,
       [`/articles/${ARTICLE_ID}/workspace`]: articleWorkspace,
     });
@@ -36,7 +40,7 @@ describe('the shell', () => {
   });
 
   it('starts editorial, and opens the payloads when asked to debug', async () => {
-    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+    fakeBackend({ ...SIGNED_IN, [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
     go(`#/projects/${PROJECT_ID}`);
 
     render(<App />);
@@ -48,7 +52,7 @@ describe('the shell', () => {
   });
 
   it('says so when the address means nothing', async () => {
-    fakeBackend({});
+    fakeBackend({ ...SIGNED_IN });
     go('#/nowhere');
 
     render(<App />);

@@ -55,6 +55,7 @@ export const ENDPOINTS = {
   effectiveVoice: { path: '/projects/{project_id}/voice', method: 'get' },
   job: { path: '/jobs/{job_id}', method: 'get' },
   jobEvents: { path: '/jobs/{job_id}/events', method: 'get' },
+  session: { path: '/auth/session', method: 'get' },
 } as const satisfies Record<string, { path: keyof paths; method: string }>;
 
 export type Schemas = components['schemas'];
@@ -77,6 +78,21 @@ export type ScoreView = Schemas['ScoreView'];
 export type DiffView = Schemas['DiffView'];
 export type QuestionView = Schemas['QuestionView'];
 export type ArticleCard = Schemas['ArticleCard'];
+export type SessionState = Schemas['SessionState'];
+
+/**
+ * Told when the backend says the session is gone.
+ *
+ * A module-level listener rather than a parameter on every call: any request can
+ * be the one that discovers a lapsed cookie, and threading that through ten
+ * screens would mean ten places to forget it.
+ */
+type UnauthorizedListener = () => void;
+let unauthorized: UnauthorizedListener = () => undefined;
+
+export function onUnauthorized(listener: UnauthorizedListener): void {
+  unauthorized = listener;
+}
 
 /** A request that failed, carrying whatever the backend said about it. */
 export class ApiError extends Error {
@@ -94,6 +110,7 @@ type Problem = { detail?: unknown };
 /** Turn a client result into either the body or a thrown {@link ApiError}. */
 function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (result.data !== undefined) return result.data;
+  if (result.response.status === 401) unauthorized();
   const problem = result.error as Problem | undefined;
   throw new ApiError(result.response.status, String(problem?.detail ?? result.response.statusText));
 }
@@ -208,9 +225,38 @@ export async function sendCommand(
   });
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) unauthorized();
     throw new ApiError(response.status, String((payload as Problem)?.detail ?? ''));
   }
   return payload as CommandResponse;
+}
+
+/**
+ * Whether this browser holds a session.
+ *
+ * Asked rather than inspected: the cookie is `HttpOnly`, so the only side that
+ * can read it is the one that issued it.
+ */
+export async function fetchSession(): Promise<SessionState> {
+  return unwrap(await api.GET('/auth/session'));
+}
+
+/** Exchange the shared password for a session cookie. */
+export async function signIn(password: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => ({}))) as Problem;
+    throw new ApiError(response.status, String(problem?.detail ?? 'sign-in failed'));
+  }
+}
+
+/** Give the session back. */
+export async function signOut(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
 }
 
 /** One frame of a job's progress stream. */

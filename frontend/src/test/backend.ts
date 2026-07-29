@@ -66,6 +66,9 @@ export function fakeBackend(routes: Record<string, Route>): FakeBackend {
         });
       }
       const payload = typeof route === 'function' ? (route as (r: RecordedRequest) => unknown)(request) : route;
+      // A route may answer with a whole `Response` when the status is the point
+      // — a refusal, a redirect — rather than only with a body.
+      if (payload instanceof Response) return payload;
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: { 'content-type': 'application/json' },

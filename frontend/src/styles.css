@@ -292,3 +292,21 @@ tr[data-same='false'] {
   display: block;
   margin-top: 0.2rem;
 }
+
+.screen--signin {
+  max-width: 24rem;
+  margin: 12vh auto;
+}
+
+.signin {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1.5rem 0;
+}
+
+.signin input {
+  font: inherit;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}

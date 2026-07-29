@@ -85,18 +85,22 @@ describe('the sign-in screen', () => {
 
   it('returns to the form when a session expires mid-session', async () => {
     let signedIn = true;
+    const refused = () =>
+      new Response(JSON.stringify({ detail: 'sign in first' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
     fakeBackend({
       '/auth/session': () => ({ authenticated: signedIn }),
-      [`/projects/${PROJECT_ID}/dashboard`]: () => {
-        if (!signedIn) return null;
-        return dashboard;
-      },
+      [`/projects/${PROJECT_ID}/dashboard`]: () => (signedIn ? dashboard : refused()),
+      [`/projects/${PROJECT_ID}/questions`]: () => (signedIn ? { questions: [] } : refused()),
     });
 
     render(<App />);
     await screen.findByTestId('run-state');
 
-    // The cookie lapses; the next read is refused.
+    // The cookie lapses, and the next screen's read is refused. Nothing told the
+    // app in advance — which is the case worth testing.
     signedIn = false;
     window.location.hash = `#/projects/${PROJECT_ID}/questions`;
 
