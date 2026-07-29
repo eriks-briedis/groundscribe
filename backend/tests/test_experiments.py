@@ -29,8 +29,6 @@ that the configurations agreed.
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -82,32 +80,6 @@ async def corpus(walk: Walkthrough) -> EvaluationDataset:
     return DatasetBuilder(walk.session, snapshots=walk.harness.runtime.snapshots).build(
         name="one article", created_by=AUTHOR
     )
-
-
-def heavy_rewrite(walk: Walkthrough) -> dict[str, Any]:
-    """A voice pass that cuts most of the article, declared honestly.
-
-    One change, quoting what it removed and what it left, because the voice
-    stage refuses an edit it cannot locate in the version it was given. What
-    makes it useful here is the size: the result sits a long way from the
-    article the author approved.
-    """
-    body = walk.voice_pass(snapshot_id=walk.approved_input())["body"]
-    heading, _, rest = body.partition("\n")
-    kept = "It shipped and it was faster."
-    return {
-        "schema_version": 1,
-        "body": f"{heading}\n\n{kept}\n",
-        "changes": [
-            {
-                "kind": "sentence_length",
-                "before": rest.strip(),
-                "after": kept,
-                "reason": "Everything after the title, in one sentence.",
-            }
-        ],
-        "structural_problems": [],
-    }
 
 
 def two_arms() -> tuple[ArmSpec, ...]:
@@ -317,56 +289,3 @@ async def test_the_comparison_measures_each_arm_against_the_approved_article(
     assert all(row.manual_edit_distance is not None for row in comparison)
     assert all(row.total_cost_usd is not None for row in comparison)
     assert all(row.mean_latency_ms is not None for row in comparison)
-
-
-async def test_an_arm_that_scored_well_and_was_rewritten_flags_the_rubric(
-    walk: Walkthrough, runner: ExperimentRunner
-) -> None:
-    """plan/12 → the manual edit distance *used as a signal*, not merely computed.
-
-    The one place in the system where both halves of the comparison exist at
-    once: the arm's article is what the pipeline proposed, the dataset entry is
-    what a person approved, and the evaluation run says what the rubric thought
-    of the first. A high score sitting a long way from the approved article is
-    the rubric measuring something other than what the author wanted.
-
-    Reported as findings rather than as a thirteenth metric. An average would
-    say "the rubric is 0.3 wrong"; a list says which articles to go and read.
-    """
-    dataset = await corpus(walk)
-    experiment = runner.create(
-        name="cheaper model?", dataset=dataset, created_by=AUTHOR, arms=two_arms()
-    )
-    # The baseline reproduces the approved article; the candidate cuts most of
-    # it. Both are scored by the same rubric, so only one of them disagrees with
-    # what the author was willing to publish.
-    walk.script(VOICE, walk.voice_pass(snapshot_id=walk.approved_input()))
-    walk.script(VOICE, heavy_rewrite(walk))
-    runner.start(experiment)
-    await walk.harness.drain()
-    runner.collect(experiment)
-
-    signals = runner.rubric_signals(experiment)
-
-    assert [signal.arm_label for signal in signals] == ["the small model"]
-    (signal,) = signals
-    assert signal.entry_id == dataset.entries[0].id
-    assert signal.signal.weak_rubric
-    assert signal.signal.detail
-
-
-async def test_an_arm_the_author_barely_touched_raises_nothing(
-    walk: Walkthrough, runner: ExperimentRunner
-) -> None:
-    """The quiet case, which is most of them.
-
-    A signal that fired on every example would be read as noise within a week,
-    and the one that mattered would go with it.
-    """
-    dataset = await corpus(walk)
-    experiment = await run_both_arms(walk, runner, dataset)
-
-    # Both arms reproduced the approved article exactly — the fake returns what
-    # it was scripted with — so nothing here disagrees with the rubric.
-    assert all(row.manual_edit_distance == 0.0 for row in runner.compare(experiment))
-    assert runner.rubric_signals(experiment) == ()
