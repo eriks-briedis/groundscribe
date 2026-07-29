@@ -141,13 +141,18 @@ class WorkflowEngine:
         policy: WorkflowPolicy | None = None,
         confidential: Sequence[str] = (),
         actor_id: str = "workflow_policy",
+        execution: models.StageExecution | None = None,
     ) -> None:
         self._recorder = recorder
         self._snapshots = snapshots
         self.run = run
         self.policy = policy or default_workflow_policy()
         self.machine = WorkflowMachine(state=state, policy=self.policy)
-        self.execution = recorder.start_stage(run, stage=WORKFLOW_STAGE)
+        # An engine rebuilt to continue a run adopts the execution that run's
+        # transitions are already recorded against (phase 09). Opening a fresh
+        # one per command would scatter a single run's decisions across a dozen
+        # executions, and the timeline an SSE stream reads would come apart.
+        self.execution = execution or recorder.start_stage(run, stage=WORKFLOW_STAGE)
         self._confidential = tuple(confidential)
         self._actor_id = actor_id
         self._approved = _Approved()
@@ -170,9 +175,38 @@ class WorkflowEngine:
         return self._approved.architecture
 
     @property
+    def article_version(self) -> ArtifactSnapshot | None:
+        """The article version currently in force, if there is one."""
+        return self._approved.article_version
+
+    @property
     def validated_version(self) -> ArtifactSnapshot | None:
         """The article version that passed final validation, if one has."""
         return self._approved.validated_version
+
+    def restore(
+        self,
+        *,
+        architecture: ArtifactSnapshot | None = None,
+        article_version: ArtifactSnapshot | None = None,
+        validated_version: ArtifactSnapshot | None = None,
+    ) -> None:
+        """Re-seed the guards' memory when an engine is rebuilt mid-run.
+
+        Phase 05's guards compare a candidate artefact against what the run has
+        already approved, and that comparison is the entire mechanism behind "no
+        approved architecture mutates silently" and "export what was validated".
+        A continuing engine that did not restore it would not merely forget
+        history — it would wave through exactly the changes the guards exist to
+        catch, silently. So this is deliberately not a private detail: the
+        position store (phase 09) is expected to call it before the engine is
+        used, and the reader of that call should see why.
+        """
+        self._approved = _Approved(
+            architecture=architecture,
+            article_version=article_version,
+            validated_version=validated_version,
+        )
 
     def available_actions(self) -> tuple[WorkflowAction, ...]:
         return self.machine.available_actions()
