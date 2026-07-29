@@ -35,6 +35,27 @@ describe('the article workspace', () => {
     );
   });
 
+  it('renders the article as the markdown it is, with the source a click away', async () => {
+    fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: {
+        ...articleWorkspace,
+        current_version: {
+          ...articleWorkspace.current_version,
+          body: '## Why it was slow\n\nThe renderer *rebuilt* every fragment.',
+        },
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    const body = await screen.findByTestId('version-body');
+    expect(body.querySelector('h2')).toHaveTextContent('Why it was slow');
+    expect(body.querySelector('em')).toHaveTextContent('rebuilt');
+
+    await userEvent.click(screen.getByRole('button', { name: /markdown source/i }));
+    expect(screen.getByText(/## Why it was slow/)).toBeInTheDocument();
+  });
+
   it('shows the reviewer findings with the evidence behind each one', async () => {
     fakeBackend(routes);
 

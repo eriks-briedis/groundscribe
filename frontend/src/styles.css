@@ -261,3 +261,34 @@ tr[data-same='false'] {
 .claims {
   padding-left: 1.2rem;
 }
+
+.markdown .prose h1,
+.markdown .prose h2,
+.markdown .prose h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.05rem;
+}
+
+.markdown .prose p {
+  margin: 0 0 0.8em;
+}
+
+.markdown .prose code {
+  background: #f4f5f8;
+  padding: 0 0.2em;
+  border-radius: 3px;
+}
+
+.edit-form label,
+.edit-form fieldset {
+  display: block;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.edit-form input,
+.edit-form select {
+  font: inherit;
+  display: block;
+  margin-top: 0.2rem;
+}

@@ -18,6 +18,7 @@ import { ActionBar, PendingCommand } from '@/components/ActionBar';
 import { DiffViewer } from '@/components/DiffViewer';
 import { Disclosure, Payload } from '@/components/Disclosure';
 import { LineageGraph } from '@/components/LineageGraph';
+import { Markdown } from '@/components/Markdown';
 import { ScoreTable } from '@/components/ScoreTable';
 
 function readable(value: string): string {
@@ -70,9 +71,7 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
                 <p className="muted">
                   v{workspace.current_version.ordinal} · {workspace.current_version.thesis}
                 </p>
-                <article className="prose" data-testid="version-body">
-                  {workspace.current_version.body}
-                </article>
+                <Markdown body={workspace.current_version.body ?? ''} data-testid="version-body" />
               </>
             ) : (
               <p>Nothing has been drafted yet.</p>
