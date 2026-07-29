@@ -361,11 +361,5 @@ class ExperimentRun(_Record):
     created_at: datetime
 
 
-class Job(_Record):
-    """Shell for the DB-backed job queue; filled in phase 09."""
-
-    job_type: str
-    status: ExecutionStatus = ExecutionStatus.PENDING
-    pipeline_run_id: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
+# The Job schema used to be a shell here. Phase 09 filled it in
+# ``groundscribe.jobs.schemas``, beside the model and the queue that own it.

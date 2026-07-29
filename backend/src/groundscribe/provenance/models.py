@@ -465,19 +465,6 @@ class ExperimentRun(ProvenanceRecord, Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
 
-class Job(ProvenanceRecord, Base):
-    """Shell for the DB-backed job queue; filled in phase 09."""
-
-    __tablename__ = "jobs"
-
-    job_type: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[ExecutionStatus] = mapped_column(
-        enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
-    )
-    pipeline_run_id: Mapped[str | None] = mapped_column(
-        ForeignKey("pipeline_runs.id"), nullable=True
-    )
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, default=dict, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
-
-    pipeline_run: Mapped[PipelineRun | None] = relationship()
+# The jobs table used to be a shell here. Phase 09 filled it in
+# ``groundscribe.jobs.models``, where the queue that owns its lifecycle lives:
+# a job points *into* this schema, and the arrow must not run back.

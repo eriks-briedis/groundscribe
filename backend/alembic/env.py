@@ -13,9 +13,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import Connection
 
-# Importing the ORM modules registers their tables on ``Base.metadata``; both
-# are needed for the full schema to be visible.
+# Importing the ORM modules registers their tables on ``Base.metadata``; all
+# three are needed for the full schema to be visible.
 import groundscribe.domain.models
+import groundscribe.jobs.models
 import groundscribe.provenance.models  # noqa: F401
 from groundscribe.db import DEFAULT_URL, Base, create_engine
 

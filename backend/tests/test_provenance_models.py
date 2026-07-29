@@ -188,16 +188,6 @@ def _seed_hierarchy(session: Session) -> dict[str, BaseModel]:
     )
     add("ExperimentRun", experiment, models.ExperimentRun(**experiment.model_dump()))
 
-    job = schemas.Job(
-        id="job1",
-        job_type="run_pipeline",
-        status=ExecutionStatus.PENDING,
-        pipeline_run_id="run1",
-        payload={"run_id": "run1"},
-        created_at=MOMENT,
-    )
-    add("Job", job, models.Job(**job.model_dump()))
-
     session.flush()
     return originals
 
@@ -214,7 +204,6 @@ SCHEMA_FOR: dict[str, type[BaseModel]] = {
     "UserIntervention": schemas.UserIntervention,
     "TraceEvent": schemas.TraceEvent,
     "ExperimentRun": schemas.ExperimentRun,
-    "Job": schemas.Job,
 }
 
 
