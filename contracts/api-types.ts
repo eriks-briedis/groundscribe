@@ -1860,6 +1860,8 @@ export interface components {
              * @default false
              */
             trace_retention_consent: boolean;
+            /** @default full */
+            trace_retention_mode: components["schemas"]["RetentionMode"];
         };
         /**
          * EffectiveVoice
@@ -2797,6 +2799,17 @@ export interface components {
             /** Source Execution Id */
             source_execution_id: string;
         };
+        /**
+         * RetentionMode
+         * @description The six modes plan/13 names, ordered from most kept to least.
+         *
+         *     ``FULL`` is not "unredacted": redaction before persistence is a product
+         *     principle (plan/00), not a retention setting, and no mode can switch it off.
+         *     ``REDACTED_FULL`` is the one that goes past that floor, removing the
+         *     project's own restricted source material from stored payloads as well.
+         * @enum {string}
+         */
+        RetentionMode: "full" | "redacted_full" | "temporary_raw_retention" | "no_raw_provider_payloads" | "metadata_and_structured_only" | "minimal_operational_logging";
         /**
          * ReviewHistory
          * @description plan/11 → *Review history*: score progression and what happened to each issue.

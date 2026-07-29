@@ -73,7 +73,22 @@ class ProvenanceRecorder:
         # site, for the reason the redactor is: a rule applied at N call sites is
         # a rule that will be missed at the N+1th (phase 13).
         self.retention = retention or RetentionPolicy()
-        self._redactor = self._with_retention(redactor or Redactor())
+        # Kept apart from the effective one so a later retention change is
+        # applied to the rules this recorder was built with, rather than
+        # compounding on top of whatever the previous mode already added.
+        self._base_redactor = redactor or Redactor()
+        self._redactor = self._with_retention(self._base_redactor)
+
+    def use_retention(self, retention: RetentionPolicy) -> None:
+        """Put a project's retention choice in force on this recorder.
+
+        The recorder is built before the run it will record is known — a runtime
+        is assembled once per process — so the policy arrives when a run is
+        resumed and the project can be read. Setting it re-derives the redactor,
+        because ``redacted_full`` changes what the redactor removes.
+        """
+        self.retention = retention
+        self._redactor = self._with_retention(self._base_redactor)
 
     def _with_retention(self, redactor: Redactor) -> Redactor:
         """Fold the retention mode's extra literals into the redactor.

@@ -27,6 +27,7 @@ from groundscribe.domain.enums import (
     SelectionStatus,
     SourceFormat,
 )
+from groundscribe.domain.retention import RetentionMode
 
 
 class _Entity(BaseModel):
@@ -88,6 +89,10 @@ class EditorialConstraints(BaseModel):
     confidential_names: tuple[str, ...] = ()
     allowed_providers: tuple[str, ...] = ()
     trace_retention_consent: bool = False
+    #: How much of this project's trace is kept (phase 13). Defaults to the mode
+    #: that loses least, because a default is a choice nobody made and a trace
+    #: can be thinned later but never un-thinned.
+    trace_retention_mode: RetentionMode = RetentionMode.FULL
 
     def permits_provider(self, provider: str) -> bool:
         """Whether ``provider`` may be sent this project's material."""

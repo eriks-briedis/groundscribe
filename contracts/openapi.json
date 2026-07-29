@@ -1617,6 +1617,10 @@
             "default": false,
             "title": "Trace Retention Consent",
             "type": "boolean"
+          },
+          "trace_retention_mode": {
+            "$ref": "#/components/schemas/RetentionMode",
+            "default": "full"
           }
         },
         "required": [
@@ -3587,6 +3591,19 @@
         ],
         "title": "RerunResponse",
         "type": "object"
+      },
+      "RetentionMode": {
+        "description": "The six modes plan/13 names, ordered from most kept to least.\n\n``FULL`` is not \"unredacted\": redaction before persistence is a product\nprinciple (plan/00), not a retention setting, and no mode can switch it off.\n``REDACTED_FULL`` is the one that goes past that floor, removing the\nproject's own restricted source material from stored payloads as well.",
+        "enum": [
+          "full",
+          "redacted_full",
+          "temporary_raw_retention",
+          "no_raw_provider_payloads",
+          "metadata_and_structured_only",
+          "minimal_operational_logging"
+        ],
+        "title": "RetentionMode",
+        "type": "string"
       },
       "ReviewHistory": {
         "description": "plan/11 \u2192 *Review history*: score progression and what happened to each issue.",

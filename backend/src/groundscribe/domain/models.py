@@ -44,6 +44,7 @@ from groundscribe.domain.enums import (
     SelectionStatus,
     SourceFormat,
 )
+from groundscribe.domain.retention import RetentionMode
 
 
 class EntityMixin:
@@ -161,6 +162,14 @@ class ProjectConstraints(LineageMixin, EntityMixin, Base):
     confidential_names: Mapped[list[str]] = mapped_column(JSONColumn, default=list, nullable=False)
     allowed_providers: Mapped[list[str]] = mapped_column(JSONColumn, default=list, nullable=False)
     trace_retention_consent: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # How much of this project's trace is kept (phase 13). Here rather than in a
+    # config file because the constraints are versioned and branch instead of
+    # being edited: "what was the retention mode when that run was recorded?"
+    # stays answerable, which is the question someone asks when a trace turns
+    # out to be thinner than they expected.
+    trace_retention_mode: Mapped[RetentionMode] = mapped_column(
+        enum_column(RetentionMode), default=RetentionMode.FULL, nullable=False
+    )
 
     project: Mapped[Project] = relationship()
 
