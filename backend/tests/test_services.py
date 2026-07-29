@@ -199,9 +199,10 @@ async def test_a_command_the_workflow_forbids_is_refused_before_anything_is_queu
     no worker inherits an impossible instruction.
     """
     project_id = await with_source(harness)
+    article_id = _an_article_addressed_before_its_time(harness, project_id)
 
     with pytest.raises(IllegalTransition):
-        await harness.service.generate_brief(project_id, article_id="nobody")
+        await harness.service.generate_brief(article_id)
 
     assert harness.runtime.queue.pending_count() == 0
 
@@ -253,6 +254,19 @@ async def test_an_execution_reports_its_events_and_its_model_calls(harness: Harn
 
     assert events[0].event_type == "stage.started"
     assert [invocation.template_id for invocation in invocations] == ["extract_source_truth"]
+
+
+def _an_article_addressed_before_its_time(harness: Harness, project_id: str) -> str:
+    """An article row for a project whose architecture has not been approved.
+
+    Written by hand because nothing legitimate produces one at this point —
+    which is the situation under test: the command is addressable, and the
+    workflow is what refuses it.
+    """
+    session = harness.runtime.session
+    session.add(domain_models.Article(id="premature", project_id=project_id, title="Too early"))
+    session.flush()
+    return "premature"
 
 
 def script_extraction(harness: Harness) -> None:

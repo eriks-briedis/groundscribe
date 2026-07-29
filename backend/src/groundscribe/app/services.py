@@ -292,92 +292,54 @@ class ApplicationService:
     # Article stages
     # ------------------------------------------------------------------
 
-    async def generate_brief(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def generate_brief(self, article_id: str) -> CommandResult:
         """Turn one approved concept into the contract its draft is written to."""
-        return self._enqueue(
-            project_id,
-            JobType.GENERATE_BRIEF,
-            entry=A.GENERATE_BRIEF,
-            payload={"article_id": article_id},
-            dedupe_key=f"brief:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.GENERATE_BRIEF, entry=A.GENERATE_BRIEF)
 
-    def approve_brief(self, project_id: str, *, approved_by: str) -> CommandResult:
+    def approve_brief(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Accept the brief, which is what opens drafting."""
-        return self._act(project_id, A.APPROVE_BRIEF, actor_id=approved_by)
+        return self._act(
+            self.project_for_article(article_id), A.APPROVE_BRIEF, actor_id=approved_by
+        )
 
-    async def draft(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def draft(self, article_id: str) -> CommandResult:
         """Write the first version of the article."""
-        return self._enqueue(
-            project_id,
-            JobType.GENERATE_DRAFT,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"draft:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.GENERATE_DRAFT)
 
-    async def review(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def review(self, article_id: str) -> CommandResult:
         """Review the current version against the source and the brief."""
-        return self._enqueue(
-            project_id,
-            JobType.REVIEW_ARTICLE,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"review:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.REVIEW_ARTICLE)
 
-    async def plan_revision(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def plan_revision(self, article_id: str) -> CommandResult:
         """Turn the review's findings into a plan a rewrite is bound by."""
-        return self._enqueue(
-            project_id,
-            JobType.PLAN_REVISION,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"plan:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.PLAN_REVISION)
 
-    def approve_revision_plan(self, project_id: str, *, approved_by: str) -> CommandResult:
+    def approve_revision_plan(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Authorise the rewrite the plan describes."""
-        return self._act(project_id, A.APPROVE_REVISION_PLAN, actor_id=approved_by)
+        return self._act(
+            self.project_for_article(article_id), A.APPROVE_REVISION_PLAN, actor_id=approved_by
+        )
 
-    async def rewrite(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def rewrite(self, article_id: str) -> CommandResult:
         """Rewrite the article under the approved plan."""
-        return self._enqueue(
-            project_id,
-            JobType.REWRITE_ARTICLE,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"rewrite:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.REWRITE_ARTICLE)
 
-    async def voice_align(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def voice_align(self, article_id: str) -> CommandResult:
         """Make it read like the author, changing nothing it claims."""
-        return self._enqueue(
-            project_id,
-            JobType.ALIGN_VOICE,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"voice:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.ALIGN_VOICE)
 
-    async def score(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def score(self, article_id: str) -> CommandResult:
         """Score the article, and route it if it fails."""
-        return self._enqueue(
-            project_id,
-            JobType.SCORE_ARTICLE,
-            entry=None,
-            payload={"article_id": article_id},
-            dedupe_key=f"score:{article_id}",
-        )
+        return self._enqueue_for_article(article_id, JobType.SCORE_ARTICLE)
 
-    async def validate(self, project_id: str, *, article_id: str) -> CommandResult:
+    async def validate(self, article_id: str) -> CommandResult:
         """Run the final deterministic checks, in this request.
 
         plan/08 built final validation with no model at all — fourteen
         predicates over stored artefacts. Nothing about it benefits from a
         worker, and a person waiting to publish benefits from the answer now.
         """
-        resumed = self._resume(project_id)
+        resumed = self._resume(self.project_for_article(article_id))
         session = resumed.context.session
         version = rehydrate.latest_version(session, article_id)
         version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
@@ -410,9 +372,9 @@ class ApplicationService:
         )
         return self._settle(resumed, detail=dict(result.detail))
 
-    def approve(self, project_id: str, *, approved_by: str) -> CommandResult:
+    def approve(self, article_id: str, *, approved_by: str) -> CommandResult:
         """The author publishes: the last human gate in the pipeline."""
-        resumed = self._resume(project_id)
+        resumed = self._resume(self.project_for_article(article_id))
         validated = resumed.engine.validated_version
         resumed.engine.apply(
             A.APPROVE_FINAL,
@@ -423,9 +385,11 @@ class ApplicationService:
         )
         return self._settle(resumed)
 
-    def override_and_approve(self, project_id: str, *, approved_by: str) -> CommandResult:
+    def override_and_approve(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Accept an article the score refused, on a person's explicit say-so."""
-        return self._act(project_id, A.OVERRIDE_AND_APPROVE, actor_id=approved_by)
+        return self._act(
+            self.project_for_article(article_id), A.OVERRIDE_AND_APPROVE, actor_id=approved_by
+        )
 
     def cancel(self, project_id: str, *, cancelled_by: str) -> CommandResult:
         """Stop the run. Always available, so no run can be trapped."""
@@ -511,6 +475,35 @@ class ApplicationService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def project_for_article(self, article_id: str) -> str:
+        """Which project an article belongs to.
+
+        A lookup, not a rule: the spec addresses article commands as
+        ``/articles/{id}/...`` while the workflow is per-run, so something has to
+        join the two. Doing it here rather than in each interface keeps the CLI
+        and the API asking the same question of the same table.
+        """
+        article = self._runtime.session.get(domain_models.Article, article_id)
+        if article is None:
+            raise UnknownProject(f"no article {article_id}")
+        return article.project_id
+
+    def _enqueue_for_article(
+        self,
+        article_id: str,
+        job_type: JobType,
+        *,
+        entry: WorkflowAction | None = None,
+    ) -> CommandResult:
+        """Queue article work, keyed so two articles of one project stay apart."""
+        return self._enqueue(
+            self.project_for_article(article_id),
+            job_type,
+            entry=entry,
+            payload={"article_id": article_id},
+            dedupe_key=f"{job_type.value}:{article_id}",
+        )
 
     def _enqueue(
         self,
