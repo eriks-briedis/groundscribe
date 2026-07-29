@@ -23,8 +23,21 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from groundscribe.api import schemas
+from groundscribe.app.reads import ProjectionReader
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import ApplicationService, CommandResult
+from groundscribe.app.views import (
+    ArchitectureBoard,
+    ArticleWorkspace,
+    LineageGraph,
+    ProjectDashboard,
+    QuestionQueue,
+    ReviewHistory,
+    SourceWorkspace,
+    StageInspection,
+    TraceFilter,
+    TraceView,
+)
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
 from groundscribe.voice.schemas import VoiceProfileDocument
@@ -65,6 +78,27 @@ def get_service(
 #: reads as a shared mutable default to everything that is not FastAPI.
 Service = Annotated[ApplicationService, Depends(get_service)]
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
+
+
+def get_reader(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+) -> ProjectionReader:
+    """The read side, over the same session and outside the command's transaction.
+
+    Deliberately not built from :func:`get_service`: a read commits nothing
+    because it writes nothing, and taking the commit-on-return dependency would
+    imply otherwise (phase 11 → *a read changes nothing*).
+    """
+    return ProjectionReader(runtime)
+
+
+Reader = Annotated[ProjectionReader, Depends(get_reader)]
+
+#: The trace filters, as repeated ``?filter=`` values. Typed as the enum so a
+#: name the system does not know is refused by the schema rather than dropped —
+#: a person shown everything after asking for failures only would draw
+#: conclusions from a list they did not request.
+TraceFilters = Annotated[list[TraceFilter] | None, Query(alias="filter")]
 
 
 def render(result: CommandResult) -> schemas.CommandResponse:
@@ -339,6 +373,74 @@ def override_and_approve(
 
 
 # ----------------------------------------------------------------------
+# Reads: one per screen (phase 11)
+#
+# Every one of these is a ``GET`` that touches nothing. They exist because the
+# interface is artefact-first: a command says where the run is, and a screen has
+# to show what the run has made. The assembly lives in the app layer, so the CLI
+# can ask the same questions; the routes below only choose the URL.
+# ----------------------------------------------------------------------
+
+
+@router.get("/projects/{project_id}/dashboard", response_model=ProjectDashboard)
+def read_dashboard(project_id: str, reader: Reader) -> ProjectDashboard:
+    """Where the project stands: state, source, articles, jobs, failures, cost."""
+    return reader.dashboard(project_id)
+
+
+@router.get("/projects/{project_id}/source-workspace", response_model=SourceWorkspace)
+def read_source_workspace(project_id: str, reader: Reader) -> SourceWorkspace:
+    """The source, what was extracted from it, and who may see it."""
+    return reader.source_workspace(project_id)
+
+
+@router.get("/projects/{project_id}/questions", response_model=QuestionQueue)
+def read_questions(project_id: str, reader: Reader) -> QuestionQueue:
+    """Every question the source raised, answered ones included."""
+    return reader.questions(project_id)
+
+
+@router.get("/projects/{project_id}/architecture", response_model=ArchitectureBoard)
+def read_architecture(project_id: str, reader: Reader) -> ArchitectureBoard:
+    """The proposed shape of the work, every version of it."""
+    return reader.architecture(project_id)
+
+
+@router.get("/projects/{project_id}/trace", response_model=TraceView)
+def read_trace(project_id: str, reader: Reader, filter: TraceFilters = None) -> TraceView:
+    """The run's executions, narrowed to what a filter names.
+
+    ``filter`` shadows the builtin, and keeps the name because it is the query
+    string a person types; the alias is the API's vocabulary, not Python's.
+    """
+    return reader.trace(project_id, filters=filter or ())
+
+
+@router.get("/articles/{article_id}/workspace", response_model=ArticleWorkspace)
+def read_article_workspace(article_id: str, reader: Reader) -> ArticleWorkspace:
+    """Everything needed to judge the current version, approval included."""
+    return reader.article_workspace(article_id)
+
+
+@router.get("/articles/{article_id}/reviews", response_model=ReviewHistory)
+def read_review_history(article_id: str, reader: Reader) -> ReviewHistory:
+    """The rounds, the scores they earned, and what each finding did."""
+    return reader.review_history(article_id)
+
+
+@router.get("/articles/{article_id}/lineage", response_model=LineageGraph)
+def read_lineage(article_id: str, reader: Reader) -> LineageGraph:
+    """How each version came from the one before it."""
+    return reader.lineage(article_id)
+
+
+@router.get("/executions/{execution_id}/inspect", response_model=StageInspection)
+def inspect_execution(execution_id: str, reader: Reader) -> StageInspection:
+    """One execution, with every layer phase 03 recorded for it."""
+    return reader.inspect(execution_id)
+
+
+# ----------------------------------------------------------------------
 # Voice (phase 10)
 # ----------------------------------------------------------------------
 
@@ -442,6 +544,7 @@ def reject_voice_suggestion(
 @router.get("/executions/compare", response_model=schemas.ExecutionComparison)
 def compare_executions(
     service: Service,
+    reader: Reader,
     left: Annotated[str, Query()],
     right: Annotated[str, Query()],
 ) -> schemas.ExecutionComparison:
@@ -449,9 +552,12 @@ def compare_executions(
     literal path is matched first rather than read as an execution called
     "compare"."""
     first, second = service.compare_executions(left, right)
+    differences, distance = reader.comparison(first, second)
     return schemas.ExecutionComparison(
         left=schemas.ExecutionSummary.model_validate(first),
         right=schemas.ExecutionSummary.model_validate(second),
+        differences=differences,
+        output_edit_distance=distance,
     )
 
 
@@ -550,4 +656,11 @@ def stream_job_events(
     return StreamingResponse(frames(), media_type=EVENT_STREAM)
 
 
-__all__ = ["EVENT_STREAM", "get_runtime", "get_service", "render", "router"]
+__all__ = [
+    "EVENT_STREAM",
+    "get_reader",
+    "get_runtime",
+    "get_service",
+    "render",
+    "router",
+]

@@ -111,8 +111,10 @@ async def test_the_dashboard_reports_the_articles_and_what_they_have_cost(
 
     dashboard = read(client, f"/projects/{walk.project_id}/dashboard")
 
-    (article,) = dashboard["articles"]
-    assert article["id"] == walk.article_id
+    # The approved architecture opens an article per concept, so the walk's is
+    # one of several; the dashboard has to carry them all.
+    (article,) = [item for item in dashboard["articles"] if item["id"] == walk.article_id]
+    assert len(dashboard["articles"]) > 1
     assert article["versions"] >= 2
     assert article["latest_score"]["passed"] is True
     assert dashboard["usage"]["model_calls"] > 0

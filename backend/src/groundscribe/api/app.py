@@ -28,6 +28,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from groundscribe.api.routes import router
+from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import UnknownProject
@@ -71,6 +72,7 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # Something named does not exist.
     (UnknownProject, 404),
     (MissingInput, 404),
+    (UnknownArtefact, 404),
 )
 
 

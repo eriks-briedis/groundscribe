@@ -25,6 +25,7 @@ from golden import golden_json, golden_text, relabel
 from groundscribe.domain import models as domain_models
 from groundscribe.jobs.enums import JobStatus
 from groundscribe.provenance import models as provenance_models
+from groundscribe.provenance.schemas import TokenUsage
 from service_helpers import AUTHOR, Harness
 from stage_helpers import DEFAULT_CONSTRAINTS
 from test_gap_questions import gap
@@ -48,6 +49,10 @@ SETTLED_GAPS: dict[str, Any] = {
 #: 1800 words of prose nobody wrote would fail a check that is working correctly.
 WALK_TARGET_WORDS = 400
 WALK_CONSTRAINTS = DEFAULT_CONSTRAINTS.model_copy(update={"target_length_words": WALK_TARGET_WORDS})
+
+#: What every scripted call reports having consumed. Fixed rather than varied so
+#: a total is checkable by multiplication.
+WALK_USAGE = TokenUsage(input_tokens=1200, output_tokens=800, cost_usd=0.012)
 
 #: A phrase the golden draft contains, and a plainer way of saying it. The voice
 #: pass is scripted from the *stored* body rather than from the golden file, so
@@ -81,7 +86,13 @@ class Walkthrough:
         return body
 
     def script(self, stage: str, payload: dict[str, Any]) -> None:
-        self.harness.client.script_response(stage, payload)
+        """Queue what the model will answer, with what the call cost.
+
+        The usage is scripted because the projections report it: a dashboard
+        totalling tokens nobody reported would be tested against zero and pass
+        whatever it summed.
+        """
+        self.harness.client.script_response(stage, payload, usage=WALK_USAGE)
 
     # ------------------------------------------------------------------
     # The walk
@@ -325,5 +336,6 @@ __all__ = [
     "VOICE_BEFORE",
     "WALK_CONSTRAINTS",
     "WALK_TARGET_WORDS",
+    "WALK_USAGE",
     "Walkthrough",
 ]

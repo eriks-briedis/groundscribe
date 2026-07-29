@@ -17,6 +17,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from groundscribe.app.views import ComparisonRow
 from groundscribe.domain.enums import AnswerResponse, FindingStatus, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.jobs.schemas import Job
@@ -220,10 +221,19 @@ class ModelInvocationOut(BaseModel):
 
 
 class ExecutionComparison(BaseModel):
-    """Two executions, side by side. Phase 12 says what the difference means."""
+    """Two executions side by side (plan/11 → *Run comparison*).
+
+    The summaries are what phase 09 returned; ``differences`` and the distance
+    are what a comparison screen needs on top of them — the fields that differ,
+    named one per row, and how far the two outputs sit apart. Only what both
+    sides recorded is compared: human preference is phase 12's, and a column for
+    it here would be a promise this phase cannot keep.
+    """
 
     left: ExecutionSummary
     right: ExecutionSummary
+    differences: list[ComparisonRow] = Field(default_factory=list)
+    output_edit_distance: int | None = None
 
 
 class ExperimentOut(BaseModel):
