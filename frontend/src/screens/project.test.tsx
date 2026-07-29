@@ -183,7 +183,7 @@ describe('the architecture board', () => {
   it('shows each concept as a card with the thesis it argues', async () => {
     fakeBackend({ [`/projects/${PROJECT_ID}/architecture`]: architecture });
 
-    render(<ArchitectureBoardScreen projectId={PROJECT_ID} />);
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
 
     const card = await screen.findByTestId('concept-a1');
     expect(card).toHaveTextContent('Read-through caching');
@@ -194,16 +194,76 @@ describe('the architecture board', () => {
   it('says which version is in force and who locked it', async () => {
     fakeBackend({ [`/projects/${PROJECT_ID}/architecture`]: architecture });
 
-    render(<ArchitectureBoardScreen projectId={PROJECT_ID} />);
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
 
     expect(await screen.findByTestId('current-version')).toHaveTextContent('arch-2');
     expect(screen.getByTestId('current-version')).toHaveTextContent(/locked by ada/i);
   });
 
+  it('offers the seven edits the backend named, and no others', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/architecture`]: architecture });
+
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /edit the architecture/i }));
+
+    const options = [...(await screen.findByLabelText(/operation/i)).querySelectorAll('option')];
+    expect(options.map((option) => option.value)).toEqual(architecture.operations);
+  });
+
+  it('submits an edit where the backend said, naming who made it', async () => {
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/architecture`]: architecture,
+      [`/projects/${PROJECT_ID}/architecture/arch-2`]: {
+        project_id: PROJECT_ID,
+        run_id: 'r1',
+        state: 'architecture_review_required',
+        available_actions: [],
+      },
+    });
+
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /edit the architecture/i }));
+    await userEvent.selectOptions(screen.getByLabelText(/operation/i), 'rename');
+    await userEvent.click(screen.getByRole('checkbox', { name: /read-through caching/i }));
+    await userEvent.type(screen.getByLabelText(/new title/i), 'Caching, honestly');
+    await userEvent.click(screen.getByRole('button', { name: /^submit the edit$/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]).toMatchObject({
+      method: 'PUT',
+      path: `/projects/${PROJECT_ID}/architecture/arch-2`,
+      body: {
+        commands: [{ operation: 'rename', article_ids: ['a1'], title: 'Caching, honestly' }],
+        requested_by: 'ada',
+      },
+    });
+  });
+
+  it('approves where the backend said, attributing the person', async () => {
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/architecture`]: architecture,
+      [`/projects/${PROJECT_ID}/architecture/arch-2/approve`]: {
+        project_id: PROJECT_ID,
+        run_id: 'r1',
+        state: 'architecture_approved',
+        available_actions: [],
+      },
+    });
+
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /approve architecture/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]).toMatchObject({
+      path: `/projects/${PROJECT_ID}/architecture/arch-2/approve`,
+      body: { actor_id: 'ada' },
+    });
+  });
+
   it('lets an earlier version be compared rather than only listed', async () => {
     fakeBackend({ [`/projects/${PROJECT_ID}/architecture`]: architecture });
 
-    render(<ArchitectureBoardScreen projectId={PROJECT_ID} />);
+    render(<ArchitectureBoardScreen projectId={PROJECT_ID} actor="ada" />);
     await userEvent.click(await screen.findByRole('button', { name: /compare versions/i }));
 
     expect(screen.getByTestId('version-arch-1')).toHaveTextContent('One article about the cache.');

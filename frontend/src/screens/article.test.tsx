@@ -68,6 +68,16 @@ describe('the article workspace', () => {
     expect(rows[1]).toHaveTextContent('89.5');
   });
 
+  it('carries the source evidence the article rests on', async () => {
+    fakeBackend(routes);
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    const evidence = await screen.findByTestId('source-evidence');
+    expect(evidence).toHaveTextContent('p99 latency fell to 120ms on warm cache.');
+    expect(evidence).toHaveTextContent('measured');
+  });
+
   it('names the execution that produced what is on screen', async () => {
     fakeBackend(routes);
 

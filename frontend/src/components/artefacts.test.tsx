@@ -62,6 +62,15 @@ describe('the score table', () => {
     expect(screen.getByText(/factual_fidelity below its minimum/i)).toBeInTheDocument();
   });
 
+  it('shows how far the repeat passes disagreed, so a number can be doubted', () => {
+    render(<ScoreTable scores={reviewHistory.scores ?? []} />);
+
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows[0]).toHaveTextContent('2 passes');
+    expect(rows[0]).toHaveTextContent('spread 4');
+    expect(rows[1]).toHaveTextContent('1 pass');
+  });
+
   it('says when nothing has been scored yet rather than showing an empty table', () => {
     render(<ScoreTable scores={[]} />);
 

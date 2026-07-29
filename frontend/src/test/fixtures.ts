@@ -227,6 +227,19 @@ export const architecture: ArchitectureBoard = {
     },
   ],
   proposal: { decision: { selected: ARTICLE_ID, rationale: 'The measured claim is the strongest.' } },
+  operations: ['merge', 'split', 'remove', 'reorder', 'rename', 'edit_thesis', 'reassign_evidence'],
+  edit_command: {
+    action: 'edit_architecture',
+    method: 'PUT',
+    path: `/projects/${PROJECT_ID}/architecture/arch-2`,
+    requires_actor: false,
+  },
+  approve_command: {
+    action: 'approve_architecture',
+    method: 'POST',
+    path: `/projects/${PROJECT_ID}/architecture/arch-2/approve`,
+    requires_actor: true,
+  },
 };
 
 export const articleWorkspace: ArticleWorkspace = {
@@ -300,6 +313,14 @@ export const articleWorkspace: ArticleWorkspace = {
     },
   ],
   revision_plan: { summary: 'Qualify the latency figure; trim the determinism aside.' },
+  source_evidence: [
+    {
+      id: 'c1',
+      text: 'p99 latency fell to 120ms on warm cache.',
+      classification: 'measured',
+      segment_ids: ['s2'],
+    },
+  ],
   voice: {
     sources: ['ada@2 (global)'],
     active: [
@@ -323,6 +344,7 @@ export const articleWorkspace: ArticleWorkspace = {
       evaluator_version: '1.0',
       dimensions: { factual_fidelity: 78, scope_discipline: 80 },
       failures: [{ detail: 'factual_fidelity below its minimum' }],
+      confidence: { repeats: 2, repeat_scores: [80, 84], dispersion: 4, stdev: 2.8 },
       created_at: '2026-07-25T12:00:00Z',
     },
     {
@@ -333,6 +355,7 @@ export const articleWorkspace: ArticleWorkspace = {
       evaluator_version: '1.0',
       dimensions: { factual_fidelity: 92, scope_discipline: 88 },
       failures: [],
+      confidence: { repeats: 1, repeat_scores: [89.5], dispersion: null, stdev: null },
       created_at: '2026-07-25T12:04:00Z',
     },
   ],
