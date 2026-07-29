@@ -1,8 +1,8 @@
-/// <reference types="vitest/config" />
+/// <reference types="vitest" />
 import { fileURLToPath, URL } from 'node:url';
 
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 /**
  * The app is local-first: it talks to the FastAPI process on the same machine,

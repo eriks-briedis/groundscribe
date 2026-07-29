@@ -5,7 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
 
     /* The frontend's quality gate, matching mypy --strict on the backend: the
        generated client is fully typed, so anything the UI gets wrong about the
