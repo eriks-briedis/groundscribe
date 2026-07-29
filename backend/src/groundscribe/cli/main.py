@@ -26,7 +26,7 @@ from typing import Annotated, Any
 import typer
 
 from groundscribe.api.openapi import contract_app, export_schema
-from groundscribe.app.bootstrap import build_runtime
+from groundscribe.app.bootstrap import build_runtime, openai_clients
 from groundscribe.app.handlers import stage_handlers
 from groundscribe.app.services import ApplicationService
 from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
@@ -35,6 +35,10 @@ from groundscribe.experiments.reproducibility import contract
 from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
+from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
+from groundscribe.llm.pricing import default_pricing
+from groundscribe.llm.probe import probe_models
+from groundscribe.llm.routing import default_routing_policy
 from groundscribe.observability.logging import configure_logging
 from groundscribe.privacy.export import ExportFormat
 from groundscribe.voice.schemas import VoiceProfileDocument
@@ -50,6 +54,7 @@ voice_app = typer.Typer(help="Manage the personal voice profile.")
 worker_app = typer.Typer(help="Run the background worker.")
 privacy_app = typer.Typer(help="See where material goes, and export or forget a trace.")
 contracts_app = typer.Typer(help="Generate the API contract.")
+llm_app = typer.Typer(help="Check the model provider this installation is configured for.")
 
 app.add_typer(project_app, name="project")
 app.add_typer(source_app, name="source")
@@ -61,6 +66,7 @@ app.add_typer(voice_app, name="voice")
 app.add_typer(worker_app, name="worker")
 app.add_typer(privacy_app, name="privacy")
 app.add_typer(contracts_app, name="contracts")
+app.add_typer(llm_app, name="llm")
 
 
 def default_service() -> ApplicationService:
@@ -633,6 +639,52 @@ def worker_run(
     done = asyncio.run(worker.run_until_idle())
     runtime.session.commit()
     typer.echo(f"ran {len(done)} job(s)")
+
+
+@llm_app.command("probe")
+def llm_probe() -> None:
+    """Call every model the routing config names, once, and report what happened.
+
+    The pre-flight for a provider configuration. Two things a routing file cannot
+    tell you — whether these model ids exist for your key, and whether they accept
+    the sampling parameters the file sets — and both are far cheaper to learn here
+    than halfway through a run, where the failure arrives attached to an editorial
+    stage and reads as a pipeline problem.
+
+    Outside ``_command`` because it opens no transaction and writes nothing: a
+    probe is a configuration check, not a run, and recording an execution for a
+    call no article asked for would put fiction in the trace.
+    """
+    configure_logging()
+    routing = default_routing_policy()
+    clients = openai_clients()
+    if not clients:
+        typer.echo(f"no provider is configured: set {OPENAI_API_KEY_ENV} and try again")
+        raise typer.Exit(code=1)
+
+    pricing = default_pricing()
+    typer.echo(f"routing policy v{routing.version} · pricing table v{pricing.version}")
+    results = asyncio.run(
+        probe_models(routing, client=clients[OpenAIClient.provider], pricing=pricing)
+    )
+
+    for result in results:
+        mark = "ok  " if result.ok else ("wait" if result.retryable else "FAIL")
+        typer.echo(f"  [{mark}] {result.model}: {result.detail}")
+        typer.echo(f"         used by: {', '.join(result.stages)}")
+        if result.ok and not result.priced:
+            typer.echo("         no price configured — cost will report as n/a")
+
+    broken = [result for result in results if not result.ok]
+    if broken:
+        typer.echo("")
+        typer.echo(
+            f"{len(broken)} of {len(results)} model(s) did not answer. If a parameter was "
+            "rejected, delete it from that stage in config/model-routing.yaml — the "
+            "adapter sends only what the file sets."
+        )
+        raise typer.Exit(code=1)
+    typer.echo(f"all {len(results)} model(s) answered.")
 
 
 @contracts_app.command("export")
