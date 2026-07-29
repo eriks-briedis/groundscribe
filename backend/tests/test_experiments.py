@@ -39,6 +39,7 @@ from groundscribe.experiments.models import EvaluationDataset
 from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.provenance.enums import ExecutionStatus
+from groundscribe.provenance.models import ExperimentRun
 from groundscribe.storage.snapshot_store import SnapshotStore
 from read_helpers import Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
@@ -91,13 +92,15 @@ def two_arms() -> tuple[ArmSpec, ...]:
     )
 
 
-async def run_both_arms(walk: Walkthrough, runner: ExperimentRunner, dataset: EvaluationDataset):
+async def run_both_arms(
+    walk: Walkthrough, runner: ExperimentRunner, dataset: EvaluationDataset
+) -> ExperimentRun:
     """Open the experiment, queue every arm, and let the worker finish them."""
     experiment = runner.create(
         name="cheaper model?", dataset=dataset, created_by=AUTHOR, arms=two_arms()
     )
     # One scripted answer per arm, because each arm really runs the stage.
-    for _ in experiment.arms:
+    for _ in runner.arms(experiment):
         walk.script(VOICE, walk.voice_pass(snapshot_id=walk.approved_input()))
     runner.start(experiment)
     await walk.harness.drain()
@@ -161,7 +164,7 @@ async def test_two_arms_over_one_example_are_two_runs(
 
     experiment = await run_both_arms(walk, runner, dataset)
 
-    executions = [result.stage_execution_id for result in experiment.results]
+    executions = [result.stage_execution_id for result in runner.results(experiment)]
     assert all(executions)
     assert len(set(executions)) == 2
 
@@ -179,7 +182,7 @@ async def test_a_finished_arm_records_the_execution_it_produced(
 
     experiment = await run_both_arms(walk, runner, dataset)
 
-    for result in experiment.results:
+    for result in runner.results(experiment):
         assert result.status is ExecutionStatus.SUCCEEDED
         assert result.stage_execution_id
         assert result.error_message is None
@@ -199,7 +202,7 @@ async def test_the_candidate_really_ran_under_its_own_variables(
 
     models_used = {
         result.arm.label: [call.model for call in result.stage_execution.model_invocations]
-        for result in experiment.results
+        for result in runner.results(experiment)
         if result.stage_execution is not None
     }
     assert models_used["the small model"] == [CANDIDATE_MODEL]
@@ -217,7 +220,7 @@ async def test_a_person_prefers_one_arm_on_one_example(
     dataset = await corpus(walk)
     experiment = await run_both_arms(walk, runner, dataset)
     (entry,) = dataset.entries
-    candidate = next(arm for arm in experiment.arms if not arm.baseline)
+    candidate = next(arm for arm in runner.arms(experiment) if not arm.baseline)
 
     preference = runner.prefer(
         experiment, entry=entry, arm=candidate, decided_by=AUTHOR, reason="tighter opening"
@@ -242,7 +245,7 @@ async def test_preferring_an_arm_from_another_experiment_is_refused(
     (entry,) = dataset.entries
 
     with pytest.raises(UnknownArm):
-        runner.prefer(experiment, entry=entry, arm=elsewhere.arms[0], decided_by=AUTHOR)
+        runner.prefer(experiment, entry=entry, arm=runner.arms(elsewhere)[0], decided_by=AUTHOR)
 
 
 async def test_the_comparison_reports_one_row_per_arm(
@@ -257,7 +260,7 @@ async def test_the_comparison_reports_one_row_per_arm(
     dataset = await corpus(walk)
     experiment = await run_both_arms(walk, runner, dataset)
     (entry,) = dataset.entries
-    candidate = next(arm for arm in experiment.arms if not arm.baseline)
+    candidate = next(arm for arm in runner.arms(experiment) if not arm.baseline)
     runner.prefer(experiment, entry=entry, arm=candidate, decided_by=AUTHOR)
 
     comparison = runner.compare(experiment)
