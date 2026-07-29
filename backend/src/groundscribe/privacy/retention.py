@@ -31,24 +31,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.domain.enums import ArtifactType
-
-
-class RetentionMode(StrEnum):
-    """The six modes plan/13 names, from most kept to least."""
-
-    FULL = "full"
-    REDACTED_FULL = "redacted_full"
-    TEMPORARY_RAW_RETENTION = "temporary_raw_retention"
-    NO_RAW_PROVIDER_PAYLOADS = "no_raw_provider_payloads"
-    METADATA_AND_STRUCTURED_ONLY = "metadata_and_structured_only"
-    MINIMAL_OPERATIONAL_LOGGING = "minimal_operational_logging"
-
+from groundscribe.domain.retention import RetentionMode
 
 #: The payload classes each mode permits to reach disk.
 #:

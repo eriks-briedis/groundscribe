@@ -48,7 +48,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from groundscribe.db import Base, UTCDateTime, enum_column
 from groundscribe.domain.models import ArtifactSnapshot, Project, User
-from groundscribe.privacy.retention import RetentionMode
+from groundscribe.domain.retention import RetentionMode
 from groundscribe.provenance.enums import (
     ActorType,
     ArtifactDirection,
