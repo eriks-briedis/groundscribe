@@ -360,7 +360,7 @@ class Walkthrough:
         snapshot = (
             self.session.get(domain_models.ArtifactSnapshot, snapshot_id)
             if snapshot_id
-            else self._latest_version_snapshot()
+            else self.latest_version_snapshot()
         )
         assert snapshot is not None
         # Read as JSON rather than through a schema: the stored version is an
@@ -382,7 +382,7 @@ class Walkthrough:
             "structural_problems": [],
         }
 
-    def _latest_version_snapshot(self) -> domain_models.ArtifactSnapshot | None:
+    def latest_version_snapshot(self) -> domain_models.ArtifactSnapshot | None:
         version = self.session.scalars(
             select(domain_models.ArticleVersion)
             .where(domain_models.ArticleVersion.article_id == self.article_id)
