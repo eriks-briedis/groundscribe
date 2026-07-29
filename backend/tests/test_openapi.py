@@ -72,6 +72,10 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("get", "/articles/{article_id}/reviews"),
     ("get", "/articles/{article_id}/lineage"),
     ("get", "/executions/{execution_id}/inspect"),
+    # A slice of plan/13 → the front door, so the app can be exposed at all.
+    ("post", "/auth/login"),
+    ("post", "/auth/logout"),
+    ("get", "/auth/session"),
 )
 
 
