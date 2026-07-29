@@ -15,10 +15,23 @@ import createClient from 'openapi-fetch';
 
 import type { components, paths } from '@contracts/api-types';
 
-/** Where the API lives. The dev server proxies this to the local backend. */
-export const API_BASE = '/api';
+/**
+ * Where the API lives: same origin, under `/api`, which the dev server proxies
+ * to the local backend.
+ *
+ * Absolute rather than relative because a request is built as a `Request`
+ * object, and `new Request('/api/…')` has no base to resolve against outside a
+ * document — which is exactly where the tests run.
+ */
+export const API_BASE = `${globalThis.location?.origin ?? 'http://localhost'}/api`;
 
-export const api = createClient<paths>({ baseUrl: API_BASE });
+export const api = createClient<paths>({
+  baseUrl: API_BASE,
+  // Deferred rather than captured: `createClient` binds `globalThis.fetch` at
+  // construction, and this module is constructed at import — before a test (or a
+  // browser extension, or a polyfill) has replaced it.
+  fetch: (request) => globalThis.fetch(request),
+});
 
 /**
  * Every endpoint the application uses, as data.
@@ -213,6 +226,11 @@ export interface JobEvent {
  * replaying the run. Returns the unsubscribe the caller must run on unmount.
  */
 export function subscribeToJob(jobId: string, onEvent: (event: JobEvent) => void): () => void {
+  // Every browser has `EventSource`; jsdom does not, and neither does a
+  // server-side render. Progress is an enhancement — the page reads the same
+  // data over plain requests — so its absence must not take the screen down.
+  if (typeof EventSource === 'undefined') return () => undefined;
+
   const source = new EventSource(`${API_BASE}/jobs/${jobId}/events`);
   const handle = (event: MessageEvent<string>) => {
     let data: Record<string, unknown> = {};

@@ -43,6 +43,19 @@ function sources(directory = SRC): string[] {
 }
 
 /**
+ * A file with its comments removed.
+ *
+ * The guard is about what the code does. Every module here quotes the plan in
+ * its docstring — including the endpoint names and the states — and a lint that
+ * counted prose would make explaining the rule a violation of it.
+ */
+function code(path: string): string {
+  return readFileSync(path, 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/**
  * Where a name is *decided on* rather than merely displayed.
  *
  * The distinction matters: a score table that prints the word "passed" is
@@ -54,7 +67,7 @@ function sources(directory = SRC): string[] {
 function decidesOn(names: readonly string[]): string[] {
   const found: string[] = [];
   for (const path of sources()) {
-    const text = readFileSync(path, 'utf-8');
+    const text = code(path);
     for (const name of names) {
       const quoted = `['"\`]${name}['"\`]`;
       const deciding = new RegExp(
@@ -70,7 +83,7 @@ function decidesOn(names: readonly string[]): string[] {
 function mentions(needles: readonly string[]): string[] {
   const found: string[] = [];
   for (const path of sources()) {
-    const text = readFileSync(path, 'utf-8');
+    const text = code(path);
     for (const needle of needles) {
       const whole = new RegExp(`${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`);
       if (whole.test(text)) found.push(`${path.replace(SRC, 'src')}: ${needle}`);

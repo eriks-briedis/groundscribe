@@ -1,0 +1,263 @@
+/*
+ * Enough style to read by (phase 11).
+ *
+ * Plain CSS, no framework: the app is documents and tables, the artefacts are
+ * the interesting part, and a design system would be a dependency in exchange
+ * for spacing. Everything here is either legibility (measure, contrast, mono for
+ * payloads) or the two distinctions the screens rely on — a diff's added and
+ * removed lines, and a row that differs from its neighbour.
+ */
+
+:root {
+  --ink: #16181d;
+  --muted: #5c6370;
+  --line: #d8dce3;
+  --paper: #fbfbfd;
+  --panel: #ffffff;
+  --added: #e6f4ea;
+  --removed: #fdecea;
+  --warning: #8a4b08;
+  --link: #1b4fd8;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--link);
+}
+
+code,
+pre,
+.payload {
+  font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', monospace;
+  font-size: 0.85rem;
+}
+
+.app__header {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+}
+
+.app__brand {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app__mode {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+}
+
+.app__main {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.screen__header {
+  margin-bottom: 1rem;
+}
+
+.state {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--panel);
+}
+
+.cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.warning,
+.failure {
+  color: var(--warning);
+}
+
+.prose {
+  max-width: 34rem;
+  white-space: pre-wrap;
+}
+
+.actions__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  align-items: center;
+}
+
+.actions__pipeline {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+button {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.diff__lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.diff__line--added {
+  background: var(--added);
+}
+
+.diff__line--removed {
+  background: var(--removed);
+}
+
+.diff__marker {
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+tr[data-same='false'] {
+  background: var(--removed);
+}
+
+.disclosure__summary {
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  color: var(--link);
+}
+
+.payload {
+  overflow-x: auto;
+  background: #f4f5f8;
+  padding: 0.6rem;
+  border-radius: 4px;
+}
+
+.filters {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 1rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.filters label {
+  font-size: 0.85rem;
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.answer-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.answer-form textarea {
+  display: block;
+  width: 100%;
+  min-height: 4rem;
+  font: inherit;
+}
+
+.lineage {
+  max-width: 100%;
+  height: auto;
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
+.timeline,
+.segments,
+.findings,
+.claims {
+  padding-left: 1.2rem;
+}

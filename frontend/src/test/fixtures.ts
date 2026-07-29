@@ -441,6 +441,17 @@ export const lineage: LineageGraph = articleWorkspace.lineage ?? { nodes: [], ed
 
 export const trace: TraceView = {
   filters_applied: [],
+  filters_available: [
+    'failed',
+    'schema_repair',
+    'fallback_model',
+    'blocking_finding',
+    'user_override',
+    'high_cost',
+    'low_confidence_score',
+    'confidential_warning',
+    'repeated_issue',
+  ],
   executions: [
     {
       id: 'e2',

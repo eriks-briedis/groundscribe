@@ -41,14 +41,19 @@ export function fakeBackend(routes: Record<string, Route>): FakeBackend {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = new URL(String(input), 'http://localhost');
+      // The generated client sends a `Request`; `sendCommand` sends a URL and an
+      // init. Both arrive here, so both are unpacked.
+      const sent = input instanceof Request ? input : null;
+      const url = new URL(sent ? sent.url : String(input), 'http://localhost');
       const path = url.pathname.replace(/^\/api/, '');
-      const method = (init?.method ?? 'GET').toUpperCase();
+      const method = (sent?.method ?? init?.method ?? 'GET').toUpperCase();
+      const sentBody = sent ? await sent.clone().text() : undefined;
+      const rawBody = sentBody || (init?.body ? String(init.body) : '');
       const request: RecordedRequest = {
         method,
         path,
         query: url.searchParams,
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        body: rawBody ? JSON.parse(rawBody) : undefined,
       };
       backend.requests.push(request);
       if (method !== 'GET') backend.commands.push(request);

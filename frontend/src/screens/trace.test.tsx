@@ -18,7 +18,7 @@ import { ExecutionTimelineScreen } from './ExecutionTimelineScreen';
 import { RunComparisonScreen } from './RunComparisonScreen';
 import { StageInspectorScreen } from './StageInspectorScreen';
 import { ModeProvider } from '@/app/mode';
-import { fakeBackend } from '@/test/backend';
+import { fakeBackend, type RecordedRequest } from '@/test/backend';
 import { comparison, EXECUTION_ID, inspection, PROJECT_ID, trace } from '@/test/fixtures';
 
 describe('the execution timeline', () => {
@@ -35,11 +35,11 @@ describe('the execution timeline', () => {
 
   it('asks the backend to filter rather than filtering what it already has', async () => {
     const backend = fakeBackend({
-      [`/projects/${PROJECT_ID}/trace`]: ({ query }) => ({
+      [`/projects/${PROJECT_ID}/trace`]: ({ query }: RecordedRequest) => ({
         ...trace,
         filters_applied: query.getAll('filter'),
         executions: trace.executions?.filter((execution) =>
-          query.getAll('filter').every((name) => execution.matched_filters?.includes(name as never)),
+          query.getAll('filter').every((name: string) => execution.matched_filters?.includes(name as never)),
         ),
       }),
     });
@@ -58,18 +58,10 @@ describe('the execution timeline', () => {
 
     render(<ExecutionTimelineScreen projectId={PROJECT_ID} />);
 
+    // The vocabulary comes from the response, so this asserts the screen renders
+    // what the backend published rather than a list of its own.
     const names = (await screen.findAllByRole('checkbox')).map((box) => box.getAttribute('value'));
-    expect(names).toEqual([
-      'failed',
-      'schema_repair',
-      'fallback_model',
-      'blocking_finding',
-      'user_override',
-      'high_cost',
-      'low_confidence_score',
-      'confidential_warning',
-      'repeated_issue',
-    ]);
+    expect(names).toEqual(trace.filters_available);
   });
 
   it('links each execution to its inspector', async () => {
