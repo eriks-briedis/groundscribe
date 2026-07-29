@@ -298,9 +298,9 @@ async def test_a_replay_reads_the_inputs_the_original_read(walk: Walkthrough) ->
     await walk.to_approval()
     voice_id = walk.executions(VOICE)[0]
     read_originally = walk.input_snapshot(voice_id, "article_version")
-    assert read_originally != walk.input_snapshot(
-        walk.executions(SCORING)[0], "article_version"
-    ), "the voice pass produced a newer version, which is what makes this a real question"
+    assert read_originally != walk.input_snapshot(walk.executions(SCORING)[0], "article_version"), (
+        "the voice pass produced a newer version, which is what makes this a real question"
+    )
 
     walk.script(VOICE, walk.voice_pass(snapshot_id=read_originally))
     replayed_id = await send(walk, f"/executions/{voice_id}/replay", actor_id=AUTHOR)

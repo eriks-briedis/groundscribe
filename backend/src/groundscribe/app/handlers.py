@@ -26,8 +26,10 @@ could not say what was missing would answer half a question.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+from sqlalchemy import select
 
 from groundscribe.app import rehydrate
 from groundscribe.app.runtime import Runtime
@@ -35,15 +37,18 @@ from groundscribe.app.services import Resumed, resume_run
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.experiments.replay import rerun_of
+from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.worker import JobHandler, JobOutcome, JobRequest
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
+from groundscribe.scoring.rubric import ScoringRubric, scoring_rubric
 from groundscribe.scoring.scoring import ScoreArticle
 from groundscribe.stages.architecture import ProposeContentArchitecture
 from groundscribe.stages.base import StageResult, StageRunner
 from groundscribe.stages.brief import GenerateArticleBrief
+from groundscribe.stages.context import ContextStrategy
 from groundscribe.stages.drafting import GenerateInitialDraft
 from groundscribe.stages.extraction import DEFAULT_TOKEN_BUDGET, ExtractSourceTruth
 from groundscribe.stages.planning import CreateRevisionPlan
@@ -59,6 +64,7 @@ from groundscribe.stages.schemas import (
     VoiceProfileDocument,
 )
 from groundscribe.stages.voice import AlignVoice
+from groundscribe.voice.models import VoiceProfileVersion
 from groundscribe.voice.store import VoiceStore
 
 #: The voice an author who has saved nothing writes in. Empty rather than
@@ -108,11 +114,18 @@ class Rerunning:
     whether it is being replayed, and the parts that do — the branch it hangs
     from, the prompt version, the routing override — are all things the stages
     already accept one run at a time.
+
+    The variables travel whole rather than as a handful of unpacked fields,
+    because each handler applies a different subset of them and the ones it
+    cannot apply were already refused when the fork was requested
+    (:data:`~groundscribe.experiments.replay.STAGE_VARIABLES`). Anything reaching
+    a handler here is a variable that handler is expected to honour.
     """
 
     parent: models.StageExecution | None = None
     template_version: str | None = None
     override: RouteOverride | None = None
+    variables: ForkVariables = field(default_factory=ForkVariables)
 
     @property
     def is_rerun(self) -> bool:
@@ -132,6 +145,7 @@ class Rerunning:
             override=rerun.variables.route_override(
                 requested_by=rerun.requested_by, reason=rerun.reason
             ),
+            variables=rerun.variables,
         )
 
     def applied(self) -> dict[str, Any]:
@@ -142,6 +156,150 @@ class Rerunning:
         if self.override is not None:
             options["override"] = self.override
         return options
+
+    # ------------------------------------------------------------------
+    # The variables a handler has to resolve for itself
+    # ------------------------------------------------------------------
+
+    def context_strategy(self) -> ContextStrategy:
+        """The selection strategy this run reads its source under."""
+        return self.variables.strategy or ContextStrategy.IN_ORDER
+
+    def rubric(self) -> ScoringRubric:
+        """The rubric this run scores under, by version."""
+        return scoring_rubric(self.variables.rubric_version)
+
+    def voice(
+        self, runtime: Runtime, resumed: Resumed, article_id: str | None
+    ) -> VoiceProfileDocument:
+        """The voice this run writes in, resolved or named outright.
+
+        A fork names a profile *version*, not a profile: the version is the
+        immutable unit an article can cite, and naming the profile would mean the
+        experiment ran under whatever happened to be active when the worker got
+        to it. Naming one bypasses the scope hierarchy on purpose — the point of
+        the variable is to hold the voice still while something else changes.
+        """
+        named = self.variables.voice_profile
+        if named is None:
+            return voice_for(runtime, resumed, article_id)
+        store = VoiceStore(runtime.session, snapshots=runtime.snapshots, recorder=runtime.recorder)
+        version = runtime.session.get(VoiceProfileVersion, named)
+        if version is None:
+            raise rehydrate.MissingInput(f"no voice profile version {named}")
+        return store.document(version)
+
+    # ------------------------------------------------------------------
+    # Which artefact a stage reads
+    # ------------------------------------------------------------------
+
+    def recorded(self, role: str) -> domain_models.ArtifactSnapshot | None:
+        """What the execution being repeated consumed in ``role``, if anything.
+
+        plan/12 → *replay: re-execute a stage with recorded inputs and config*.
+        The handlers below resolve "the newest version", "the latest brief",
+        which is what advancing a run means and the opposite of what repeating
+        one means: by the time a voice pass is worth replaying, the newest
+        version of the article is the one that pass produced.
+        """
+        if self.parent is None:
+            return None
+        return next(
+            (
+                artefact.snapshot
+                for artefact in self.parent.inputs
+                if artefact.role == role and artefact.snapshot is not None
+            ),
+            None,
+        )
+
+    def reads(
+        self,
+        runtime: Runtime,
+        *,
+        role: str,
+        expected: ArtifactType,
+        named: str | None = None,
+        current: domain_models.ArtifactSnapshot,
+    ) -> domain_models.ArtifactSnapshot:
+        """Which artefact this run reads, under one precedence.
+
+        Named by the fork, else read by the original, else whatever is current.
+        The order is the whole design: a variable is what an experiment
+        deliberately changed, a recorded input is what the original ran on, and
+        the current row is what advancing the run needs. Anything else would make
+        a fork's stated change lose to a stale row, or a replay drift.
+
+        A named snapshot's *type* is checked. A fork that pointed the rewrite at
+        a brief instead of a revision plan would otherwise fail inside a prompt
+        renderer, where the message names a missing template variable rather than
+        the mistake that was actually made.
+        """
+        if named is not None:
+            snapshot = rehydrate.snapshot_of(runtime.session, named)
+            if snapshot.artifact_type is not expected:
+                raise rehydrate.MissingInput(
+                    f"snapshot {named} is a {snapshot.artifact_type.value}, not a {expected.value}"
+                )
+            return snapshot
+        return self.recorded(role) or current
+
+    def source_model_snapshot(
+        self, runtime: Runtime, current: domain_models.ArtifactSnapshot
+    ) -> domain_models.ArtifactSnapshot:
+        return self.reads(
+            runtime,
+            role="source_model",
+            expected=ArtifactType.SOURCE_MODEL,
+            named=self.variables.source_model,
+            current=current,
+        )
+
+    def revision_plan_snapshot(
+        self, runtime: Runtime, current: domain_models.ArtifactSnapshot
+    ) -> domain_models.ArtifactSnapshot:
+        return self.reads(
+            runtime,
+            role="revision_plan",
+            expected=ArtifactType.REVISION_PLAN,
+            named=self.variables.revision_plan,
+            current=current,
+        )
+
+    def brief_snapshot(
+        self, runtime: Runtime, current: domain_models.ArtifactSnapshot
+    ) -> domain_models.ArtifactSnapshot:
+        return self.reads(
+            runtime,
+            role="article_brief",
+            expected=ArtifactType.ARTICLE_BRIEF,
+            current=current,
+        )
+
+    def version(
+        self, runtime: Runtime, current: domain_models.ArticleVersion
+    ) -> domain_models.ArticleVersion:
+        """The article version this run works from, as a row.
+
+        A row rather than a snapshot because three stages branch a new version
+        from it and one reviews it — all of which need its ordinal and its
+        lineage, not only its bytes. Found back through the snapshot the original
+        recorded, which is the only durable link between the two.
+        """
+        snapshot = self.recorded("article_version")
+        if snapshot is None:
+            return current
+        version = runtime.session.scalars(
+            select(domain_models.ArticleVersion).where(
+                domain_models.ArticleVersion.snapshot_id == snapshot.id
+            )
+        ).first()
+        if version is None:
+            raise rehydrate.MissingInput(
+                f"snapshot {snapshot.id} was recorded as an article version but no version row "
+                "holds it"
+            )
+        return version
 
 
 def _record_rerun(runtime: Runtime, request: JobRequest) -> None:
@@ -228,6 +386,7 @@ async def _extract(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
             previous=previous,
             previous_snapshot=previous_snapshot,
             token_budget=request.payload.get("token_budget") or DEFAULT_TOKEN_BUDGET,
+            context_strategy=rerunning.context_strategy(),
         ),
         enter=False,
         on_execution=request.opened,
@@ -252,8 +411,10 @@ async def _propose_architecture(
 ) -> StageResult[Any]:
     """Propose the article or series the source supports."""
     session = resumed.context.session
-    snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
     rerunning = Rerunning.of(runtime, request)
+    snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
     return await StageRunner(resumed.context).run(
         ProposeContentArchitecture(
             **rerunning.applied(),
@@ -277,15 +438,17 @@ async def _generate_brief(
 ) -> StageResult[Any]:
     """Write the contract one article is drafted against."""
     session = resumed.context.session
+    rerunning = Rerunning.of(runtime, request)
     concept = rehydrate.concept(session, _article_id(request))
-    source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
     architecture_snapshot = rehydrate.snapshot_of(session, concept.architecture.snapshot_id)
     proposal = rehydrate.document(runtime.snapshots, architecture_snapshot, ArchitectureProposal)
     article = proposal.article(concept.ref)
     if article is None:
         raise rehydrate.MissingInput(f"the architecture does not describe article {concept.ref}")
 
-    rerunning = Rerunning.of(runtime, request)
     return await StageRunner(resumed.context).run(
         GenerateArticleBrief(
             **rerunning.applied(),
@@ -304,11 +467,15 @@ async def _generate_brief(
 async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> StageResult[Any]:
     """Write the first version against the approved brief."""
     session = resumed.context.session
-    concept = rehydrate.concept(session, _article_id(request))
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
-    source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
-
     rerunning = Rerunning.of(runtime, request)
+    concept = rehydrate.concept(session, _article_id(request))
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
+
     return await StageRunner(resumed.context).run(
         GenerateInitialDraft(
             **rerunning.applied(),
@@ -317,7 +484,7 @@ async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
             concept=concept,
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
             source_model_snapshot=source_snapshot,
-            voice=voice_for(runtime, resumed, _article_id(request)),
+            voice=rerunning.voice(runtime, resumed, _article_id(request)),
         ),
         enter=False,
         on_execution=request.opened,
@@ -336,11 +503,16 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
     session = resumed.context.session
     article_id = _article_id(request)
     version = rehydrate.latest_version(session, article_id)
-    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
-    source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
-
     rerunning = Rerunning.of(runtime, request)
+    version = rerunning.version(runtime, version)
+    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
+
     return await StageRunner(resumed.context).run(
         ReviewSubstantively(
             **rerunning.applied(),
@@ -362,13 +534,18 @@ async def _plan_revision(
 ) -> StageResult[Any]:
     """Reconcile the review's findings into a plan the rewrite is bound by."""
     session = resumed.context.session
+    rerunning = Rerunning.of(runtime, request)
     version = rehydrate.latest_version(session, _article_id(request))
-    review_row = rehydrate.latest_review(session, version.id)
+    review_row = rehydrate.review_of(
+        session, rerunning.recorded("review")
+    ) or rehydrate.latest_review(session, version.id)
+    version = session.get(domain_models.ArticleVersion, review_row.article_version_id) or version
     review_snapshot = rehydrate.snapshot_of(session, review_row.snapshot_id)
     version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
 
-    rerunning = Rerunning.of(runtime, request)
     return await StageRunner(resumed.context).run(
         CreateRevisionPlan(
             **rerunning.applied(),
@@ -390,15 +567,21 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
     """Rewrite the article under the approved plan, branching from its parent."""
     session = resumed.context.session
     article_id = _article_id(request)
-    version = rehydrate.latest_version(session, article_id)
+    rerunning = Rerunning.of(runtime, request)
+    version = rerunning.version(runtime, rehydrate.latest_version(session, article_id))
     review_row = rehydrate.latest_review(session, version.id)
     plan_row = rehydrate.latest_plan(session, review_row.id)
-    plan_snapshot = rehydrate.snapshot_of(session, plan_row.snapshot_id)
+    plan_snapshot = rerunning.revision_plan_snapshot(
+        runtime, rehydrate.snapshot_of(session, plan_row.snapshot_id)
+    )
     version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
-    source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
 
-    rerunning = Rerunning.of(runtime, request)
     return await StageRunner(resumed.context).run(
         RewriteSubstantively(
             **rerunning.applied(),
@@ -409,7 +592,7 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
-            voice=voice_for(runtime, resumed, article_id),
+            voice=rerunning.voice(runtime, resumed, article_id),
         ),
         enter=False,
         on_execution=request.opened,
@@ -422,11 +605,13 @@ async def _align_voice(runtime: Runtime, resumed: Resumed, request: JobRequest) 
     """Make it read like the author, changing nothing it claims."""
     session = resumed.context.session
     article_id = _article_id(request)
-    version = rehydrate.latest_version(session, article_id)
-    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
-
     rerunning = Rerunning.of(runtime, request)
+    version = rerunning.version(runtime, rehydrate.latest_version(session, article_id))
+    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
+
     return await StageRunner(resumed.context).run(
         AlignVoice(
             **rerunning.applied(),
@@ -434,7 +619,7 @@ async def _align_voice(runtime: Runtime, resumed: Resumed, request: JobRequest) 
             parent=version,
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
-            voice=voice_for(runtime, resumed, article_id),
+            voice=rerunning.voice(runtime, resumed, article_id),
         ),
         enter=False,
         on_execution=request.opened,
@@ -448,11 +633,16 @@ async def _score(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
     session = resumed.context.session
     article_id = _article_id(request)
     version = rehydrate.latest_version(session, article_id)
-    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
-    brief_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
-    source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
-
     rerunning = Rerunning.of(runtime, request)
+    version = rerunning.version(runtime, version)
+    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
+    brief_snapshot = rerunning.brief_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
+    )
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
+
     return await StageRunner(resumed.context).run(
         ScoreArticle(
             **rerunning.applied(),
@@ -463,7 +653,8 @@ async def _score(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
             brief_snapshot=brief_snapshot,
             source_model_snapshot=source_snapshot,
-            voice=voice_for(runtime, resumed, article_id),
+            voice=rerunning.voice(runtime, resumed, article_id),
+            rubric=rerunning.rubric(),
         ),
         enter=False,
         on_execution=request.opened,

@@ -218,6 +218,20 @@ def latest_review(session: Session, version_id: str) -> domain_models.Review:
     return row
 
 
+def review_of(session: Session, snapshot: ArtifactSnapshot | None) -> domain_models.Review | None:
+    """The review row holding ``snapshot``, if one does.
+
+    The way back from a recorded input to the row that owns it, which a replay
+    needs and an advancing run does not: "the latest review" is the right answer
+    while a run moves forward and the wrong one while it repeats itself.
+    """
+    if snapshot is None:
+        return None
+    return session.scalars(
+        select(domain_models.Review).where(domain_models.Review.snapshot_id == snapshot.id)
+    ).first()
+
+
 def latest_plan(session: Session, review_id: str) -> domain_models.RevisionPlan:
     """The revision plan drawn up from one review."""
     row = session.scalars(
@@ -252,5 +266,6 @@ __all__ = [
     "latest_version",
     "open_answers",
     "require_snapshot",
+    "review_of",
     "snapshot_of",
 ]
