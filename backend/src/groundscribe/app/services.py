@@ -55,7 +55,6 @@ from groundscribe.stages.questions import open_question_queue
 from groundscribe.stages.schemas import (
     ArchitectureProposal,
     ArticleBriefDocument,
-    ArticleDraft,
     SourceModel,
 )
 from groundscribe.validation.stage import ValidateFinalOutput
@@ -382,7 +381,7 @@ class ApplicationService:
         resumed.engine.apply(A.VALIDATE_FINAL, actor_id=self._runtime.actor_id)
         result = await StageRunner(resumed.context).run(
             ValidateFinalOutput(
-                draft=rehydrate.document(self._runtime.snapshots, version_snapshot, ArticleDraft),
+                draft=rehydrate.article_document(self._runtime.snapshots, version_snapshot),
                 version=version,
                 version_snapshot=version_snapshot,
                 # The version that passed review is the one being validated: the

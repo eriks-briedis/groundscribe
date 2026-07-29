@@ -42,6 +42,13 @@ SETTLED_GAPS: dict[str, Any] = {
     "gaps": [gap("g3", "optional", "Which parser?", "Colour only.")],
 }
 
+#: The golden draft is 356 words, and final validation checks the article against
+#: the *brief's* target length — which must in turn match the project's. So the
+#: walk publishes under a target the golden article can actually meet; scoring
+#: 1800 words of prose nobody wrote would fail a check that is working correctly.
+WALK_TARGET_WORDS = 400
+WALK_CONSTRAINTS = DEFAULT_CONSTRAINTS.model_copy(update={"target_length_words": WALK_TARGET_WORDS})
+
 #: A phrase the golden draft contains, and a plainer way of saying it. The voice
 #: pass is scripted from the *stored* body rather than from the golden file, so
 #: this is the only thing about it fixed in advance.
@@ -88,7 +95,7 @@ class Walkthrough:
             json={
                 "title": "Read-through caching",
                 "author_id": AUTHOR,
-                "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+                "constraints": WALK_CONSTRAINTS.model_dump(mode="json"),
             },
         )
         self.project_id = str(created["project_id"])
@@ -138,7 +145,10 @@ class Walkthrough:
 
     async def brief(self, *, approve: bool = True) -> dict[str, Any]:
         """Generate the brief the article is drafted against."""
-        self.script("generate_article_brief", golden_json("brief.json"))
+        self.script(
+            "generate_article_brief",
+            golden_json("brief.json") | {"target_length_words": WALK_TARGET_WORDS},
+        )
         briefed = await self.command("POST", f"/articles/{self.article_id}/brief/generate")
         if not approve:
             return briefed
@@ -150,8 +160,26 @@ class Walkthrough:
         self.script("generate_initial_draft", golden_json("draft.json", suite="draft_to_voice"))
         return await self.command("POST", f"/articles/{self.article_id}/draft")
 
-    async def review(self) -> dict[str, Any]:
-        self.script("review_substantively", golden_json("review.json", suite="draft_to_voice"))
+    async def review(self, *, clean: bool = False) -> dict[str, Any]:
+        """Review the current version.
+
+        ``clean`` scripts the second round: a review with nothing left worth
+        another rewrite, which is what carries the run on to the voice pass. It
+        is the same golden review with its iteration-forcing findings removed,
+        rather than a hand-written one, so the two rounds are recognisably about
+        the same article.
+        """
+        payload = golden_json("review.json", suite="draft_to_voice")
+        if clean:
+            payload = payload | {
+                "verdict": "polish",
+                "issues": [
+                    issue
+                    for issue in payload["issues"]
+                    if issue["severity"] in {"minor", "optional"}
+                ],
+            }
+        self.script("review_substantively", payload)
         return await self.command("POST", f"/articles/{self.article_id}/review")
 
     async def revise(self) -> dict[str, Any]:
@@ -173,8 +201,30 @@ class Walkthrough:
         self.script("align_voice", self.voice_pass())
         return await self.command("POST", f"/articles/{self.article_id}/voice-align")
 
-    async def score(self) -> dict[str, Any]:
-        self.script("score_article", golden_json("score.json", suite="draft_to_voice"))
+    async def score(self, *, passing: bool = True) -> dict[str, Any]:
+        """Score the article, passing it by default.
+
+        The golden score sheet describes an article the rubric *refuses* — that
+        is what phase 08 built it to exercise. A walk that has to reach human
+        approval needs the other answer, so the passing variant is the same sheet
+        with its two rubric-required deductions removed and the dimension they
+        cost raised to match. Nothing else about it changes.
+        """
+        payload = golden_json("score.json", suite="draft_to_voice")
+        if passing:
+            payload = payload | {
+                "dimensions": payload["dimensions"]
+                | {
+                    "factual_fidelity": {"score": 92.0, "rationale": "Every figure carries its."},
+                    "scope_discipline": {"score": 88.0, "rationale": "The aside stays an aside."},
+                },
+                "deductions": [
+                    deduction
+                    for deduction in payload["deductions"]
+                    if not deduction["rubric_required"]
+                ],
+            }
+        self.script("score_article", payload)
         return await self.command("POST", f"/articles/{self.article_id}/score")
 
     async def validate(self) -> dict[str, Any]:
@@ -189,6 +239,10 @@ class Walkthrough:
         await self.draft()
         await self.review()
         await self.revise()
+        # The rewrite goes back for review, as the machine insists it does. The
+        # second round finds nothing worth another rewrite, which is what opens
+        # the voice pass.
+        await self.review(clean=True)
         await self.align_voice()
         await self.score()
         return await self.validate()
@@ -269,5 +323,7 @@ __all__ = [
     "SETTLED_GAPS",
     "VOICE_AFTER",
     "VOICE_BEFORE",
+    "WALK_CONSTRAINTS",
+    "WALK_TARGET_WORDS",
     "Walkthrough",
 ]

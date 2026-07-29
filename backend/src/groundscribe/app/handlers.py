@@ -48,7 +48,6 @@ from groundscribe.stages.rewriting import RewriteSubstantively
 from groundscribe.stages.schemas import (
     ArchitectureProposal,
     ArticleBriefDocument,
-    ArticleDraft,
     RevisionPlanDocument,
     SourceModel,
     SubstantiveReview,
@@ -241,7 +240,7 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
 
     return await StageRunner(resumed.context).run(
         ReviewSubstantively(
-            draft=rehydrate.document(runtime.snapshots, version_snapshot, ArticleDraft),
+            draft=rehydrate.article_document(runtime.snapshots, version_snapshot),
             version=version,
             version_snapshot=version_snapshot,
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
@@ -269,7 +268,7 @@ async def _plan_revision(
             review_row=review_row,
             review_snapshot=review_snapshot,
             findings=review_row.issues,
-            draft=rehydrate.document(runtime.snapshots, version_snapshot, ArticleDraft),
+            draft=rehydrate.article_document(runtime.snapshots, version_snapshot),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
         ),
         enter=False,
@@ -293,7 +292,7 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
         RewriteSubstantively(
             plan=rehydrate.document(runtime.snapshots, plan_snapshot, RevisionPlanDocument),
             plan_snapshot=plan_snapshot,
-            previous=rehydrate.document(runtime.snapshots, version_snapshot, ArticleDraft),
+            previous=rehydrate.article_document(runtime.snapshots, version_snapshot),
             parent=version,
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
@@ -315,7 +314,7 @@ async def _align_voice(runtime: Runtime, resumed: Resumed, request: JobRequest) 
 
     return await StageRunner(resumed.context).run(
         AlignVoice(
-            previous=rehydrate.document(runtime.snapshots, version_snapshot, ArticleDraft),
+            previous=rehydrate.article_document(runtime.snapshots, version_snapshot),
             parent=version,
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
@@ -337,7 +336,7 @@ async def _score(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
 
     return await StageRunner(resumed.context).run(
         ScoreArticle(
-            draft=rehydrate.document(runtime.snapshots, version_snapshot, ArticleDraft),
+            draft=rehydrate.article_document(runtime.snapshots, version_snapshot),
             version=version,
             version_snapshot=version_snapshot,
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),

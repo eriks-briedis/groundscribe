@@ -18,6 +18,8 @@ Two kinds of input, two ways back:
 
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +31,7 @@ from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ArtifactDirection
 from groundscribe.stages.ingestion import IngestedSource
+from groundscribe.stages.schemas import ArticleDraft
 from groundscribe.storage.snapshot_store import SnapshotStore
 
 
@@ -86,6 +89,28 @@ def document[T: BaseModel](
 ) -> T:
     """Validate a stored snapshot back into the schema that wrote it."""
     return schema.model_validate_json(snapshots.read(snapshot))
+
+
+def article_document(snapshots: SnapshotStore, snapshot: ArtifactSnapshot) -> ArticleDraft:
+    """The article held by one stored version, whichever stage wrote it.
+
+    A draft is an :class:`~groundscribe.stages.schemas.ArticleDraft`; a rewrite is
+    a ``RewrittenArticle``, which is that plus a record of which planned changes
+    it applied and which it declined. Both are article *versions*, and both are
+    read by the same four stages — review, plan, voice, score — none of which
+    asks about the rewrite's bookkeeping.
+
+    Validating either through ``ArticleDraft`` directly cannot work: the schemas
+    forbid unknown fields (deliberately — that is what stops a model inventing
+    them), so a rewrite's own record makes it unreadable as the thing it is a
+    version of. The bookkeeping is dropped here, once, rather than in each stage:
+    it survives in the rewrite's snapshot, which is where a person reading *what
+    the rewrite did* looks for it.
+    """
+    payload = json.loads(snapshots.read(snapshot))
+    return ArticleDraft.model_validate(
+        {key: value for key, value in payload.items() if key in ArticleDraft.model_fields}
+    )
 
 
 def constraints_row(session: Session, project_id: str) -> domain_models.ProjectConstraints:
@@ -215,6 +240,7 @@ def snapshot_of(session: Session, snapshot_id: str | None) -> ArtifactSnapshot:
 
 __all__ = [
     "MissingInput",
+    "article_document",
     "concept",
     "constraints",
     "constraints_row",
