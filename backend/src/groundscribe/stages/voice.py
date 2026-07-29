@@ -32,6 +32,7 @@ edge from voice alignment back to revision, and inventing one belongs to phase 0
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import ClassVar
 
 from groundscribe.domain import models as domain_models
@@ -41,7 +42,7 @@ from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.drafting import DraftOutcome, check_excluded_material, store_version
-from groundscribe.stages.errors import VoiceContractError
+from groundscribe.stages.errors import VoiceContractError, VoiceRuleViolation
 from groundscribe.stages.extraction import require_permitted_provider
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
@@ -49,6 +50,7 @@ from groundscribe.stages.schemas import (
     VoicePass,
     VoiceProfileDocument,
 )
+from groundscribe.voice.schemas import VoiceInstruction
 from groundscribe.workflow.states import WorkflowAction
 
 #: The stage name, routing key and prompt template id.
@@ -109,6 +111,7 @@ class AlignVoice:
         )
         passed = generated.value
         check_voice_pass(passed, self._previous, self._brief)
+        _enforce_hard_rules(passed.body, self._voice)
 
         # The new version is the old one with its prose replaced. Nothing else can
         # change, because nothing else came back from the model.
@@ -183,6 +186,33 @@ class AlignVoice:
         return True
 
 
+@dataclass(frozen=True)
+class RuleViolation:
+    """One hard rule the finished prose broke, and the term that broke it."""
+
+    instruction: VoiceInstruction
+    found: str
+
+
+def check_hard_rules(body: str, voice: VoiceProfileDocument) -> tuple[RuleViolation, ...]:
+    """Every hard rule ``body`` breaks (phase 10).
+
+    Hard rules only. plan/10 says a strong preference *allows justified
+    exceptions*, so checking preferences here would delete the distinction
+    between the two strengths — whatever a profile said, the system would enforce
+    both, and the strength model would be decoration.
+
+    Every violation is reported rather than the first: a person fixing one at a
+    time is a person running the pass four times to learn four things.
+    """
+    return tuple(
+        RuleViolation(instruction=rule, found=term)
+        for rule in voice.hard_rules
+        for term in rule.prohibits
+        if term in body
+    )
+
+
 def check_voice_pass(
     passed: VoicePass, previous: ArticleDraft, brief: ArticleBriefDocument
 ) -> None:
@@ -215,4 +245,29 @@ def check_voice_pass(
     check_excluded_material(passed.body, brief)
 
 
-__all__ = ["VOICE_STAGE", "AlignVoice", "check_voice_pass"]
+def _enforce_hard_rules(body: str, voice: VoiceProfileDocument) -> None:
+    """Stop the article if the prose breaks a rule the author called hard.
+
+    Raising, rather than correcting or warning. The stage cannot rewrite the
+    sentence — rephrasing is the model's job and has just been done — and a
+    warning attached to a stored version is a warning that travels to scoring
+    with the violation still in it. What is left is to stop, keep the trace, and
+    let a person or a rerun decide.
+    """
+    broken = check_hard_rules(body, voice)
+    if not broken:
+        return
+    detail = "; ".join(f"{violation.instruction.id} ({violation.found!r})" for violation in broken)
+    raise VoiceRuleViolation(
+        f"the voice pass wrote prose breaking {len(broken)} hard rule(s) of "
+        f"{voice.name}@{voice.version}: {detail}"
+    )
+
+
+__all__ = [
+    "VOICE_STAGE",
+    "AlignVoice",
+    "RuleViolation",
+    "check_hard_rules",
+    "check_voice_pass",
+]

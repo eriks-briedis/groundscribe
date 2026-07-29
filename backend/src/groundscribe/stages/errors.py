@@ -82,6 +82,21 @@ class RewriteContractError(StageError):
     """
 
 
+class VoiceRuleViolation(StageError):
+    """The finished prose breaks a hard rule of the voice profile (phase 10).
+
+    Distinct from :class:`VoiceContractError`, which is the pass misreporting
+    *itself*. This one is a pass that reported honestly and still wrote something
+    the author said must never appear.
+
+    It stops the article rather than being corrected in place, because there is
+    nothing else honest to do: rewriting the sentence is the model's job and has
+    just been attempted, and letting the version through would publish exactly
+    what the rule exists to prevent. The execution keeps its trace, so the
+    rejected prose is available to whoever decides what happens next.
+    """
+
+
 class VoiceContractError(StageError):
     """A style pass did something a style pass may not do.
 
@@ -115,4 +130,5 @@ __all__ = [
     "ScoreContractError",
     "StageError",
     "VoiceContractError",
+    "VoiceRuleViolation",
 ]

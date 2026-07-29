@@ -24,8 +24,6 @@ from typing import Any
 
 import pytest
 from sqlalchemy.orm import Session
-from test_drafting import Drafted, draft
-from test_voice import golden_voice_pass
 
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.stages.base import StageRunner
@@ -35,6 +33,8 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
 from groundscribe.workflow.states import WorkflowAction
+from test_drafting import Drafted, draft
+from test_voice import golden_voice_pass
 
 NO_EM_DASH = VoiceInstruction(
     id="no-em-dash",
@@ -59,8 +59,17 @@ OPEN_CONCRETE = VoiceInstruction(
     text="Usually open on a concrete incident rather than a definition.",
 )
 
-STRICT = VoiceProfileDocument(
+#: For the pure checker: every rule, whatever the golden prose happens to contain.
+RULES = VoiceProfileDocument(
     name="ada", version="3", instructions=(NO_EM_DASH, NO_INTERNAL_NAME, OPEN_CONCRETE)
+)
+
+#: For the stage: the golden draft legitimately uses an em dash, so a profile
+#: banning one would fail every test here for a reason none of them is about.
+#: The internal product name appears nowhere in it, which is what makes it a
+#: rule the tests can break deliberately.
+STRICT = VoiceProfileDocument(
+    name="ada", version="3", instructions=(NO_INTERNAL_NAME, OPEN_CONCRETE)
 )
 
 
@@ -104,7 +113,7 @@ def violating(term: str) -> dict[str, Any]:
 def test_the_checker_finds_every_rule_the_prose_breaks() -> None:
     """All of them, not the first. A person fixing one at a time is a person
     running the pass four times to learn four things."""
-    broken = check_hard_rules("A thought — and the Rivet dashboard agreed.", STRICT)
+    broken = check_hard_rules("A thought — and the Rivet dashboard agreed.", RULES)
 
     assert [violation.instruction.id for violation in broken] == [
         "no-em-dash",
@@ -115,7 +124,7 @@ def test_the_checker_finds_every_rule_the_prose_breaks() -> None:
 
 def test_the_checker_passes_prose_that_keeps_the_rules() -> None:
     """The ordinary case, and it must not be expensive to be right."""
-    assert check_hard_rules("A thought, and the dashboard agreed.", STRICT) == ()
+    assert check_hard_rules("A thought, and the dashboard agreed.", RULES) == ()
 
 
 def test_only_hard_rules_stop_an_article() -> None:
@@ -152,9 +161,9 @@ async def test_a_pass_that_breaks_a_hard_rule_does_not_reach_scoring(
     said must never appear.
     """
     with pytest.raises(VoiceRuleViolation) as raised:
-        await align(db_session, snapshot_store, payload=violating("— truly —"))
+        await align(db_session, snapshot_store, payload=violating("about Rivet"))
 
-    assert "no-em-dash" in str(raised.value)
+    assert "no-internal-name" in str(raised.value)
     assert "ada@3" in str(raised.value)
 
 
@@ -169,7 +178,7 @@ async def test_the_failed_pass_keeps_its_trace(
     """
     drafted = await draft(db_session, snapshot_store)
     drafted.context.engine.apply(WorkflowAction.ACCEPT_REVIEW)
-    drafted.model_client.script_response(VOICE_STAGE, violating("— truly —"))
+    drafted.model_client.script_response(VOICE_STAGE, violating("about Rivet"))
 
     with pytest.raises(VoiceRuleViolation):
         await StageRunner(drafted.context).run(
@@ -221,9 +230,10 @@ async def test_the_prompt_says_how_firmly_each_instruction_binds(
     request = drafted.model_client.last_request
     assert request is not None
 
-    rendered = request.effective.rendered_prompt
+    rendered = request.prompt
 
-    assert "hard_rule" in rendered
-    assert "tendency" in rendered
+    assert "RULES. Never violated." in rendered
+    assert "TENDENCIES." in rendered
+    assert "not a template to apply" in rendered
     assert OPEN_CONCRETE.text in rendered
-    assert NO_EM_DASH.text in rendered
+    assert NO_INTERNAL_NAME.text in rendered
