@@ -87,6 +87,39 @@ distinction for domain failures; this one is missing from it.
 
 ---
 
+## 4. The weak-rubric flag has nowhere to fire from
+
+**Status:** open. **Found:** phase 12, wiring the manual edit distance.
+**Severity:** low today; it is the one thing plan/12 asks for that is built
+and unreachable.
+
+`experiments/edit_distance.rubric_signal` implements plan/12's *high score +
+heavy editing → weak rubric*. It needs two facts about one article: what the
+rubric scored it, and how far the version a person published sits from the
+version the pipeline proposed. Nothing in the system produces that pair.
+
+A forked stage produces one or the other and never both — a voice pass
+writes an article and no score, a scoring pass writes a score and no
+article — so an experiment cannot assemble it whichever stage its corpus
+points at. The pair exists in exactly one place: a person editing an
+approved article by hand.
+
+**Why it is not fixed:** phase 10 built `VoiceLearning.record_edit` for
+exactly that and never exposed it, which is the same absence recorded
+below as "no Markdown editor". One endpoint accepting a hand-edited
+version closes both, and it is that phase's work rather than phase 12's.
+
+**What does work meanwhile:** the distance itself is a metric on every
+experiment arm, measured against the article the author approved
+(`experiments/metrics.ArmMetrics.manual_edit_distance`). It is the
+*rubric* reading of the number that is waiting.
+
+**Where:** `backend/src/groundscribe/experiments/edit_distance.py`
+(`rubric_signal`), `backend/src/groundscribe/voice/learning.py`
+(`record_edit`).
+
+---
+
 ## Not issues, recorded so they are not rediscovered as bugs
 
 - **`writer worker run` drains the queue once and exits.** Deliberate (a crash
