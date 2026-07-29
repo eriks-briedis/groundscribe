@@ -30,7 +30,11 @@ from typing import ClassVar
 from sqlalchemy import select
 
 from groundscribe.domain import models as domain_models
-from groundscribe.domain.confidentiality import Confidentiality
+from groundscribe.domain.confidentiality import (
+    Confidentiality,
+    ConfidentialityFlags,
+    Exclusion,
+)
 from groundscribe.domain.enums import ArtifactType, BranchStatus, SegmentKind, SourceFormat
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
@@ -237,10 +241,12 @@ class IngestSource:
                 # Ingestion is where sensitivity enters the system, so the count
                 # belongs in the trace: a run that flagged three paragraphs and
                 # one that flagged none must not look identical afterwards.
-                "confidential_segments": sum(
+                # Anything not publishable counts — internal material is withheld
+                # from the article just as surely as confidential material is.
+                "restricted_segments": sum(
                     1
                     for segment in segments
-                    if segment.confidentiality is Confidentiality.CONFIDENTIAL
+                    if segment.confidentiality is not Confidentiality.PUBLISHABLE
                 ),
             },
         )
@@ -280,42 +286,68 @@ class IngestSource:
     ) -> tuple[domain_models.SourceSegment, ...]:
         """Persist the parsed segments against their document, flags included."""
         segments = tuple(
-            domain_models.SourceSegment(
-                id=f"{document.id}-{segment.ordinal}",
-                document_id=document.id,
-                ordinal=segment.ordinal,
-                text=segment.text,
-                kind=segment.kind,
-                content_hash=segment.content_hash,
-                char_start=segment.char_start,
-                char_end=segment.char_end,
-                confidentiality=self._classify(segment),
-                created_by_execution_id=execution.id,
-            )
+            self._segment_row(document, execution, segment, self._classify(segment))
             for segment in parsed
         )
         context.session.add_all(segments)
         context.session.flush()
         return segments
 
-    def _classify(self, segment: ParsedSegment) -> Confidentiality:
+    @staticmethod
+    def _segment_row(
+        document: domain_models.SourceDocument,
+        execution: models.StageExecution,
+        segment: ParsedSegment,
+        flags: ConfidentialityFlags,
+    ) -> domain_models.SourceSegment:
+        return domain_models.SourceSegment(
+            id=f"{document.id}-{segment.ordinal}",
+            document_id=document.id,
+            ordinal=segment.ordinal,
+            text=segment.text,
+            kind=segment.kind,
+            content_hash=segment.content_hash,
+            char_start=segment.char_start,
+            char_end=segment.char_end,
+            confidentiality=flags.classification,
+            excluded=sorted(flags.excluded),
+            created_by_execution_id=execution.id,
+        )
+
+    def _classify(self, segment: ParsedSegment) -> ConfidentialityFlags:
         """How sensitive one parsed passage is (phase 13).
 
-        Two sources and no third. The document's import flag covers the whole
-        thing, because a person who imported a postmortem as confidential has
-        already said what they mean and asking them to tick each paragraph would
-        be a checklist — a thing people half-finish.
+        Two sources and no third, and they deliberately say different things.
 
-        The author's inline marker covers the case the document flag cannot: one
-        sensitive paragraph in otherwise publishable material. The marker is
-        phase 03's, reused rather than reinvented, so the same marks that keep a
-        passage out of the trace keep it out of the prompt and the article. A
-        second syntax would be a second thing to remember in only one of the
-        places it matters.
+        **The author's inline marker is the strong one.** ``[[CONFIDENTIAL]]``
+        already means "this must not leave the machine" everywhere else in the
+        system — phase 03's redactor deletes the span before storage, and
+        ``AnswerResponse.CONFIDENTIAL`` uses those words for the same mark. So a
+        marked segment is *confidential*: barred from the prompt, the article and
+        any exported trace. Reusing the mark rather than inventing a syntax is
+        what keeps it meaning one thing in all four places.
+
+        **The document's import flag is the weaker one.** It makes every segment
+        *internal* — reasoned over locally, never published — plus an explicit
+        exclusion from exported traces, because an exported trace is a shared
+        artefact and material a person called confidential should not ride out
+        inside one.
+
+        Not confidential, and the difference is the point: a person marking a
+        whole postmortem sensitive is asking for it not to be published, not
+        asking for an article they can never write. Barring the model from the
+        entire source would make the import flag mean "ingest this and then do
+        nothing with it". The passage they genuinely cannot let out is the one
+        they mark inline.
         """
-        if self._confidential or CONFIDENTIAL_OPEN in segment.text:
-            return Confidentiality.CONFIDENTIAL
-        return Confidentiality.PUBLISHABLE
+        if CONFIDENTIAL_OPEN in segment.text:
+            return ConfidentialityFlags(classification=Confidentiality.CONFIDENTIAL)
+        if self._confidential:
+            return ConfidentialityFlags(
+                classification=Confidentiality.INTERNAL,
+                excluded=(Exclusion.EXPORTED_TRACES,),
+            )
+        return ConfidentialityFlags()
 
     def _resolve_constraints(
         self, context: PipelineContext, execution: models.StageExecution

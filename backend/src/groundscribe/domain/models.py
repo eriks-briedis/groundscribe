@@ -75,8 +75,17 @@ class ConfidentialityMixin:
 
     @property
     def flags(self) -> ConfidentialityFlags:
-        """The two columns resolved into the one question callers ask."""
-        return ConfidentialityFlags(self.confidentiality, self.excluded or ())
+        """The two columns resolved into the one question callers ask.
+
+        Both are coalesced to the permissive default. The columns are ``NOT
+        NULL``, so a *persisted* row always answers; an object that has not been
+        flushed yet has not had its defaults applied, and a property that raised
+        on one would make "may this be sent?" a question only answerable after a
+        round trip to the database.
+        """
+        return ConfidentialityFlags(
+            self.confidentiality or Confidentiality.PUBLISHABLE, self.excluded or ()
+        )
 
 
 class LineageMixin:

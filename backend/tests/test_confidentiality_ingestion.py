@@ -5,20 +5,24 @@ previous test module are only worth having if something sets them, and the
 person who knows which paragraph is sensitive is the author, at the moment they
 paste the material in.
 
-Two sources, and no third:
+Two sources, and no third. They say deliberately different things, and the gap
+between them is what these tests are mostly about:
 
-- **The document's own flag.** A source document imported as confidential
-  produces confidential segments. Marking the document and then having to mark
-  each of its paragraphs would be a checklist, and a checklist is a thing people
-  half-finish.
-- **The author's inline markers.** ``[[CONFIDENTIAL]] … [[/CONFIDENTIAL]]`` is
-  already the convention phase 03's redactor honours on its way to storage. A
-  segment containing one is ingested confidential, so the same marks that keep a
-  passage out of the trace keep it out of the prompt and the article.
+- **The author's inline markers** are the strong statement.
+  ``[[CONFIDENTIAL]] … [[/CONFIDENTIAL]]`` already means "this must not leave the
+  machine" everywhere else in the system — phase 03's redactor deletes the span
+  before storage, and ``AnswerResponse.CONFIDENTIAL`` uses those words for the
+  same mark. So a marked segment is confidential: barred from the prompt, the
+  article and any exported trace.
+- **The document's own import flag** is the weaker one. It makes every segment
+  *internal* — reasoned over locally, never published — plus an explicit
+  exclusion from exported traces. Marking a whole postmortem sensitive is a
+  request not to publish it, not a request for an article that can never be
+  written.
 
-Reusing the redaction markers rather than inventing a second syntax is the point
-of this module: two ways to say "this is sensitive" is two ways to say it in only
-one of the places that matter.
+Reusing the redaction markers rather than inventing a second syntax is the other
+point of this module: two ways to say "this is sensitive" is two ways to say it
+in only one of the places that matter.
 """
 
 from __future__ import annotations
@@ -91,22 +95,44 @@ async def test_ordinary_material_is_publishable(
 
 
 @pytest.mark.asyncio
-async def test_a_confidential_document_makes_confidential_segments(
+async def test_a_confidential_document_makes_internal_segments(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
     """The document's flag reaches the spans everything downstream addresses.
 
-    Extraction, context selection and validation all work in segments. A
-    document-level boolean that stopped at the document would be a label on a
-    row nothing consults.
+    *Internal*, not confidential, and the difference is the whole point of
+    importing a document this way: a person marking a whole postmortem sensitive
+    is asking for it not to be published, not asking for an article they can
+    never write. Barring the model from the entire source would make the import
+    flag mean "ingest this and then do nothing with it".
+
+    The passage they actually cannot let out is the one they mark inline, and
+    that is the next test.
     """
     ingested = await _ingest(db_session, snapshot_store, PUBLIC, confidential=True)
 
     assert ingested.document.confidential
-    assert all(
-        segment.confidentiality is Confidentiality.CONFIDENTIAL for segment in ingested.segments
-    )
+    assert all(segment.confidentiality is Confidentiality.INTERNAL for segment in ingested.segments)
+    assert all(segment.flags.may_be_sent_to_a_provider for segment in ingested.segments)
     assert all(not segment.flags.may_be_published for segment in ingested.segments)
+
+
+@pytest.mark.asyncio
+async def test_a_confidential_document_stays_out_of_exported_traces(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Internal *plus* the trace boundary, named explicitly.
+
+    An exported trace is a shared artefact — plan/13 has it going to a debugging
+    thread or a portfolio — so material a person called confidential should not
+    ride out inside one. The classification alone does not say that, so the
+    import writes the exclusion down rather than widening what *internal* means
+    for everyone else.
+    """
+    ingested = await _ingest(db_session, snapshot_store, PUBLIC, confidential=True)
+
+    assert all(not segment.flags.may_be_exported_in_traces for segment in ingested.segments)
+    assert all(Exclusion.EXPORTED_TRACES in segment.flags.excluded for segment in ingested.segments)
 
 
 @pytest.mark.asyncio
@@ -134,7 +160,15 @@ async def test_an_inline_marker_flags_only_the_segment_it_is_in(
 async def test_the_marked_segment_is_barred_from_all_three_boundaries(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
-    """One mark, three refusals — the same set the classification implies."""
+    """One mark, three refusals — the same set the classification implies.
+
+    The inline marker is the strong statement, and it is strong because phase 03
+    already reads it that way: the redactor deletes the span on its way to
+    storage, and ``AnswerResponse.CONFIDENTIAL`` describes the same mark as
+    material that "must not leave the machine". A marker that kept a passage out
+    of the trace but put it in the prompt would mean two different things in two
+    places.
+    """
     ingested = await _ingest(db_session, snapshot_store, MARKED)
     marked = next(segment for segment in ingested.segments if "Northwind" in segment.text)
 
@@ -150,6 +184,11 @@ async def test_the_stage_reports_what_it_flagged(
     Ingestion is where sensitivity enters the system. A run that quietly flagged
     three paragraphs and one that flagged none should not look identical in the
     trace.
+
+    *Restricted* rather than *confidential*, because the two classifications that
+    are not publishable both matter here: internal material is withheld from the
+    article just as surely as confidential material is, and a count that named
+    only one of them would under-report exactly the imports that flagged the most.
     """
     context = build_context(db_session, snapshot_store, state=WorkflowState.SOURCE_INGESTED)
     stage = IngestSource(
@@ -160,4 +199,4 @@ async def test_the_stage_reports_what_it_flagged(
     )
     result = await StageRunner(context).run(stage)
 
-    assert result.detail["confidential_segments"] == 1
+    assert result.detail["restricted_segments"] == 1
