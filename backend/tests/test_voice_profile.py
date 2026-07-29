@@ -120,7 +120,9 @@ def test_a_preference_and_a_tendency_need_no_checkable_form() -> None:
 def test_an_instruction_knows_whether_it_can_be_checked() -> None:
     """The stage asks this, rather than re-deriving it from the strength."""
     assert instruction().is_enforceable
-    assert not instruction("soft", strength=InstructionStrength.TENDENCY, prohibits=()).is_enforceable
+    assert not instruction(
+        "soft", strength=InstructionStrength.TENDENCY, prohibits=()
+    ).is_enforceable
 
 
 # ----------------------------------------------------------------------
@@ -157,9 +159,7 @@ def test_two_instructions_cannot_share_an_id() -> None:
     resolver would simply take whichever it saw last.
     """
     with pytest.raises(ValidationError):
-        VoiceProfileDocument(
-            name="ada", version="1", instructions=(instruction(), instruction())
-        )
+        VoiceProfileDocument(name="ada", version="1", instructions=(instruction(), instruction()))
 
 
 def test_a_profile_lists_the_hard_rules_it_can_enforce() -> None:
