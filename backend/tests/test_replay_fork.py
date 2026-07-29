@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from groundscribe.api.app import create_app
 from groundscribe.provenance import models
 from groundscribe.storage.snapshot_store import SnapshotStore
-from read_helpers import Walkthrough
+from read_helpers import SETTLED_GAPS, Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
 
 EXTRACTION = "extract_source_truth"
@@ -49,6 +49,19 @@ def walk(client: TestClient, harness: Harness) -> Walkthrough:
     return Walkthrough(client, harness)
 
 
+def script_again(walk: Walkthrough) -> None:
+    """Script what a re-run of the extraction job will ask for.
+
+    Both stages, because the job runs both: extraction continues into gap
+    analysis, since there is no workflow state in between for a second job to be
+    queued from. A replay repeats the *job*, so it repeats both — and the second
+    pass hands back the same question labels the first did, which is the case
+    that used to collide (phase 06's gap rows now keep their own id).
+    """
+    walk.script(EXTRACTION, walk.source_model())
+    walk.script("generate_gap_questions", SETTLED_GAPS)
+
+
 async def extracted(walk: Walkthrough) -> str:
     """A project with one finished extraction, and that execution's id."""
     await walk.open_project()
@@ -63,15 +76,22 @@ def inspect(client: TestClient, execution_id: str) -> dict[str, Any]:
     return body
 
 
-async def send(walk: Walkthrough, path: str, **body: Any) -> dict[str, Any]:
-    """Ask for a replay or a fork, then let the worker do it."""
+async def send(walk: Walkthrough, path: str, **body: Any) -> str:
+    """Ask for a replay or a fork, let the worker do it, and say which execution it opened.
+
+    The endpoints answer with a job, because re-running a stage calls a model and
+    phase 09 keeps those out of the request. The execution exists once the worker
+    has opened it, and the job is what names it.
+    """
     response = walk.client.post(path, json=body)
-    assert response.status_code in (200, 201), response.text
-    answer: dict[str, Any] = response.json()
-    if answer.get("job"):
-        for job in await walk.harness.drain():
-            assert job.status.value == "succeeded", job.error_message
-    return answer
+    assert response.status_code == 202, response.text
+    assert response.json()["source_execution_id"]
+
+    (job, *rest) = await walk.harness.drain()
+    assert not rest, "one re-run, one job"
+    assert job.status.value == "succeeded", job.error_message
+    assert job.stage_execution_id is not None
+    return job.stage_execution_id
 
 
 # ----------------------------------------------------------------------
@@ -122,13 +142,13 @@ async def test_a_replay_runs_the_stage_again_without_touching_the_original(
     execution_id = await extracted(walk)
     before = inspect(walk.client, execution_id)
 
-    walk.script(EXTRACTION, walk.source_model())
-    replayed = await send(walk, f"/executions/{execution_id}/replay", actor_id=AUTHOR)
+    script_again(walk)
+    replayed_id = await send(walk, f"/executions/{execution_id}/replay", actor_id=AUTHOR)
 
     after = inspect(walk.client, execution_id)
-    fresh = inspect(walk.client, replayed["execution"]["id"])
+    fresh = inspect(walk.client, replayed_id)
 
-    assert replayed["execution"]["parent_execution_id"] == execution_id
+    assert fresh["summary"]["id"] != execution_id
     assert after == before, "the original must be exactly as it was"
     assert fresh["summary"]["stage"] == EXTRACTION
     assert fresh["invocations"], "a replay that called no model did not replay anything"
@@ -144,9 +164,9 @@ async def test_a_replay_keeps_the_configuration_it_replays(walk: Walkthrough) ->
     execution_id = await extracted(walk)
     original = inspect(walk.client, execution_id)["invocations"][0]
 
-    walk.script(EXTRACTION, walk.source_model())
-    replayed = await send(walk, f"/executions/{execution_id}/replay", actor_id=AUTHOR)
-    repeated = inspect(walk.client, replayed["execution"]["id"])["invocations"][0]
+    script_again(walk)
+    replayed_id = await send(walk, f"/executions/{execution_id}/replay", actor_id=AUTHOR)
+    repeated = inspect(walk.client, replayed_id)["invocations"][0]
 
     assert repeated["template_id"] == original["template_id"]
     assert repeated["template_version"] == original["template_version"]
@@ -166,15 +186,15 @@ async def test_a_fork_changes_the_variable_it_was_given_and_nothing_else(
     execution_id = await extracted(walk)
     original = inspect(walk.client, execution_id)["invocations"][0]
 
-    walk.script(EXTRACTION, walk.source_model())
-    forked = await send(
+    script_again(walk)
+    forked_id = await send(
         walk,
         f"/executions/{execution_id}/fork",
         actor_id=AUTHOR,
         variables={"model": "llama3.1:8b-instruct"},
         reason="cheaper model, same prompt",
     )
-    altered = inspect(walk.client, forked["execution"]["id"])["invocations"][0]
+    altered = inspect(walk.client, forked_id)["invocations"][0]
 
     assert altered["model"] == "llama3.1:8b-instruct"
     assert altered["model"] != original["model"]
@@ -192,8 +212,8 @@ async def test_a_fork_records_what_was_changed_and_who_asked(walk: Walkthrough) 
     """
     execution_id = await extracted(walk)
 
-    walk.script(EXTRACTION, walk.source_model())
-    forked = await send(
+    script_again(walk)
+    forked_id = await send(
         walk,
         f"/executions/{execution_id}/fork",
         actor_id=AUTHOR,
@@ -201,7 +221,7 @@ async def test_a_fork_records_what_was_changed_and_who_asked(walk: Walkthrough) 
         reason="does it wander?",
     )
 
-    decisions = inspect(walk.client, forked["execution"]["id"])["decisions"]
+    decisions = inspect(walk.client, forked_id)["decisions"]
     (fork_decision,) = [item for item in decisions if item["decision_type"] == "execution_fork"]
     assert fork_decision["decided_by"] == AUTHOR
     assert fork_decision["inputs"]["variables"] == {"temperature": 0.9}
@@ -217,10 +237,10 @@ async def test_a_fork_with_no_variables_is_a_replay_and_says_so(walk: Walkthroug
     """
     execution_id = await extracted(walk)
 
-    walk.script(EXTRACTION, walk.source_model())
-    forked = await send(walk, f"/executions/{execution_id}/fork", actor_id=AUTHOR)
+    script_again(walk)
+    forked_id = await send(walk, f"/executions/{execution_id}/fork", actor_id=AUTHOR)
 
-    decisions = inspect(walk.client, forked["execution"]["id"])["decisions"]
+    decisions = inspect(walk.client, forked_id)["decisions"]
     assert [item["decision_type"] for item in decisions if "fork" in item["decision_type"]] == []
     assert [item for item in decisions if item["decision_type"] == "execution_replay"]
 

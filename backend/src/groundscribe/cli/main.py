@@ -31,6 +31,7 @@ from groundscribe.app.handlers import stage_handlers
 from groundscribe.app.services import ApplicationService
 from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
 from groundscribe.voice.schemas import VoiceProfileDocument
 
@@ -296,18 +297,41 @@ def execution_inspect(execution: str) -> None:
 def execution_replay(
     execution: str, by: Annotated[str, typer.Option(help="Who asked for it.")]
 ) -> None:
-    """Re-run a stage as a new execution; the original is untouched."""
+    """Queue the stage again exactly as it ran; the original is untouched."""
     with _command() as service:
-        _emit(service.replay_execution(execution, requested_by=by))
+        rerun = service.replay_execution(execution, requested_by=by)
+        typer.echo(f"queued {rerun.job.id} to replay {rerun.source_execution_id}")
 
 
 @execution_app.command("fork")
 def execution_fork(
-    execution: str, by: Annotated[str, typer.Option(help="Who asked for it.")]
+    execution: str,
+    by: Annotated[str, typer.Option(help="Who asked for it.")],
+    reason: Annotated[str, typer.Option(help="Why this fork is worth running.")] = "",
+    model: Annotated[str | None, typer.Option(help="Run it against another model.")] = None,
+    provider: Annotated[str | None, typer.Option(help="…from another provider.")] = None,
+    temperature: Annotated[float | None, typer.Option(help="…at another temperature.")] = None,
+    prompt_version: Annotated[str | None, typer.Option(help="…or another prompt version.")] = None,
 ) -> None:
-    """Branch a new execution from an existing one."""
+    """Run the stage again with something changed (phase 12).
+
+    One option per variable rather than a free-form mapping: the vocabulary is
+    closed, and a typo should be refused by the command line rather than by a
+    worker three seconds later.
+    """
     with _command() as service:
-        _emit(service.fork_execution(execution, requested_by=by))
+        rerun = service.fork_execution(
+            execution,
+            requested_by=by,
+            reason=reason,
+            variables=ForkVariables(
+                model=model,
+                provider=provider,
+                temperature=temperature,
+                prompt_version=prompt_version,
+            ),
+        )
+        typer.echo(f"queued {rerun.job.id} to fork {rerun.source_execution_id}")
 
 
 @experiment_app.command("compare")

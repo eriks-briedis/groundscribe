@@ -220,6 +220,19 @@ class ModelInvocationOut(BaseModel):
     error_message: str | None = None
 
 
+class RerunResponse(BaseModel):
+    """What a replay or a fork answers with (phase 12).
+
+    The job, because the work is a model call and phase 09 keeps those out of
+    the request. The execution it produces is opened by the worker and named by
+    the job the moment it starts — a request that pre-created one would invent a
+    status between "not run" and "running" for every client to interpret.
+    """
+
+    source_execution_id: str
+    job: Job
+
+
 class ExecutionComparison(BaseModel):
     """Two executions side by side (plan/11 → *Run comparison*).
 

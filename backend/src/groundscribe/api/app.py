@@ -33,6 +33,7 @@ from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import UnknownProject
+from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.workflow.errors import (
     ArtifactProvenanceError,
     AttributionRequired,
@@ -74,6 +75,9 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (UnknownProject, 404),
     (MissingInput, 404),
     (UnknownArtefact, 404),
+    # Asked to repeat something that was never queued, or whose inputs are gone.
+    # 409: the request is well formed and the *execution* cannot support it.
+    (NotRerunnable, 409),
 )
 
 

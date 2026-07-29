@@ -157,6 +157,7 @@ class StageRunner:
         enter: bool = True,
         on_execution: Callable[[models.StageExecution], None] | None = None,
         parent: models.StageExecution | None = None,
+        transitions: bool = True,
     ) -> StageResult[T]:
         """Run one stage end to end, or leave the run where it was.
 
@@ -179,9 +180,17 @@ class StageRunner:
         ``parent`` branches this execution from an earlier one — a replay or a
         fork (phase 12). The link is what makes the pair comparable, and what
         stops a re-run being mistaken for the thing it re-ran.
+
+        ``transitions=False`` runs the stage without moving the run. That is what
+        a re-run is: an experiment *about* an execution, not a second attempt to
+        drive the pipeline. Replaying yesterday's extraction should produce
+        something to compare against, not send a finished article back to
+        drafting — and the exit edge it would take is usually illegal from where
+        the run has since got to, so this is the difference between "no" and
+        "yes, and here is the answer".
         """
         context = self._context
-        if enter and stage.entry_action is not None:
+        if enter and transitions and stage.entry_action is not None:
             context.engine.apply(stage.entry_action, actor_id=context.actor_id)
 
         execution = context.engine.begin_stage(
@@ -202,7 +211,7 @@ class StageRunner:
             raise
 
         context.recorder.complete_stage(execution)
-        exit_action = result.exit_action or stage.exit_action
+        exit_action = (result.exit_action or stage.exit_action) if transitions else None
         if exit_action is not None:
             context.engine.apply(exit_action, actor_id=context.actor_id, artifacts=result.outputs)
         return replace(result, execution=execution)

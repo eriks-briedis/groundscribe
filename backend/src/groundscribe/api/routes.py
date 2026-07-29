@@ -38,6 +38,7 @@ from groundscribe.app.views import (
     TraceFilter,
     TraceView,
 )
+from groundscribe.experiments.variables import ForkRequest
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
 from groundscribe.voice.schemas import VoiceProfileDocument
@@ -602,30 +603,42 @@ def read_execution_invocations(
 
 
 @router.post(
-    "/executions/{execution_id}/replay", response_model=schemas.ExecutionSummary, status_code=201
+    "/executions/{execution_id}/replay", response_model=schemas.RerunResponse, status_code=202
 )
 def replay_execution(
     execution_id: str,
     body: schemas.ActorAction,
     service: Service,
-) -> schemas.ExecutionSummary:
-    """Re-run a stage as a new execution. The original is never touched."""
-    return schemas.ExecutionSummary.model_validate(
-        service.replay_execution(execution_id, requested_by=body.actor_id)
+) -> schemas.RerunResponse:
+    """Queue the stage again, exactly as it ran. The original is never touched."""
+    rerun = service.replay_execution(execution_id, requested_by=body.actor_id)
+    return schemas.RerunResponse(
+        source_execution_id=rerun.source_execution_id, job=Job.model_validate(rerun.job)
     )
 
 
 @router.post(
-    "/executions/{execution_id}/fork", response_model=schemas.ExecutionSummary, status_code=201
+    "/executions/{execution_id}/fork", response_model=schemas.RerunResponse, status_code=202
 )
 def fork_execution(
     execution_id: str,
-    body: schemas.ActorAction,
+    body: ForkRequest,
     service: Service,
-) -> schemas.ExecutionSummary:
-    """Branch a new execution from an existing one."""
-    return schemas.ExecutionSummary.model_validate(
-        service.fork_execution(execution_id, requested_by=body.actor_id)
+) -> schemas.RerunResponse:
+    """Run the stage again with something changed (phase 12).
+
+    The body's ``variables`` are a closed vocabulary, so a name the system
+    cannot act on is refused here — by the schema, with a 422 — rather than
+    producing an experiment whose candidate configuration was never applied.
+    """
+    rerun = service.fork_execution(
+        execution_id,
+        requested_by=body.actor_id,
+        variables=body.variables,
+        reason=body.reason,
+    )
+    return schemas.RerunResponse(
+        source_execution_id=rerun.source_execution_id, job=Job.model_validate(rerun.job)
     )
 
 

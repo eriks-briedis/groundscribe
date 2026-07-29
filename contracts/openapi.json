@@ -1859,6 +1859,138 @@
         "title": "FindingView",
         "type": "object"
       },
+      "ForkRequest": {
+        "additionalProperties": false,
+        "description": "A person asking for a fork, with what they want changed.",
+        "properties": {
+          "actor_id": {
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "variables": {
+            "$ref": "#/components/schemas/ForkVariables",
+            "default": {}
+          }
+        },
+        "required": [
+          "actor_id"
+        ],
+        "title": "ForkRequest",
+        "type": "object"
+      },
+      "ForkVariables": {
+        "additionalProperties": false,
+        "description": "One fork's changes, validated against the vocabulary before anything runs.\n\nA model rather than a dict so the refusal happens at the edge, in the same\nbreath as the request that carried it, rather than three layers down where\nthe only honest thing left to do is fail a job.",
+        "properties": {
+          "context_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Strategy"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "revision_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Plan"
+          },
+          "rubric_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Version"
+          },
+          "source_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "voice_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Profile"
+          }
+        },
+        "title": "ForkVariables",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2783,6 +2915,24 @@
           "actor_id"
         ],
         "title": "RejectSuggestion",
+        "type": "object"
+      },
+      "RerunResponse": {
+        "description": "What a replay or a fork answers with (phase 12).\n\nThe job, because the work is a model call and phase 09 keeps those out of\nthe request. The execution it produces is opened by the worker and named by\nthe job the moment it starts \u2014 a request that pre-created one would invent a\nstatus between \"not run\" and \"running\" for every client to interpret.",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "source_execution_id": {
+            "title": "Source Execution Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_execution_id",
+          "job"
+        ],
+        "title": "RerunResponse",
         "type": "object"
       },
       "ReviewHistory": {
@@ -4904,7 +5054,7 @@
     },
     "/executions/{execution_id}/fork": {
       "post": {
-        "description": "Branch a new execution from an existing one.",
+        "description": "Run the stage again with something changed (phase 12).\n\nThe body's ``variables`` are a closed vocabulary, so a name the system\ncannot act on is refused here \u2014 by the schema, with a 422 \u2014 rather than\nproducing an experiment whose candidate configuration was never applied.",
         "operationId": "fork_execution_executions__execution_id__fork_post",
         "parameters": [
           {
@@ -4921,18 +5071,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ActorAction"
+                "$ref": "#/components/schemas/ForkRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionSummary"
+                  "$ref": "#/components/schemas/RerunResponse"
                 }
               }
             },
@@ -5038,7 +5188,7 @@
     },
     "/executions/{execution_id}/replay": {
       "post": {
-        "description": "Re-run a stage as a new execution. The original is never touched.",
+        "description": "Queue the stage again, exactly as it ran. The original is never touched.",
         "operationId": "replay_execution_executions__execution_id__replay_post",
         "parameters": [
           {
@@ -5062,11 +5212,11 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExecutionSummary"
+                  "$ref": "#/components/schemas/RerunResponse"
                 }
               }
             },

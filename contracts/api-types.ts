@@ -437,7 +437,11 @@ export interface paths {
         put?: never;
         /**
          * Fork Execution
-         * @description Branch a new execution from an existing one.
+         * @description Run the stage again with something changed (phase 12).
+         *
+         *     The body's ``variables`` are a closed vocabulary, so a name the system
+         *     cannot act on is refused here — by the schema, with a 422 — rather than
+         *     producing an experiment whose candidate configuration was never applied.
          */
         post: operations["fork_execution_executions__execution_id__fork_post"];
         delete?: never;
@@ -497,7 +501,7 @@ export interface paths {
         put?: never;
         /**
          * Replay Execution
-         * @description Re-run a stage as a new execution. The original is never touched.
+         * @description Queue the stage again, exactly as it ran. The original is never touched.
          */
         post: operations["replay_execution_executions__execution_id__replay_post"];
         delete?: never;
@@ -1879,6 +1883,49 @@ export interface components {
              */
             suggested_route: string;
         };
+        /**
+         * ForkRequest
+         * @description A person asking for a fork, with what they want changed.
+         */
+        ForkRequest: {
+            /** Actor Id */
+            actor_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** @default {} */
+            variables: components["schemas"]["ForkVariables"];
+        };
+        /**
+         * ForkVariables
+         * @description One fork's changes, validated against the vocabulary before anything runs.
+         *
+         *     A model rather than a dict so the refusal happens at the edge, in the same
+         *     breath as the request that carried it, rather than three layers down where
+         *     the only honest thing left to do is fail a job.
+         */
+        ForkVariables: {
+            /** Context Strategy */
+            context_strategy?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Revision Plan */
+            revision_plan?: string | null;
+            /** Rubric Version */
+            rubric_version?: string | null;
+            /** Source Model */
+            source_model?: string | null;
+            /** Temperature */
+            temperature?: number | null;
+            /** Voice Profile */
+            voice_profile?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2325,6 +2372,20 @@ export interface components {
              * @default
              */
             reason: string;
+        };
+        /**
+         * RerunResponse
+         * @description What a replay or a fork answers with (phase 12).
+         *
+         *     The job, because the work is a model call and phase 09 keeps those out of
+         *     the request. The execution it produces is opened by the worker and named by
+         *     the job the moment it starts — a request that pre-created one would invent a
+         *     status between "not run" and "running" for every client to interpret.
+         */
+        RerunResponse: {
+            job: components["schemas"]["Job"];
+            /** Source Execution Id */
+            source_execution_id: string;
         };
         /**
          * ReviewHistory
@@ -3629,17 +3690,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ActorAction"];
+                "application/json": components["schemas"]["ForkRequest"];
             };
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionSummary"];
+                    "application/json": components["schemas"]["RerunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3731,12 +3792,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionSummary"];
+                    "application/json": components["schemas"]["RerunResponse"];
                 };
             };
             /** @description Validation Error */

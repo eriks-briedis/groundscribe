@@ -114,6 +114,11 @@ class Rerunning:
     template_version: str | None = None
     override: RouteOverride | None = None
 
+    @property
+    def is_rerun(self) -> bool:
+        """Whether this job is repeating an execution rather than advancing the run."""
+        return self.parent is not None
+
     @classmethod
     def of(cls, runtime: Runtime, request: JobRequest) -> Rerunning:
         rerun = rerun_of(request.payload)
@@ -227,12 +232,18 @@ async def _extract(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
     # The same job continues into gap analysis: it is what decides whether the
     # run parks for the author, and there is no workflow state in between for a
     # second job to be queued from.
+    # Gap analysis rides the same job, so a re-run repeats it too — and must not
+    # move the run either: the question queue this job parked on the first time
+    # has long since been answered.
     return await StageRunner(resumed.context).run(
-        GenerateGapQuestions(source_model=extracted.value), enter=False
+        GenerateGapQuestions(source_model=extracted.value),
+        enter=False,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -252,6 +263,7 @@ async def _propose_architecture(
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -285,6 +297,7 @@ async def _generate_brief(
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -309,6 +322,7 @@ async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -339,6 +353,7 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -367,6 +382,7 @@ async def _plan_revision(
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -398,6 +414,7 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -422,6 +439,7 @@ async def _align_voice(runtime: Runtime, resumed: Resumed, request: JobRequest) 
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 
@@ -450,6 +468,7 @@ async def _score(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
         enter=False,
         on_execution=request.opened,
         parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
     )
 
 

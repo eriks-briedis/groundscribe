@@ -170,7 +170,13 @@ def test_an_unknown_project_is_a_404(client: TestClient) -> None:
 async def test_an_execution_can_be_inspected_replayed_and_forked(
     client: TestClient, harness: Harness
 ) -> None:
-    """plan/09 → ``GET /executions/{id}``, ``.../replay``, ``.../fork``."""
+    """plan/09 → ``GET /executions/{id}``, ``.../replay``, ``.../fork``.
+
+    The two commands answer with a *job* since phase 12 gave them work to do:
+    re-running a stage calls a model, and phase 09's own rule is that a request
+    never does. What they queue is asserted where it belongs, in
+    ``test_replay_fork``; here it is the seam.
+    """
     project_id = with_source(client)
     script_extraction(harness)
     client.post(f"/projects/{project_id}/source-model/extract", json={})
@@ -187,8 +193,9 @@ async def test_an_execution_can_be_inspected_replayed_and_forked(
     assert inspected.json()["stage"] == "extract_source_truth"
     assert events.json()[0]["event_type"] == "stage.started"
     assert invocations.json()[0]["template_id"] == "extract_source_truth"
-    assert replayed.json()["parent_execution_id"] == execution_id
-    assert forked.json()["parent_execution_id"] == execution_id
+    assert replayed.status_code == 202, replayed.text
+    assert replayed.json()["source_execution_id"] == execution_id
+    assert forked.json()["job"]["job_type"] == "extract_source_model"
 
 
 async def test_two_executions_can_be_compared(client: TestClient, harness: Harness) -> None:

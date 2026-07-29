@@ -32,6 +32,7 @@ from typer.testing import CliRunner
 from golden import golden_text
 from groundscribe.api.app import create_app
 from groundscribe.api.routes import get_runtime, get_service
+from groundscribe.jobs.schemas import Job as JobSchema
 from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.cli import main as cli
 from groundscribe.provenance import models
@@ -116,10 +117,25 @@ _EXECUTION = models.StageExecution(
 #: What the double hands back for the few commands that do not answer with a
 #: command envelope. Only the shape matters — every assertion here is about the
 #: call that was made, never about the reply.
+#: A re-run answers with the job that will do the work (phase 12), so the double
+#: hands back that shape rather than an execution: the request queues, and the
+#: execution does not exist until a worker opens it.
+_RERUN = SimpleNamespace(
+    source_execution_id="e1",
+    job=JobSchema(
+        id="job-1",
+        job_type="extract_source_model",
+        project_id="p1",
+        pipeline_run_id="r1",
+        dedupe_key="rerun:e1",
+        created_at=datetime(2026, 7, 25, 12, 0, tzinfo=UTC),
+    ),
+)
+
 _RETURNS: dict[str, Any] = {
     "get_execution": _EXECUTION,
-    "replay_execution": _EXECUTION,
-    "fork_execution": _EXECUTION,
+    "replay_execution": _RERUN,
+    "fork_execution": _RERUN,
     "compare_executions": (_EXECUTION, _EXECUTION),
 }
 
