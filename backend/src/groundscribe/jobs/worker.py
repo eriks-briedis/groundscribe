@@ -25,6 +25,7 @@ Three rules shape the code:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -35,6 +36,7 @@ from sqlalchemy.orm import Session
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
 from groundscribe.jobs.queue import DEFAULT_LEASE, JobQueue
+from groundscribe.observability.logging import Correlation, event_logger
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, ExecutionStatus
 from groundscribe.provenance.recorder import ProvenanceRecorder
@@ -105,6 +107,9 @@ class Worker:
         self._recorder = recorder
         self._handlers = dict(handlers)
         self.worker_id = worker_id
+        # The worker is the process that runs unattended, so it is the one whose
+        # failures are read from a log rather than watched on a screen (plan/14).
+        self._log = event_logger(__name__)
 
     # ------------------------------------------------------------------
     # Recovery
@@ -199,6 +204,7 @@ class Worker:
             "job.failed",
             execution=execution,
             payload={"error_type": type(exc).__name__, "error_message": str(exc)},
+            level=logging.ERROR,
         )
         # Committed, not rolled back. The records the stage wrote before it
         # failed are the explanation of the failure, and phase 03 took the same
@@ -223,21 +229,41 @@ class Worker:
         execution: models.StageExecution | None = None,
         run: models.PipelineRun | None = None,
         payload: dict[str, Any] | None = None,
+        level: int = logging.INFO,
     ) -> None:
-        """Append a job lifecycle event to the run's timeline.
+        """Append a job lifecycle event to the run's timeline, and log it.
 
         Anchored to the stage execution whenever there is one, because that is
         what the per-job stream reads; before the stage exists — and if it never
         does — the run is the only anchor available.
+
+        The log line is written from the event rather than beside it (plan/14):
+        the trace is the record, and a line that named a trace event id nobody
+        could resolve would be the failure the correlation exists to prevent.
         """
         anchor = execution or job.stage_execution
-        self._recorder.emit(
+        detail = dict(payload or {})
+        trace_event = self._recorder.emit(
             event_type=event_type,
             actor_type=ActorType.SYSTEM,
             actor_id=self.worker_id,
             execution=anchor,
             run=None if anchor is not None else (run or job.pipeline_run),
-            payload={"job_id": job.id, "job_type": job.job_type, **(payload or {})},
+            payload={"job_id": job.id, "job_type": job.job_type, **detail},
+        )
+        self._log.log(
+            level,
+            event_type,
+            Correlation(
+                project_id=job.project_id,
+                pipeline_run_id=job.pipeline_run_id,
+                stage_execution_id=anchor.id if anchor is not None else None,
+                job_id=job.id,
+                trace_event_id=trace_event.id,
+            ),
+            job_type=job.job_type,
+            worker_id=self.worker_id,
+            **detail,
         )
 
 

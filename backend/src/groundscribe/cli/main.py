@@ -35,6 +35,7 @@ from groundscribe.experiments.reproducibility import contract
 from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
+from groundscribe.observability.logging import configure_logging
 from groundscribe.privacy.export import ExportFormat
 from groundscribe.voice.schemas import VoiceProfileDocument
 
@@ -556,6 +557,10 @@ def worker_run(
     its own, committed as it finishes, so a crash halfway through a batch keeps
     what the earlier jobs did.
     """
+    # The one command that runs unattended, so the one that has to leave a log
+    # somebody can read afterwards (plan/14). Every other command reports to the
+    # person who typed it.
+    configure_logging()
     runtime = build_runtime()
     worker = Worker(
         queue=runtime.queue,

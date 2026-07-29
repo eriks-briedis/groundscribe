@@ -218,14 +218,21 @@ def test_a_field_that_collides_with_a_correlation_id_cannot_overwrite_it(
 
 def test_configuring_logging_twice_does_not_double_every_line() -> None:
     """Both front doors configure logging on start-up, and a process that ran
-    both — or a test that imported twice — would otherwise report everything
-    twice, which reads as the system doing everything twice."""
+    both — the API importing the CLI, a worker started from either — would
+    otherwise report everything twice, which reads as the system doing everything
+    twice.
+
+    Counted by *our* handler rather than by the total, because anything else in
+    the process is entitled to attach one and this function is not entitled to
+    remove it. (This test suite is itself such a thing: pytest's capture handler
+    is on the same logger while it runs.)
+    """
     first = configure_logging()
     second = configure_logging()
 
     assert first is second
-    assert len(first.handlers) == 1
-    assert isinstance(first.handlers[0].formatter, JSONFormatter)
+    ours = [handler for handler in first.handlers if isinstance(handler.formatter, JSONFormatter)]
+    assert len(ours) == 1
 
 
 # ----------------------------------------------------------------------

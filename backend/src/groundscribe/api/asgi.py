@@ -28,12 +28,16 @@ from fastapi import FastAPI
 from groundscribe.api.app import create_app
 from groundscribe.app.bootstrap import build_runtime
 from groundscribe.config import ENV_FILE, PASSWORD_ENV, configured_password
+from groundscribe.observability.logging import configure_logging
 
 
 def served_app(
     environ: MutableMapping[str, str] | None = None, *, env_file: Path | None = None
 ) -> FastAPI:
     """The local installation, with a lock on it."""
+    # Here rather than at import: a served process wants structured output, and a
+    # test importing this module to check the refusal above does not.
+    configure_logging()
     password = configured_password(environ, env_file=env_file)
     if password is None:
         raise RuntimeError(
