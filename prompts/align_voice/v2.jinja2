@@ -1,0 +1,58 @@
+Line-edit this article. Change how it reads; change nothing about what it says.
+
+The prose:
+{{ body }}
+
+The voice it should read as — {{ voice.name }} version {{ voice.version }}.
+Each instruction says how firmly it binds, and they do not bind equally:
+
+{% for instruction in voice.instructions if instruction.strength == 'hard_rule' -%}
+{% if loop.first %}RULES. Never violated. Breaking one stops the article:
+{% endif %}- [{{ instruction.category }}] {{ instruction.text }}
+{%- if instruction.prohibits %} (never write: {{ instruction.prohibits | join(', ') }}){% endif %}
+{% endfor %}
+{% for instruction in voice.instructions if instruction.strength == 'strong_preference' -%}
+{% if loop.first %}
+PREFERENCES. Follow them unless this passage gives you a reason not to, and say
+so under `reason` on the edit when you depart from one:
+{% endif %}- [{{ instruction.category }}] {{ instruction.text }}
+{% endfor %}
+{% for instruction in voice.instructions if instruction.strength == 'tendency' -%}
+{% if loop.first %}
+TENDENCIES. How this author usually writes, not a template to apply. Follow one
+where it fits what this passage is doing; ignore it where it does not. Prose that
+obeys every tendency reads like a form:
+{% endif %}- [{{ instruction.category }}] {{ instruction.text }}
+{% endfor %}
+The thesis it argues — you are not editing this, you are told it so you can tell
+when an edit would move it:
+{{ thesis }}
+
+Unresolved markers that must survive verbatim. Each one stands where a fact is
+missing; deleting one publishes a hole as though it were an answer:
+{{ markers }}
+
+{% if not first_person_allowed -%}
+First person is not permitted in this article. Do not introduce it.
+{%- else -%}
+First person is permitted where it reads naturally.
+{%- endif %}
+
+You may change: rhythm and sentence length, word choice, flow between sentences,
+needless repetition, formality, mechanical transitions ("Furthermore", "In
+conclusion"), unnatural phrasing, abstraction where something concrete already in
+the text would do, and the generic patterns that make writing sound machine-made.
+
+You may not change: what the article claims, which examples it uses, its technical
+details, the evidence behind an argument, the wording of its thesis, or any
+qualification or hedge — those conditions are load-bearing. Do not reorder, merge
+or split sections.
+
+Return every edit you made under `changes`, quoting the text you replaced under
+`before` and what you replaced it with under `after`, both exactly as they appear.
+An edit you do not declare is one nobody can check.
+
+If you find a problem no rephrasing fixes — an argument that does not follow, a
+section doing two jobs, a claim that contradicts another — do not fix it. Leave the
+passage as it is, make the safe edits elsewhere, and describe the problem under
+`structural_problems`. A person decides what happens to it.
