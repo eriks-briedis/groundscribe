@@ -14,7 +14,6 @@ which drafts an article and asks what voice it was written under.
 from __future__ import annotations
 
 import pytest
-from provenance_helpers import make_recorder, seed_project
 from sqlalchemy.orm import Session
 
 from groundscribe.domain import models as domain_models
@@ -23,6 +22,7 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory, VoiceScope
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
 from groundscribe.voice.store import VoiceStore
+from provenance_helpers import make_recorder, seed_project
 
 AUTHOR = "u1"
 
@@ -84,9 +84,7 @@ def test_a_saved_profile_comes_back_as_the_document_that_went_in(
     assert saved.active is True
 
 
-def test_saving_a_new_version_retires_the_previous_one(
-    store: VoiceStore, project_id: str
-) -> None:
+def test_saving_a_new_version_retires_the_previous_one(store: VoiceStore, project_id: str) -> None:
     """One version in force at a time, and the old one still on disk.
 
     Two active versions at one scope would leave the resolver picking, and an
@@ -101,9 +99,7 @@ def test_saving_a_new_version_retires_the_previous_one(
     assert store.document(first).version == "1"
 
 
-def test_a_project_profile_does_not_retire_a_global_one(
-    store: VoiceStore, project_id: str
-) -> None:
+def test_a_project_profile_does_not_retire_a_global_one(store: VoiceStore, project_id: str) -> None:
     """Scopes are independent. Setting a voice for one project must not silently
     unset the author's own."""
     global_version = store.save(profile(VoiceScope.GLOBAL), user_id=AUTHOR)
@@ -123,7 +119,9 @@ def test_the_effective_voice_is_resolved_from_every_scope_in_force(
 ) -> None:
     """plan/10 → article override beats project beats global, over stored rows."""
     store.save(
-        profile(VoiceScope.GLOBAL, instruction("tone", "Plain."), instruction("lists", "No lists.")),
+        profile(
+            VoiceScope.GLOBAL, instruction("tone", "Plain."), instruction("lists", "No lists.")
+        ),
         user_id=AUTHOR,
     )
     store.save(
@@ -162,9 +160,7 @@ def test_an_article_override_is_used_only_for_its_own_article(
     assert for_a2.profile.instructions[0].text == "Plain."
 
 
-def test_an_author_with_no_profile_still_gets_a_voice(
-    store: VoiceStore, project_id: str
-) -> None:
+def test_an_author_with_no_profile_still_gets_a_voice(store: VoiceStore, project_id: str) -> None:
     """Empty, and usable. Requiring calibration before anything could run would
     make onboarding a precondition rather than a first result."""
     resolved = store.resolve(user_id=AUTHOR, project_id=project_id)
@@ -175,8 +171,12 @@ def test_an_author_with_no_profile_still_gets_a_voice(
 
 def test_a_retired_version_is_not_resolved(store: VoiceStore, project_id: str) -> None:
     """Superseded means superseded; history stays readable without staying in force."""
-    store.save(profile(VoiceScope.GLOBAL, instruction("old", "The old way."), version="1"), user_id=AUTHOR)
-    store.save(profile(VoiceScope.GLOBAL, instruction("new", "The new way."), version="2"), user_id=AUTHOR)
+    store.save(
+        profile(VoiceScope.GLOBAL, instruction("old", "The old way."), version="1"), user_id=AUTHOR
+    )
+    store.save(
+        profile(VoiceScope.GLOBAL, instruction("new", "The new way."), version="2"), user_id=AUTHOR
+    )
 
     resolved = store.resolve(user_id=AUTHOR, project_id=project_id)
 

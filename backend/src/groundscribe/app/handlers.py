@@ -31,6 +31,7 @@ from typing import Any
 from groundscribe.app import rehydrate
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import Resumed, resume_run
+from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.worker import JobHandler, JobOutcome, JobRequest
@@ -54,11 +55,30 @@ from groundscribe.stages.schemas import (
     VoiceProfileDocument,
 )
 from groundscribe.stages.voice import AlignVoice
+from groundscribe.voice.store import VoiceStore
 
-#: The voice every article is written in until phase 10 learns a real one. Its
-#: defaults are the placeholder plan/07 designed the schema around; naming it
-#: here keeps "which profile was this written under?" answerable even now.
+#: The voice an author who has saved nothing writes in. Empty rather than
+#: opinionated: plan/10's calibration produces the first profile, and inventing
+#: a default style for someone who has not chosen one would be the generic
+#: humanisation this phase exists to replace.
 DEFAULT_VOICE = VoiceProfileDocument()
+
+
+def voice_for(runtime: Runtime, resumed: Resumed, article_id: str | None) -> VoiceProfileDocument:
+    """The effective voice for this article, resolved from what is stored.
+
+    Resolved per job rather than per run. A profile saved between the draft and
+    the rewrite should apply to the rewrite — that is usually *why* it was
+    saved — and a voice captured once at the start of a run would apply the
+    author's edits to everything except the article that prompted them.
+    """
+    project = runtime.session.get(domain_models.Project, resumed.context.project_id)
+    if project is None:  # pragma: no cover - a run always has its project
+        return DEFAULT_VOICE
+    store = VoiceStore(runtime.session, snapshots=runtime.snapshots, recorder=runtime.recorder)
+    return store.resolve(
+        user_id=project.user_id, project_id=project.id, article_id=article_id
+    ).profile
 
 
 def stage_handlers(runtime: Runtime) -> dict[JobType, JobHandler]:
@@ -198,7 +218,7 @@ async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
             concept=concept,
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
             source_model_snapshot=source_snapshot,
-            voice=DEFAULT_VOICE,
+            voice=voice_for(runtime, resumed, _article_id(request)),
         ),
         enter=False,
         on_execution=request.opened,
@@ -278,7 +298,7 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
-            voice=DEFAULT_VOICE,
+            voice=voice_for(runtime, resumed, article_id),
         ),
         enter=False,
         on_execution=request.opened,
@@ -299,7 +319,7 @@ async def _align_voice(runtime: Runtime, resumed: Resumed, request: JobRequest) 
             parent=version,
             concept=rehydrate.concept(session, article_id),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
-            voice=DEFAULT_VOICE,
+            voice=voice_for(runtime, resumed, article_id),
         ),
         enter=False,
         on_execution=request.opened,
@@ -324,7 +344,7 @@ async def _score(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
             brief_snapshot=brief_snapshot,
             source_model_snapshot=source_snapshot,
-            voice=DEFAULT_VOICE,
+            voice=voice_for(runtime, resumed, article_id),
         ),
         enter=False,
         on_execution=request.opened,
