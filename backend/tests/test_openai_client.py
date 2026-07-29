@@ -299,7 +299,6 @@ async def test_tools_are_offered_in_the_providers_shape() -> None:
                 ToolDefinition(
                     name="fetch_url",
                     version="1",
-                    description="Fetch a URL.",
                     parameters={"type": "object", "properties": {"url": {"type": "string"}}},
                 ),
             ),
@@ -311,6 +310,9 @@ async def test_tools_are_offered_in_the_providers_shape() -> None:
     assert tool["type"] == "function"
     assert tool["function"]["name"] == "fetch_url"
     assert tool["function"]["parameters"]["properties"]["url"]["type"] == "string"
+    # No description is sent, because `ToolDefinition` does not carry one.
+    # Synthesising a sentence would put words in the record that no offer made.
+    assert "description" not in tool["function"]
 
 
 # ----------------------------------------------------------------------

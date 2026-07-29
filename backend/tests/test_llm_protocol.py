@@ -27,14 +27,23 @@ from groundscribe.llm import (
     StructuredOutputMode,
     TokenUsage,
 )
-from groundscribe.llm.adapters import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
+from groundscribe.llm.adapters import AnthropicAdapter, OllamaAdapter, OpenAIClient
 
+#: Still stubs. OpenAI left this list when it was wired; the two that remain are
+#: the ones nobody has needed yet, and they stay stubs for the reason phase 04
+#: gave — a stub that answered plausibly would let the suite pass on fiction.
 STUB_ADAPTERS = [
-    OpenAIAdapter(model="gpt-x"),
     AnthropicAdapter(model="claude-x"),
     OllamaAdapter(model="llama"),
 ]
-ADAPTER_IDS = ["openai", "anthropic", "ollama"]
+ADAPTER_IDS = ["anthropic", "ollama"]
+
+#: Every client the protocol has to hold for, stubs and the real one alike.
+#: The point of listing them together is that wiring a provider must not need a
+#: wider interface — the moment it does is the moment provider concepts start
+#: leaking into the callers.
+ALL_CLIENTS = [*STUB_ADAPTERS, OpenAIClient(model="gpt-x", api_key="sk-not-used-here")]
+ALL_IDS = [*ADAPTER_IDS, "openai"]
 
 
 def _protocol_typed(client: LLMClient) -> LLMClient:
@@ -130,13 +139,13 @@ def test_the_fake_client_implements_the_protocol() -> None:
     assert client.metadata.provider == "fake"
 
 
-@pytest.mark.parametrize("adapter", STUB_ADAPTERS, ids=ADAPTER_IDS)
-def test_each_stub_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
-    """Adapters are stubs, but they are stubs *of this interface*.
+@pytest.mark.parametrize("adapter", ALL_CLIENTS, ids=ALL_IDS)
+def test_every_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
+    """Two stubs and one real client, held to one interface.
 
-    Checked now so the shape is fixed before any provider SDK is wired in — the
-    moment an adapter needs a wider surface is the moment provider concepts
-    start leaking into the callers.
+    The shape was fixed before anything was wired in, and OpenAI being here
+    unchanged is the evidence it was the right shape: making that adapter real
+    needed no addition to the protocol, the generator, or any caller.
     """
     assert isinstance(adapter, LLMClient)
     assert _protocol_typed(adapter) is adapter
@@ -148,8 +157,11 @@ def test_each_stub_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
 
 
 @pytest.mark.parametrize("adapter", STUB_ADAPTERS, ids=ADAPTER_IDS)
-async def test_stub_adapters_refuse_to_pretend_they_called_a_provider(adapter: LLMClient) -> None:
-    """plan/04 non-goal: no real network calls. A stub that returned a plausible
-    answer would be worse than one that raises — tests would pass on fiction."""
+async def test_the_remaining_stubs_refuse_to_pretend_they_called_a_provider(
+    adapter: LLMClient,
+) -> None:
+    """A stub that returned a plausible answer would be worse than one that
+    raises — the tests would then pass on fiction. Anthropic and Ollama are still
+    stubs, and must still say so rather than answering."""
     with pytest.raises(NotImplementedError):
         await adapter.complete(LLMRequest(call_key="anything"))
