@@ -101,8 +101,16 @@ class PipelineRun(ProvenanceRecord, Base):
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
 
     project: Mapped[Project] = relationship()
+    # A *total* order, deliberately. ``ordinal`` alone is not one: nothing
+    # assigns it, so every execution carries the default 0 and the sort degrades
+    # to whatever the database feels like returning. SQLite hands back insertion
+    # order and looks correct; PostgreSQL makes no such promise and reorders the
+    # run's history, which shows up as "the last stage" being the wrong stage.
+    # Found by the phase-14 parity run. ``started_at`` is the fact being asked
+    # for; ``id`` breaks a tie no clock resolution could.
     stage_executions: Mapped[list[StageExecution]] = relationship(
-        back_populates="pipeline_run", order_by="StageExecution.ordinal"
+        back_populates="pipeline_run",
+        order_by="StageExecution.ordinal, StageExecution.started_at, StageExecution.id",
     )
 
 
@@ -141,8 +149,13 @@ class StageExecution(ProvenanceRecord, Base):
     context_selections: Mapped[list[ContextSelection]] = relationship(
         back_populates="stage_execution"
     )
+    # ``attempt_ordinal`` counts within one *chain* of retries, so a stage that
+    # made two independent calls has two rows numbered 1 and no order between
+    # them. Same failure as the run's executions above, one level down.
     model_invocations: Mapped[list[ModelInvocation]] = relationship(
-        back_populates="stage_execution", order_by="ModelInvocation.attempt_ordinal"
+        back_populates="stage_execution",
+        order_by="ModelInvocation.started_at, ModelInvocation.attempt_ordinal, "
+        "ModelInvocation.id",
     )
     tool_invocations: Mapped[list[ToolInvocation]] = relationship(back_populates="stage_execution")
     decision_records: Mapped[list[DecisionRecord]] = relationship(back_populates="stage_execution")
@@ -300,7 +313,8 @@ class ModelInvocation(ProvenanceRecord, Base):
         back_populates="attempts", remote_side="ModelInvocation.id"
     )
     attempts: Mapped[list[ModelInvocation]] = relationship(
-        back_populates="parent", order_by="ModelInvocation.attempt_ordinal"
+        back_populates="parent",
+        order_by="ModelInvocation.attempt_ordinal, ModelInvocation.id",
     )
 
 
