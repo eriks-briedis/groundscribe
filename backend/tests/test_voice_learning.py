@@ -20,13 +20,13 @@ leaves a record rather than disappearing.
 from __future__ import annotations
 
 import pytest
-from provenance_helpers import make_recorder, seed_project
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import FindingStatus
 from groundscribe.provenance.enums import InterventionType
+from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory
 from groundscribe.voice.learning import (
@@ -37,6 +37,7 @@ from groundscribe.voice.learning import (
 from groundscribe.voice.models import ManualEdit, VoiceSuggestion
 from groundscribe.voice.precedence import resolve_voice
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
+from provenance_helpers import make_recorder, seed_project
 
 AUTHOR = "u1"
 
@@ -50,10 +51,9 @@ DRAMATIC = (
 )
 
 
-def seed_version(session: Session, snapshots: SnapshotStore) -> domain_models.ArticleVersion:
+def seed_version(session: Session, recorder: ProvenanceRecorder) -> domain_models.ArticleVersion:
     """The minimum chain a manual edit hangs from."""
     project_id = seed_project(session, user_id=AUTHOR)
-    recorder = make_recorder(session, snapshots)
     run = recorder.start_run(project_id=project_id)
     execution = recorder.start_stage(run, stage="manual_edit")
     article = domain_models.Article(id="a1", project_id=project_id, title="Caching")
@@ -66,13 +66,20 @@ def seed_version(session: Session, snapshots: SnapshotStore) -> domain_models.Ar
 
 
 @pytest.fixture
-def version(db_session: Session, snapshot_store: SnapshotStore) -> domain_models.ArticleVersion:
-    return seed_version(db_session, snapshot_store)
+def recorder(db_session: Session, snapshot_store: SnapshotStore) -> ProvenanceRecorder:
+    """One recorder for the whole test: two would run two id counters over one
+    database and collide on the first write."""
+    return make_recorder(db_session, snapshot_store)
 
 
 @pytest.fixture
-def learning(db_session: Session, snapshot_store: SnapshotStore) -> VoiceLearning:
-    return VoiceLearning(db_session, recorder=make_recorder(db_session, snapshot_store))
+def version(db_session: Session, recorder: ProvenanceRecorder) -> domain_models.ArticleVersion:
+    return seed_version(db_session, recorder)
+
+
+@pytest.fixture
+def learning(db_session: Session, recorder: ProvenanceRecorder) -> VoiceLearning:
+    return VoiceLearning(db_session, recorder=recorder)
 
 
 def record_all(
@@ -333,7 +340,9 @@ def test_a_rejected_suggestion_is_kept_with_its_reason(
     (pattern,) = detect_edit_patterns(learning.training_edits(AUTHOR))
     suggestion = learning.suggest(pattern, user_id=AUTHOR, category=VoiceCategory.LANGUAGE)
 
-    learning.reject(suggestion, rejected_by=AUTHOR, reason="I mean it in the pieces about launches.")
+    learning.reject(
+        suggestion, rejected_by=AUTHOR, reason="I mean it in the pieces about launches."
+    )
 
     assert suggestion.status is FindingStatus.REJECTED
     assert "launches" in suggestion.reason

@@ -18,6 +18,7 @@ from sqlalchemy import Connection
 import groundscribe.domain.models
 import groundscribe.jobs.models
 import groundscribe.provenance.models
+import groundscribe.voice.models
 import groundscribe.workflow.position  # noqa: F401
 from groundscribe.db import DEFAULT_URL, Base, create_engine
 

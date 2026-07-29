@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 import groundscribe.domain.models
 import groundscribe.jobs.models
 import groundscribe.provenance.models
+import groundscribe.voice.models
 import groundscribe.workflow.position  # noqa: F401
 from groundscribe.db import Base, create_engine
 from groundscribe.storage.blob_store import BlobStore

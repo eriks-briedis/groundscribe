@@ -73,6 +73,17 @@ class ProvenanceRecorder:
     # Lifecycle
     # ------------------------------------------------------------------
 
+    @property
+    def clock(self) -> Callable[[], datetime]:
+        """The clock this recorder stamps records with.
+
+        Exposed so a collaborator writing rows *beside* provenance — phase 10's
+        voice learning is the first — timestamps them from the same source. Two
+        clocks would put a manual edit and the intervention recording it at
+        different instants.
+        """
+        return self._clock
+
     def start_run(
         self,
         *,

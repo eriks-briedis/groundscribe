@@ -45,6 +45,12 @@ EDITORIAL_TABLES: frozenset[str] = frozenset(
         "review_issues",
         "revision_plans",
         "voice_profiles",
+        # Phase 10. A profile version is an editorial artefact — it is part of
+        # what the author is writing, not a record of how something ran — and a
+        # hand edit is the author's own contribution to one.
+        "voice_profile_versions",
+        "manual_edits",
+        "voice_suggestions",
         "validation_reports",
         "artifact_snapshots",
     }
