@@ -100,15 +100,30 @@ class Walkthrough:
     # The walk
     # ------------------------------------------------------------------
 
-    async def open_project(self, *, confidential: bool = False) -> str:
-        """Create the project and ingest the golden source into it."""
+    async def open_project(
+        self, *, confidential: bool = False, target_words: int | None = None
+    ) -> str:
+        """Create the project and ingest the golden source into it.
+
+        ``target_words`` sets the length the *author* asked for. It is the only
+        honest way to fail final validation on length: the brief stage refuses a
+        target that disagrees with the project's, because length is the author's
+        to set and not the model's — so a caller wanting that failure has to ask
+        for a longer article than the golden draft, rather than smuggling the
+        mismatch in through the brief.
+        """
+        constraints = (
+            WALK_CONSTRAINTS
+            if target_words is None
+            else WALK_CONSTRAINTS.model_copy(update={"target_length_words": target_words})
+        )
         created = await self.command(
             "POST",
             "/projects",
             json={
                 "title": "Read-through caching",
                 "author_id": AUTHOR,
-                "constraints": WALK_CONSTRAINTS.model_dump(mode="json"),
+                "constraints": constraints.model_dump(mode="json"),
             },
         )
         self.project_id = str(created["project_id"])
@@ -156,11 +171,20 @@ class Walkthrough:
         self.article_id = self.first_article()
         return approved
 
-    async def brief(self, *, approve: bool = True) -> dict[str, Any]:
-        """Generate the brief the article is drafted against."""
+    async def brief(
+        self, *, approve: bool = True, target_words: int | None = None
+    ) -> dict[str, Any]:
+        """Generate the brief the article is drafted against.
+
+        ``target_words`` overrides the length the brief asks for. Named because
+        final validation checks the article against *the brief's* target, so a
+        caller that wants a deterministic validation failure has exactly one
+        honest lever and this is it — the alternative is corrupting an article
+        the rest of the walk depends on.
+        """
         self.script(
             "generate_article_brief",
-            golden_json("brief.json") | {"target_length_words": WALK_TARGET_WORDS},
+            golden_json("brief.json") | {"target_length_words": target_words or WALK_TARGET_WORDS},
         )
         briefed = await self.command("POST", f"/articles/{self.article_id}/brief/generate")
         if not approve:
