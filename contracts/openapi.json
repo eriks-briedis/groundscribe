@@ -2411,6 +2411,20 @@
         "title": "LineageNode",
         "type": "object"
       },
+      "LoginRequest": {
+        "description": "What a person types into the only form that is served unauthenticated.",
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
       "ModelInvocationOut": {
         "description": "One model call, including the attempts that failed.\n\nThe failed ones are published, not filtered: a client showing only accepted\ncalls would under-report exactly the runs that cost the most.",
         "properties": {
@@ -2986,6 +3000,20 @@
           "char_end"
         ],
         "title": "SegmentView",
+        "type": "object"
+      },
+      "SessionState": {
+        "description": "Whether this browser is signed in.\n\nThe app cannot answer that for itself: the cookie is ``HttpOnly``, which is\nthe point, so the page has to ask the side that can read it.",
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "title": "SessionState",
         "type": "object"
       },
       "SourceCompleteness": {
@@ -4667,6 +4695,78 @@
           }
         },
         "summary": "Read Article Workspace"
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Exchange the shared password for a session cookie.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "End the session by taking the cookie back.",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "description": "Whether the caller is signed in, asked rather than assumed.",
+        "operationId": "session_auth_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session",
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/executions/compare": {

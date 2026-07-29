@@ -236,20 +236,22 @@ async def test_a_jobs_progress_is_streamed_as_server_sent_events(
 
 
 def test_the_servable_application_is_wired_to_the_local_installation() -> None:
-    """``uvicorn groundscribe.api.asgi:app`` has to be a real, complete app.
+    """``uvicorn --factory groundscribe.api.asgi:served_app`` must be a real app.
 
-    Imported rather than exercised: building it must not touch a database — the
+    Built rather than exercised: building it must not touch a database — the
     runtime is a factory called per request — and asserting that here is what
-    keeps the import cheap enough to be a deployment's entry point.
+    keeps it cheap enough to be a deployment's entry point.
 
     Asked through its schema rather than through ``app.routes``, because an
     included router is one object there until the app is served; the schema is
     what a deployment and a client both actually see.
     """
-    from groundscribe.api.asgi import app as servable
+    from groundscribe.api.asgi import served_app
     from groundscribe.api.openapi import build_schema
 
-    paths = build_schema(servable)["paths"]
+    # A password, because serving without one is refused (phase 13's slice); the
+    # value is irrelevant to what this asserts.
+    paths = build_schema(served_app(environ={"GROUNDSCRIBE_PASSWORD": "x"}))["paths"]
 
     assert "/projects" in paths
     assert "/jobs/{job_id}/events" in paths

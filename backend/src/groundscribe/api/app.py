@@ -22,11 +22,12 @@ broke".
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from groundscribe.api import auth
 from groundscribe.api.routes import router
 from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
@@ -76,15 +77,53 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
 )
 
 
-def create_app(*, runtime_factory: RuntimeFactory) -> FastAPI:
-    """Build the API around a way of getting a runtime."""
+def create_app(*, runtime_factory: RuntimeFactory, password: str | None = None) -> FastAPI:
+    """Build the API around a way of getting a runtime.
+
+    ``password`` locks it. Given one, every request outside ``/auth`` must carry
+    a session cookie issued by :mod:`groundscribe.api.auth`; given ``None``, the
+    application is open.
+
+    Open is the default because the *library* has no business demanding a
+    credential — the suite builds hundreds of these to test something else
+    entirely, and a mandatory password would mean every one of them carrying a
+    secret to say nothing about security. The danger of the default is handled
+    where the application is actually served: :mod:`groundscribe.api.asgi`
+    refuses to start without one.
+    """
     app = FastAPI(title=TITLE, version=VERSION, description=DESCRIPTION)
     app.state.runtime_factory = runtime_factory
+    app.state.password = password
+    app.include_router(auth.router)
     app.include_router(router)
+
+    if password is not None:
+        app.middleware("http")(_require_session)
 
     for exception_type, status in _STATUS_FOR:
         app.add_exception_handler(exception_type, _handler(status))
     return app
+
+
+async def _require_session(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Refuse anything outside ``/auth`` that arrives without a valid session.
+
+    Middleware rather than a dependency, deliberately: a dependency protects the
+    routes that remember to ask for it, and the failure mode of that is an
+    endpoint added next month that quietly is not protected. This protects
+    everything, including paths that do not exist — a 401 for an unknown URL
+    also tells an unauthenticated caller nothing about what is served here.
+    """
+    password: str | None = request.app.state.password
+    if request.url.path.startswith(auth.PUBLIC_PREFIX):
+        return await call_next(request)
+    if password is not None and not auth.session_is_valid(
+        request.cookies.get(auth.SESSION_COOKIE), password
+    ):
+        return JSONResponse(status_code=401, content={"detail": "sign in first"})
+    return await call_next(request)
 
 
 def _handler(status: int) -> Callable[[Request, Exception], JSONResponse]:

@@ -20,13 +20,16 @@ own.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from groundscribe.api.app import create_app
+from groundscribe.api.asgi import served_app
 from groundscribe.api.auth import SESSION_COOKIE, SESSION_TTL_SECONDS, issue_session
+from groundscribe.config import PASSWORD_ENV
 from groundscribe.storage.snapshot_store import SnapshotStore
 from service_helpers import Harness, build_harness
 
@@ -144,6 +147,40 @@ def test_signing_out_ends_the_session(client: TestClient) -> None:
     assert client.post("/auth/logout").status_code == 204
     assert client.get("/auth/session").json() == {"authenticated": False}
     assert client.get("/projects/p1").status_code == 401
+
+
+# ----------------------------------------------------------------------
+# The application as it is actually served
+# ----------------------------------------------------------------------
+
+
+def test_the_served_application_will_not_start_without_a_password(tmp_path: Path) -> None:
+    """The default has to be safe where it is loaded by a person, not a test.
+
+    Refusing here is what makes the library's open default acceptable: the only
+    way to *serve* groundscribe is with a lock on it, and the failure names the
+    variable and the file rather than leaving someone to guess.
+    """
+    with pytest.raises(RuntimeError, match=PASSWORD_ENV):
+        served_app(environ={}, env_file=tmp_path / "absent")
+
+
+def test_the_served_application_is_locked_with_what_it_was_given(tmp_path: Path) -> None:
+    application = served_app(environ={PASSWORD_ENV: PASSWORD}, env_file=tmp_path / "absent")
+    served = TestClient(application, cookies=None)
+
+    assert served.get("/auth/session").json() == {"authenticated": False}
+    assert served.get("/projects/p1").status_code == 401
+
+
+def test_the_served_application_reads_the_password_from_the_env_file(tmp_path: Path) -> None:
+    """Which is the whole reason the file is read at all."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"{PASSWORD_ENV}={PASSWORD}\n", encoding="utf-8")
+
+    application = served_app(environ={}, env_file=env_file)
+
+    assert TestClient(application, cookies=None).get("/projects/p1").status_code == 401
 
 
 # ----------------------------------------------------------------------
