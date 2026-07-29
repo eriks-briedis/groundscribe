@@ -14,7 +14,10 @@ plan/14's deployment work builds on this).
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
+
+from sqlalchemy.engine import Engine
 
 from groundscribe.app.runtime import Runtime
 from groundscribe.db import create_engine, session_factory
@@ -37,6 +40,17 @@ DEFAULT_DATABASE_URL = "sqlite+pysqlite:///groundscribe.db"
 BLOB_ROOT_ENV = "GROUNDSCRIBE_BLOB_ROOT"
 
 
+@lru_cache(maxsize=1)
+def engine() -> Engine:
+    """The process's database engine, built once.
+
+    Cached because an engine owns a connection pool: building one per request
+    would open and discard a pool per command, which is the usual way a working
+    application becomes a slow one.
+    """
+    return create_engine(os.environ.get(DATABASE_URL_ENV, DEFAULT_DATABASE_URL))
+
+
 def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
     """Assemble the application layer against the local installation.
 
@@ -45,8 +59,7 @@ def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
     an external provider would be the opposite of what plan/00 promises — so a
     stage that needs one fails loudly saying which provider it wanted.
     """
-    engine = create_engine(os.environ.get(DATABASE_URL_ENV, DEFAULT_DATABASE_URL))
-    session = session_factory(engine)()
+    session = session_factory(engine())()
     blob_root = Path(os.environ.get(BLOB_ROOT_ENV) or repo_root() / "var" / "blobs")
     snapshots = SnapshotStore(session, BlobStore(blob_root))
     recorder = ProvenanceRecorder(session, snapshots)
@@ -65,4 +78,10 @@ def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
     )
 
 
-__all__ = ["BLOB_ROOT_ENV", "DATABASE_URL_ENV", "DEFAULT_DATABASE_URL", "build_runtime"]
+__all__ = [
+    "BLOB_ROOT_ENV",
+    "DATABASE_URL_ENV",
+    "DEFAULT_DATABASE_URL",
+    "build_runtime",
+    "engine",
+]
