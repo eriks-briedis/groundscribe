@@ -47,6 +47,16 @@ stop() {
 }
 trap stop EXIT INT TERM
 
+# The API refuses to start without a password, which is the point; rather than
+# fail a person's first run, write one and say what it is. Anything already in
+# the file or the environment is left alone.
+if [[ -z "${GROUNDSCRIBE_PASSWORD:-}" ]] && ! grep -qs '^GROUNDSCRIBE_PASSWORD=' .env; then
+  generated="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)"
+  printf 'GROUNDSCRIBE_PASSWORD=%s\n' "$generated" >> .env
+  echo "→ wrote a password to .env: ${generated}"
+  echo "  (change it there; it is the only credential this installation has)"
+fi
+
 echo "→ migrating the database"
 uv run alembic upgrade head >/dev/null
 
@@ -56,7 +66,7 @@ if [[ ! -d frontend/node_modules ]]; then
 fi
 
 echo "→ api"
-uv run uvicorn groundscribe.api.asgi:app --host "$HOST" --port "$API_PORT" &
+uv run uvicorn --factory groundscribe.api.asgi:served_app --host "$HOST" --port "$API_PORT" &
 pids+=("$!")
 
 # The CLI's worker drains the queue and exits — deliberately, so a crash halfway
@@ -89,9 +99,8 @@ if [[ "$HOST" == "0.0.0.0" ]]; then
     echo "    http://${address}:${WEB_PORT}"
   done
   echo
-  echo "  Nothing here asks who you are: anything that reaches this port can"
-  echo "  approve articles, cancel runs and read the whole trace. Phase 13 is"
-  echo "  where authentication lands."
+  echo "  The password is in .env. It crosses the network in the clear —"
+  echo "  this is plain HTTP — so treat the network itself as the boundary."
   echo
 fi
 

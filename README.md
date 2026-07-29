@@ -97,7 +97,7 @@ it. Nothing that talks to a provider happens inside an HTTP request.
 uv run alembic upgrade head
 
 # serve the API (interactive docs at /docs)
-uv run uvicorn groundscribe.api.asgi:app
+uv run uvicorn --factory groundscribe.api.asgi:served_app
 
 # drain whatever is queued, recovering anything a previous worker abandoned
 uv run writer worker run
@@ -128,6 +128,18 @@ command issued mid-stage to wait for it. No provider client is registered by def
 local-first tool that silently reached an external provider would be the opposite
 of what it promises, so a stage that needs one fails loudly naming it.
 
+### Signing in
+
+One shared password, in `.env` (see `.env.example`), exchanged at `/auth/login`
+for a signed `HttpOnly` cookie that lasts a week. Everything outside `/auth` is
+refused without it, including paths that do not exist.
+
+It is a lock on the front door and not much more: no accounts, no TLS, no rate
+limiting, and every human action is still attributed to the same author — whoever
+holds the password *is* that author as far as the system can tell. The password
+travels in clear text over plain HTTP, so the network is the real boundary. The
+rest is plan/13.
+
 ### The API contract
 
 `contracts/openapi.json` is generated from the app and committed, so a contract
@@ -149,9 +161,12 @@ HOST=0.0.0.0 scripts/dev.sh   # the same, reachable from the LAN
 
 Three processes, because the system is three: an API that queues work, a worker
 that does it, and the web app. `HOST`, `API_PORT`, `WEB_PORT` and `POLL` are the
-knobs; Ctrl-C stops all three. Nothing in the app asks who you are, so binding to
-`0.0.0.0` hands the whole pipeline to anything on the network — phase 13 is where
-authentication lands.
+knobs; Ctrl-C stops all three.
+
+On the first run it writes a random `GROUNDSCRIBE_PASSWORD` into `.env` and
+prints it — the API refuses to start without one. Change it there; it is the
+only credential this installation has, and the session cookie is signed with a
+key derived from it, so changing it signs every browser out.
 
 The processes are also worth knowing individually:
 
