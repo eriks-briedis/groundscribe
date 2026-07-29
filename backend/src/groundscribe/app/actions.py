@@ -108,9 +108,7 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
 #: endpoint, which is the same duplication ``ACTION_ENDPOINTS`` exists to avoid.
 STATE_COMMANDS: Mapping[WorkflowState, Endpoint] = {
     WorkflowState.DRAFT_GENERATING: Endpoint("POST", "/articles/{article_id}/draft", ARTICLE),
-    WorkflowState.SUBSTANTIVE_REVIEWING: Endpoint(
-        "POST", "/articles/{article_id}/review", ARTICLE
-    ),
+    WorkflowState.SUBSTANTIVE_REVIEWING: Endpoint("POST", "/articles/{article_id}/review", ARTICLE),
     WorkflowState.REVISION_PLAN_REQUIRED: Endpoint(
         "POST", "/articles/{article_id}/revision-plan", ARTICLE
     ),
