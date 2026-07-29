@@ -33,7 +33,9 @@ from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import UnknownProject
+from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
+from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
 from groundscribe.workflow.errors import (
     ArtifactProvenanceError,
     AttributionRequired,
@@ -78,6 +80,12 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # Asked to repeat something that was never queued, or whose inputs are gone.
     # 409: the request is well formed and the *execution* cannot support it.
     (NotRerunnable, 409),
+    # Phase 12. An experiment described in a way that cannot produce a comparison
+    # is a bad payload (422); a judgement filed against an arm that does not
+    # exist names something missing (404).
+    (IncomparableExperiment, 422),
+    (SensitiveProject, 422),
+    (UnknownArm, 404),
 )
 
 

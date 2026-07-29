@@ -20,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from groundscribe.app.views import ComparisonRow
 from groundscribe.domain.enums import AnswerResponse, FindingStatus, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.experiments.metrics import ArmMetrics
+from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.schemas import Job
 from groundscribe.provenance.enums import ActorType, ExecutionStatus, InvocationOutcome
 from groundscribe.voice.enums import VoiceScope
@@ -90,8 +92,112 @@ class ActorAction(BaseModel):
     actor_id: str
 
 
+class BuildDataset(BaseModel):
+    """Building an evaluation corpus out of approved work (plan/12)."""
+
+    name: str
+    created_by: str
+    description: str = ""
+    #: Sensitive projects the caller is explicitly letting in, by id. Never a
+    #: flag meaning "all of them": that is a decision made once, in a hurry,
+    #: about projects that do not exist yet.
+    include_sensitive: list[str] = Field(default_factory=list)
+
+
+class DatasetEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    ordinal: int
+    project_id: str
+    label: str
+    stage_execution_id: str
+    reference_snapshot_id: str
+
+
+class DatasetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str
+    created_by: str
+    created_at: datetime
+    sensitive_included: list[str] = Field(default_factory=list)
+    entries: list[DatasetEntryOut] = Field(default_factory=list)
+
+
+class ArmIn(BaseModel):
+    """One configuration to put under test."""
+
+    label: str
+    baseline: bool = False
+    variables: ForkVariables = Field(default_factory=ForkVariables)
+
+
 class CreateExperiment(BaseModel):
     name: str
+    dataset_id: str
+    created_by: str
+    description: str = ""
+    arms: list[ArmIn] = Field(default_factory=list)
+
+
+class ArmOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    label: str
+    baseline: bool
+    ordinal: int
+    variables: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExperimentResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    arm_id: str
+    entry_id: str
+    job_id: str | None = None
+    stage_execution_id: str | None = None
+    status: ExecutionStatus
+    error_message: str | None = None
+
+
+class RecordPreference(BaseModel):
+    """A person saying which arm did better on one example."""
+
+    entry_id: str
+    arm_id: str
+    decided_by: str
+    reason: str = ""
+
+
+class PreferenceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    entry_id: str
+    preferred_arm_id: str
+    decided_by: str
+    reason: str
+
+
+class GuaranteeOut(BaseModel):
+    """One clause of the reproducibility contract (plan/12).
+
+    Served rather than documented, because the question it answers is asked
+    while looking at two executions — not while reading a README.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    title: str
+    detail: str
+    promised: bool
+    evidence: str
 
 
 class ApproveSuggestion(BaseModel):
@@ -238,15 +344,19 @@ class ExecutionComparison(BaseModel):
 
     The summaries are what phase 09 returned; ``differences`` and the distance
     are what a comparison screen needs on top of them — the fields that differ,
-    named one per row, and how far the two outputs sit apart. Only what both
-    sides recorded is compared: human preference is phase 12's, and a column for
-    it here would be a promise this phase cannot keep.
+    named one per row, and how far the two outputs sit apart.
+
+    ``reproducibility`` travels with the comparison because plan/12's named risk
+    is a misleading reproducibility claim, and this is the screen where one gets
+    made: two outputs differing is a fact, and what that difference *proves*
+    depends on a contract the reader has to be holding at the time.
     """
 
     left: ExecutionSummary
     right: ExecutionSummary
     differences: list[ComparisonRow] = Field(default_factory=list)
     output_edit_distance: int | None = None
+    reproducibility: list[GuaranteeOut] = Field(default_factory=list)
 
 
 class ExperimentOut(BaseModel):
@@ -254,8 +364,26 @@ class ExperimentOut(BaseModel):
 
     id: str
     name: str
+    description: str = ""
     status: ExecutionStatus
+    dataset_id: str | None = None
+    created_by: str | None = None
     created_at: datetime
+    completed_at: datetime | None = None
+    arms: list[ArmOut] = Field(default_factory=list)
+
+
+class ExperimentReportOut(BaseModel):
+    """One experiment, its per-example results, and the aggregate table.
+
+    All three, because an aggregate a reader cannot open into the runs behind it
+    is a summary they have to take on trust — which is what this whole phase
+    exists to avoid.
+    """
+
+    experiment: ExperimentOut
+    results: list[ExperimentResultOut] = Field(default_factory=list)
+    comparison: list[ArmMetrics] = Field(default_factory=list)
 
 
 __all__ = [
@@ -263,16 +391,26 @@ __all__ = [
     "ActorAction",
     "AnswerGap",
     "ApproveSuggestion",
+    "ArmIn",
+    "ArmOut",
+    "BuildDataset",
     "CommandResponse",
     "CreateExperiment",
     "CreateProject",
+    "DatasetEntryOut",
+    "DatasetOut",
     "EffectiveVoice",
     "ExecutionComparison",
     "ExecutionSummary",
     "ExperimentOut",
+    "ExperimentReportOut",
+    "ExperimentResultOut",
     "ExtractSourceModel",
+    "GuaranteeOut",
     "ImportSource",
     "ModelInvocationOut",
+    "PreferenceOut",
+    "RecordPreference",
     "RejectSuggestion",
     "TraceEventOut",
     "UpdateArchitecture",

@@ -40,13 +40,23 @@ from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import AnswerResponse, ArtifactType, SourceFormat
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.experiments.datasets import DatasetBuilder
+from groundscribe.experiments.metrics import ArmMetrics
+from groundscribe.experiments.models import (
+    EvaluationDataset,
+    EvaluationDatasetEntry,
+    ExperimentArm,
+    ExperimentPreference,
+    ExperimentResult,
+)
 from groundscribe.experiments.replay import Rerun as ExperimentRerun
 from groundscribe.experiments.replay import plan_rerun
+from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
 from groundscribe.provenance import models
-from groundscribe.provenance.enums import ActorType, ExecutionStatus
+from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageRunner
 from groundscribe.stages.ingestion import IngestSource
 from groundscribe.stages.override import (
@@ -91,6 +101,21 @@ class CommandResult:
     available_actions: tuple[str, ...]
     job: Job | None = None
     detail: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ExperimentReport:
+    """One experiment as a client reads it: the arms, every result, the table.
+
+    All three together, because plan/12 asks for *per-example results* and an
+    *aggregate comparison* and an aggregate a reader cannot open into the runs
+    behind it is a summary they have to take on trust.
+    """
+
+    experiment: models.ExperimentRun
+    arms: tuple[ExperimentArm, ...]
+    results: tuple[ExperimentResult, ...]
+    comparison: tuple[ArmMetrics, ...]
 
 
 @dataclass(frozen=True)
@@ -597,17 +622,127 @@ class ApplicationService:
             raise UnknownProject(f"no job {job_id}")
         return job
 
-    def create_experiment(self, *, name: str) -> models.ExperimentRun:
-        """Open an experiment record. Phase 12 fills in what it means."""
-        experiment = models.ExperimentRun(
-            id=uuid.uuid4().hex,
+    # ------------------------------------------------------------------
+    # Experimentation (phase 12)
+    # ------------------------------------------------------------------
+
+    def build_dataset(
+        self,
+        *,
+        name: str,
+        created_by: str,
+        description: str = "",
+        include_sensitive: Sequence[str] = (),
+    ) -> EvaluationDataset:
+        """Build an evaluation corpus out of the runs a person approved."""
+        return self._datasets().build(
             name=name,
-            status=ExecutionStatus.PENDING,
-            created_at=self._runtime.clock(),
+            created_by=created_by,
+            description=description,
+            include_sensitive=include_sensitive,
         )
-        self._runtime.session.add(experiment)
-        self._runtime.session.flush()
+
+    def datasets(self) -> tuple[EvaluationDataset, ...]:
+        """Every corpus built so far, oldest first."""
+        return tuple(
+            self._runtime.session.scalars(
+                select(EvaluationDataset).order_by(
+                    EvaluationDataset.created_at, EvaluationDataset.id
+                )
+            )
+        )
+
+    def dataset(self, dataset_id: str) -> EvaluationDataset:
+        dataset = self._runtime.session.get(EvaluationDataset, dataset_id)
+        if dataset is None:
+            raise UnknownProject(f"no evaluation dataset {dataset_id}")
+        return dataset
+
+    def create_experiment(
+        self,
+        *,
+        name: str,
+        dataset_id: str,
+        created_by: str,
+        arms: Sequence[ArmSpec],
+        description: str = "",
+    ) -> models.ExperimentRun:
+        """Open an experiment over one corpus, with the configurations to compare."""
+        return self._experiments().create(
+            name=name,
+            dataset=self.dataset(dataset_id),
+            created_by=created_by,
+            arms=arms,
+            description=description,
+        )
+
+    def start_experiment(self, experiment_id: str) -> tuple[ExperimentResult, ...]:
+        """Queue every arm against every example.
+
+        The work goes to the worker like all model work, so this returns the
+        pending results rather than the answer: an experiment over a corpus is
+        the longest-running thing this system does, and a request that waited for
+        it would be a request that times out.
+        """
+        return self._experiments().start(self.experiment(experiment_id))
+
+    def experiment(self, experiment_id: str) -> models.ExperimentRun:
+        experiment = self._runtime.session.get(models.ExperimentRun, experiment_id)
+        if experiment is None:
+            raise UnknownProject(f"no experiment {experiment_id}")
         return experiment
+
+    def experiment_report(self, experiment_id: str) -> ExperimentReport:
+        """One experiment, its per-example results and the aggregate table."""
+        experiment = self.experiment(experiment_id)
+        runner = self._experiments()
+        runner.collect(experiment)
+        return ExperimentReport(
+            experiment=experiment,
+            arms=runner.arms(experiment),
+            results=runner.results(experiment),
+            comparison=runner.compare(experiment),
+        )
+
+    def prefer_arm(
+        self,
+        experiment_id: str,
+        *,
+        entry_id: str,
+        arm_id: str,
+        decided_by: str,
+        reason: str = "",
+    ) -> ExperimentPreference:
+        """Record which arm a person judged better on one example."""
+        session = self._runtime.session
+        entry = session.get(EvaluationDatasetEntry, entry_id)
+        arm = session.get(ExperimentArm, arm_id)
+        if entry is None:
+            raise UnknownProject(f"no dataset entry {entry_id}")
+        if arm is None:
+            raise UnknownArm(f"no experiment arm {arm_id}")
+        return self._experiments().prefer(
+            self.experiment(experiment_id),
+            entry=entry,
+            arm=arm,
+            decided_by=decided_by,
+            reason=reason,
+        )
+
+    def _datasets(self) -> DatasetBuilder:
+        return DatasetBuilder(
+            self._runtime.session,
+            snapshots=self._runtime.snapshots,
+            clock=self._runtime.clock,
+        )
+
+    def _experiments(self) -> ExperimentRunner:
+        return ExperimentRunner(
+            self._runtime.session,
+            queue=self._runtime.queue,
+            snapshots=self._runtime.snapshots,
+            clock=self._runtime.clock,
+        )
 
     # ------------------------------------------------------------------
     # Internals

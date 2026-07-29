@@ -39,9 +39,12 @@ from groundscribe.app.views import (
     TraceFilter,
     TraceView,
 )
+from groundscribe.experiments.reproducibility import contract
+from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkRequest
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
+from groundscribe.provenance import models
 from groundscribe.voice.schemas import VoiceProfileDocument
 
 router = APIRouter()
@@ -578,6 +581,10 @@ def compare_executions(
         right=schemas.ExecutionSummary.model_validate(second),
         differences=differences,
         output_edit_distance=distance,
+        # Carried with the comparison rather than looked up beside it: plan/12's
+        # risk is a misleading reproducibility claim, and this is the screen
+        # where one gets made.
+        reproducibility=[schemas.GuaranteeOut.model_validate(item) for item in contract()],
     )
 
 
@@ -654,10 +661,116 @@ def fork_execution(
 # ----------------------------------------------------------------------
 
 
+@router.get("/reproducibility", response_model=list[schemas.GuaranteeOut])
+def read_reproducibility() -> list[schemas.GuaranteeOut]:
+    """What repeating work here does and does not guarantee (plan/12).
+
+    An endpoint rather than documentation because the question is asked while
+    looking at two executions, not while reading a README.
+    """
+    return [schemas.GuaranteeOut.model_validate(item) for item in contract()]
+
+
+@router.post("/evaluation-datasets", response_model=schemas.DatasetOut, status_code=201)
+def build_dataset(body: schemas.BuildDataset, service: Service) -> schemas.DatasetOut:
+    """Build an evaluation corpus out of the runs a person approved."""
+    return schemas.DatasetOut.model_validate(
+        service.build_dataset(
+            name=body.name,
+            created_by=body.created_by,
+            description=body.description,
+            include_sensitive=body.include_sensitive,
+        )
+    )
+
+
+@router.get("/evaluation-datasets", response_model=list[schemas.DatasetOut])
+def list_datasets(service: Service) -> list[schemas.DatasetOut]:
+    """Every corpus built so far."""
+    return [schemas.DatasetOut.model_validate(dataset) for dataset in service.datasets()]
+
+
+@router.get("/evaluation-datasets/{dataset_id}", response_model=schemas.DatasetOut)
+def read_dataset(dataset_id: str, service: Service) -> schemas.DatasetOut:
+    """One corpus, with the examples it holds."""
+    return schemas.DatasetOut.model_validate(service.dataset(dataset_id))
+
+
 @router.post("/experiments", response_model=schemas.ExperimentOut, status_code=201)
 def create_experiment(body: schemas.CreateExperiment, service: Service) -> schemas.ExperimentOut:
-    """Open an experiment record; phase 12 fills in what it means."""
-    return schemas.ExperimentOut.model_validate(service.create_experiment(name=body.name))
+    """Open an experiment over one corpus, with the configurations to compare."""
+    experiment = service.create_experiment(
+        name=body.name,
+        dataset_id=body.dataset_id,
+        created_by=body.created_by,
+        description=body.description,
+        arms=[
+            ArmSpec(label=arm.label, baseline=arm.baseline, variables=arm.variables)
+            for arm in body.arms
+        ],
+    )
+    return _experiment_out(service, experiment)
+
+
+@router.post(
+    "/experiments/{experiment_id}/start",
+    response_model=list[schemas.ExperimentResultOut],
+    status_code=202,
+)
+def start_experiment(experiment_id: str, service: Service) -> list[schemas.ExperimentResultOut]:
+    """Queue every arm against every example.
+
+    Answers with the pending results rather than the comparison: an experiment
+    over a corpus is the longest-running thing this system does, and a request
+    that waited for it would be a request that times out.
+    """
+    return [
+        schemas.ExperimentResultOut.model_validate(result)
+        for result in service.start_experiment(experiment_id)
+    ]
+
+
+@router.get("/experiments/{experiment_id}", response_model=schemas.ExperimentReportOut)
+def read_experiment(experiment_id: str, service: Service) -> schemas.ExperimentReportOut:
+    """One experiment: its arms, every per-example result, and the table."""
+    report = service.experiment_report(experiment_id)
+    return schemas.ExperimentReportOut(
+        experiment=schemas.ExperimentOut(
+            **schemas.ExperimentOut.model_validate(report.experiment).model_dump(exclude={"arms"}),
+            arms=[schemas.ArmOut.model_validate(arm) for arm in report.arms],
+        ),
+        results=[schemas.ExperimentResultOut.model_validate(item) for item in report.results],
+        comparison=list(report.comparison),
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/preferences",
+    response_model=schemas.PreferenceOut,
+    status_code=201,
+)
+def record_preference(
+    experiment_id: str, body: schemas.RecordPreference, service: Service
+) -> schemas.PreferenceOut:
+    """Record which arm a person judged better on one example."""
+    return schemas.PreferenceOut.model_validate(
+        service.prefer_arm(
+            experiment_id,
+            entry_id=body.entry_id,
+            arm_id=body.arm_id,
+            decided_by=body.decided_by,
+            reason=body.reason,
+        )
+    )
+
+
+def _experiment_out(service: Service, experiment: models.ExperimentRun) -> schemas.ExperimentOut:
+    """One experiment with its arms attached, which is how a client reads it."""
+    report = service.experiment_report(experiment.id)
+    return schemas.ExperimentOut(
+        **schemas.ExperimentOut.model_validate(experiment).model_dump(exclude={"arms"}),
+        arms=[schemas.ArmOut.model_validate(arm) for arm in report.arms],
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=Job)

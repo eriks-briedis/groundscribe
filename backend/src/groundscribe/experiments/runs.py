@@ -64,6 +64,15 @@ class UnknownArm(LookupError):
     """A judgement was filed against an arm this experiment does not have."""
 
 
+class IncomparableExperiment(ValueError):
+    """An experiment was described in a way that could not produce a comparison.
+
+    A ``ValueError`` because the request is malformed rather than the system
+    being in the wrong state — which is also the distinction the API's status
+    map draws between 422 and 409.
+    """
+
+
 @dataclass(frozen=True)
 class ArmSpec:
     """One configuration to put under test.
@@ -115,7 +124,7 @@ class ExperimentRunner:
         from — and be read as though the first arm were it.
         """
         if not any(arm.baseline for arm in arms):
-            raise ValueError(
+            raise IncomparableExperiment(
                 "an experiment needs a baseline arm; a comparison with nothing to compare "
                 "against reports differences from whichever arm was listed first"
             )
@@ -493,4 +502,4 @@ def _body_of(snapshots: SnapshotStore, snapshot: ArtifactSnapshot) -> str:
     return str(payload.get("body", ""))
 
 
-__all__ = ["ArmSpec", "ExperimentRunner", "UnknownArm"]
+__all__ = ["ArmSpec", "ExperimentRunner", "IncomparableExperiment", "UnknownArm"]

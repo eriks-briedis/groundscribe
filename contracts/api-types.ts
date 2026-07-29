@@ -364,6 +364,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evaluation-datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Datasets
+         * @description Every corpus built so far.
+         */
+        get: operations["list_datasets_evaluation_datasets_get"];
+        put?: never;
+        /**
+         * Build Dataset
+         * @description Build an evaluation corpus out of the runs a person approved.
+         */
+        post: operations["build_dataset_evaluation_datasets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evaluation-datasets/{dataset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Dataset
+         * @description One corpus, with the examples it holds.
+         */
+        get: operations["read_dataset_evaluation_datasets__dataset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/executions/compare": {
         parameters: {
             query?: never;
@@ -521,9 +565,73 @@ export interface paths {
         put?: never;
         /**
          * Create Experiment
-         * @description Open an experiment record; phase 12 fills in what it means.
+         * @description Open an experiment over one corpus, with the configurations to compare.
          */
         post: operations["create_experiment_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Experiment
+         * @description One experiment: its arms, every per-example result, and the table.
+         */
+        get: operations["read_experiment_experiments__experiment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Preference
+         * @description Record which arm a person judged better on one example.
+         */
+        post: operations["record_preference_experiments__experiment_id__preferences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Experiment
+         * @description Queue every arm against every example.
+         *
+         *     Answers with the pending results rather than the comparison: an experiment
+         *     over a corpus is the longest-running thing this system does, and a request
+         *     that waited for it would be a request that times out.
+         */
+        post: operations["start_experiment_experiments__experiment_id__start_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -886,6 +994,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reproducibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Reproducibility
+         * @description What repeating work here does and does not guarantee (plan/12).
+         *
+         *     An endpoint rather than documentation because the question is asked while
+         *     looking at two executions, not while reading a README.
+         */
+        get: operations["read_reproducibility_reproducibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/voice/profiles": {
         parameters: {
             query?: never;
@@ -1192,6 +1323,78 @@ export interface components {
             summary: string;
         };
         /**
+         * ArmIn
+         * @description One configuration to put under test.
+         */
+        ArmIn: {
+            /**
+             * Baseline
+             * @default false
+             */
+            baseline: boolean;
+            /** Label */
+            label: string;
+            variables?: components["schemas"]["ForkVariables"];
+        };
+        /**
+         * ArmMetrics
+         * @description One configuration's row in the comparison table.
+         */
+        ArmMetrics: {
+            /** Arm Id */
+            arm_id: string;
+            /** Average Revision Rounds */
+            average_revision_rounds?: number | null;
+            /** Baseline */
+            baseline: boolean;
+            /** Completed */
+            completed: number;
+            /**
+             * Confidentiality Failures
+             * @default 0
+             */
+            confidentiality_failures: number;
+            /** Examples */
+            examples: number;
+            /** Final Acceptance Rate */
+            final_acceptance_rate?: number | null;
+            /** Human Preference */
+            human_preference?: number | null;
+            /** Label */
+            label: string;
+            /** Manual Edit Distance */
+            manual_edit_distance?: number | null;
+            /** Mean Latency Ms */
+            mean_latency_ms?: number | null;
+            /** Pass Rate */
+            pass_rate?: number | null;
+            /** Reviewer Disagreement */
+            reviewer_disagreement?: number | null;
+            /** Schema Failure Rate */
+            schema_failure_rate?: number | null;
+            /** Stagnation Frequency */
+            stagnation_frequency?: number | null;
+            /** Total Cost Usd */
+            total_cost_usd?: number | null;
+            /** Unsupported Claim Rate */
+            unsupported_claim_rate?: number | null;
+        };
+        /** ArmOut */
+        ArmOut: {
+            /** Baseline */
+            baseline: boolean;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Variables */
+            variables?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * ArticleCard
          * @description One article as the dashboard lists it.
          */
@@ -1312,6 +1515,23 @@ export interface components {
             size: number;
             /** Snapshot Id */
             snapshot_id: string;
+        };
+        /**
+         * BuildDataset
+         * @description Building an evaluation corpus out of approved work (plan/12).
+         */
+        BuildDataset: {
+            /** Created By */
+            created_by: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Include Sensitive */
+            include_sensitive?: string[];
+            /** Name */
+            name: string;
         };
         /** ClaimView */
         ClaimView: {
@@ -1440,6 +1660,17 @@ export interface components {
         };
         /** CreateExperiment */
         CreateExperiment: {
+            /** Arms */
+            arms?: components["schemas"]["ArmIn"][];
+            /** Created By */
+            created_by: string;
+            /** Dataset Id */
+            dataset_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Name */
             name: string;
         };
@@ -1462,6 +1693,41 @@ export interface components {
             description: string;
             /** Title */
             title: string;
+        };
+        /** DatasetEntryOut */
+        DatasetEntryOut: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Project Id */
+            project_id: string;
+            /** Reference Snapshot Id */
+            reference_snapshot_id: string;
+            /** Stage Execution Id */
+            stage_execution_id: string;
+        };
+        /** DatasetOut */
+        DatasetOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Description */
+            description: string;
+            /** Entries */
+            entries?: components["schemas"]["DatasetEntryOut"][];
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sensitive Included */
+            sensitive_included?: string[];
         };
         /** DecisionView */
         DecisionView: {
@@ -1671,9 +1937,12 @@ export interface components {
          *
          *     The summaries are what phase 09 returned; ``differences`` and the distance
          *     are what a comparison screen needs on top of them — the fields that differ,
-         *     named one per row, and how far the two outputs sit apart. Only what both
-         *     sides recorded is compared: human preference is phase 12's, and a column for
-         *     it here would be a promise this phase cannot keep.
+         *     named one per row, and how far the two outputs sit apart.
+         *
+         *     ``reproducibility`` travels with the comparison because plan/12's named risk
+         *     is a misleading reproducibility claim, and this is the screen where one gets
+         *     made: two outputs differing is a fact, and what that difference *proves*
+         *     depends on a contract the reader has to be holding at the time.
          */
         ExecutionComparison: {
             /** Differences */
@@ -1681,6 +1950,8 @@ export interface components {
             left: components["schemas"]["ExecutionSummary"];
             /** Output Edit Distance */
             output_edit_distance?: number | null;
+            /** Reproducibility */
+            reproducibility?: components["schemas"]["GuaranteeOut"][];
             right: components["schemas"]["ExecutionSummary"];
         };
         /**
@@ -1753,15 +2024,59 @@ export interface components {
         };
         /** ExperimentOut */
         ExperimentOut: {
+            /** Arms */
+            arms?: components["schemas"]["ArmOut"][];
+            /** Completed At */
+            completed_at?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            /** Dataset Id */
+            dataset_id?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Id */
             id: string;
             /** Name */
             name: string;
+            status: components["schemas"]["ExecutionStatus"];
+        };
+        /**
+         * ExperimentReportOut
+         * @description One experiment, its per-example results, and the aggregate table.
+         *
+         *     All three, because an aggregate a reader cannot open into the runs behind it
+         *     is a summary they have to take on trust — which is what this whole phase
+         *     exists to avoid.
+         */
+        ExperimentReportOut: {
+            /** Comparison */
+            comparison?: components["schemas"]["ArmMetrics"][];
+            experiment: components["schemas"]["ExperimentOut"];
+            /** Results */
+            results?: components["schemas"]["ExperimentResultOut"][];
+        };
+        /** ExperimentResultOut */
+        ExperimentResultOut: {
+            /** Arm Id */
+            arm_id: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Error Message */
+            error_message?: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Stage Execution Id */
+            stage_execution_id?: string | null;
             status: components["schemas"]["ExecutionStatus"];
         };
         /**
@@ -1929,6 +2244,25 @@ export interface components {
             temperature?: number | null;
             /** Voice Profile */
             voice_profile?: string | null;
+        };
+        /**
+         * GuaranteeOut
+         * @description One clause of the reproducibility contract (plan/12).
+         *
+         *     Served rather than documented, because the question it answers is asked
+         *     while looking at two executions — not while reading a README.
+         */
+        GuaranteeOut: {
+            /** Detail */
+            detail: string;
+            /** Evidence */
+            evidence: string;
+            /** Name */
+            name: string;
+            /** Promised */
+            promised: boolean;
+            /** Title */
+            title: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2271,6 +2605,19 @@ export interface components {
             /** Template Version */
             template_version: string;
         };
+        /** PreferenceOut */
+        PreferenceOut: {
+            /** Decided By */
+            decided_by: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Id */
+            id: string;
+            /** Preferred Arm Id */
+            preferred_arm_id: string;
+            /** Reason */
+            reason: string;
+        };
         /**
          * ProjectCard
          * @description One project as the way-in lists it.
@@ -2405,6 +2752,23 @@ export interface components {
              * @default
              */
             why_it_matters: string;
+        };
+        /**
+         * RecordPreference
+         * @description A person saying which arm did better on one example.
+         */
+        RecordPreference: {
+            /** Arm Id */
+            arm_id: string;
+            /** Decided By */
+            decided_by: string;
+            /** Entry Id */
+            entry_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /**
          * RejectSuggestion
@@ -3632,6 +3996,90 @@ export interface operations {
             };
         };
     };
+    list_datasets_evaluation_datasets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetOut"][];
+                };
+            };
+        };
+    };
+    build_dataset_evaluation_datasets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildDataset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_dataset_evaluation_datasets__dataset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     compare_executions_executions_compare_get: {
         parameters: {
             query: {
@@ -3878,6 +4326,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExperimentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_experiment_experiments__experiment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_preference_experiments__experiment_id__preferences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordPreference"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferenceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_experiment_experiments__experiment_id__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentResultOut"][];
                 };
             };
             /** @description Validation Error */
@@ -4470,6 +5015,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_reproducibility_reproducibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuaranteeOut"][];
                 };
             };
         };

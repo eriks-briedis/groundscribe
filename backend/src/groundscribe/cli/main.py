@@ -31,6 +31,8 @@ from groundscribe.app.handlers import stage_handlers
 from groundscribe.app.services import ApplicationService
 from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.experiments.reproducibility import contract
+from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
 from groundscribe.voice.schemas import VoiceProfileDocument
@@ -343,11 +345,126 @@ def experiment_compare(left: str, right: str) -> None:
         typer.echo(f"{second.id} {second.stage} {second.status.value}")
 
 
-@experiment_app.command("create")
-def experiment_create(name: str) -> None:
-    """Open an experiment record."""
+@experiment_app.command("dataset")
+def experiment_dataset(
+    name: str,
+    created_by: Annotated[str, typer.Option(help="Who is building the corpus.")],
+    description: Annotated[str, typer.Option()] = "",
+    include: Annotated[
+        list[str] | None,
+        typer.Option(help="A sensitive project to let in, by id. Repeatable."),
+    ] = None,
+) -> None:
+    """Build an evaluation corpus out of the runs a person approved."""
     with _command() as service:
-        typer.echo(service.create_experiment(name=name).id)
+        dataset = service.build_dataset(
+            name=name,
+            created_by=created_by,
+            description=description,
+            include_sensitive=include or (),
+        )
+        typer.echo(f"{dataset.id} {len(dataset.entries)} example(s)")
+
+
+@experiment_app.command("create")
+def experiment_create(
+    name: str,
+    dataset: Annotated[str, typer.Option(help="The corpus to run over.")],
+    created_by: Annotated[str, typer.Option(help="Who is asking.")],
+    arm: Annotated[
+        list[str] | None,
+        typer.Option(
+            help=(
+                "An arm as label=variable=value, or just a label for the baseline. "
+                "Repeatable; the first arm is the baseline."
+            )
+        ),
+    ] = None,
+) -> None:
+    """Open an experiment over one corpus, with the configurations to compare."""
+    with _command() as service:
+        typer.echo(
+            service.create_experiment(
+                name=name,
+                dataset_id=dataset,
+                created_by=created_by,
+                arms=_arms(arm or []),
+            ).id
+        )
+
+
+@experiment_app.command("start")
+def experiment_start(experiment: str) -> None:
+    """Queue every arm against every example."""
+    with _command() as service:
+        results = service.start_experiment(experiment)
+        typer.echo(f"queued {len(results)} run(s)")
+
+
+@experiment_app.command("report")
+def experiment_report(experiment: str) -> None:
+    """The aggregate table, one row per arm."""
+    with _command() as service:
+        for row in service.experiment_report(experiment).comparison:
+            marker = "*" if row.baseline else " "
+            typer.echo(
+                f"{marker} {row.label}: {row.completed}/{row.examples} completed, "
+                f"pass {_number(row.pass_rate)}, preference {_number(row.human_preference)}, "
+                f"cost {_number(row.total_cost_usd)}"
+            )
+
+
+@experiment_app.command("prefer")
+def experiment_prefer(
+    experiment: str,
+    entry: Annotated[str, typer.Option(help="Which example was judged.")],
+    arm: Annotated[str, typer.Option(help="Which arm did better.")],
+    decided_by: Annotated[str, typer.Option(help="Who judged it.")],
+    reason: Annotated[str, typer.Option()] = "",
+) -> None:
+    """Record which arm a person judged better on one example."""
+    with _command() as service:
+        typer.echo(
+            service.prefer_arm(
+                experiment, entry_id=entry, arm_id=arm, decided_by=decided_by, reason=reason
+            ).id
+        )
+
+
+@experiment_app.command("reproducibility")
+def experiment_reproducibility() -> None:
+    """What repeating work here does and does not guarantee."""
+    for item in contract():
+        typer.echo(f"{'yes' if item.promised else 'NO '} {item.title}")
+        typer.echo(f"    {item.detail}")
+
+
+def _arms(specs: list[str]) -> list[ArmSpec]:
+    """Parse ``label`` / ``label=variable=value`` into arms, the first as baseline.
+
+    Deliberately thin. A richer syntax would be a second way to express what the
+    fork vocabulary already expresses, and the two would disagree about what a
+    candidate is.
+    """
+    arms: list[ArmSpec] = []
+    for ordinal, spec in enumerate(specs):
+        label, _, assignment = spec.partition("=")
+        variable, _, value = assignment.partition("=")
+        arms.append(
+            ArmSpec(
+                label=label,
+                baseline=ordinal == 0,
+                variables=(
+                    ForkVariables.model_validate({variable: value}) if variable else ForkVariables()
+                ),
+            )
+        )
+    return arms
+
+
+def _number(value: float | None) -> str:
+    """A figure, or the fact that there was nothing to measure."""
+    return "n/a" if value is None else f"{value:g}"
 
 
 # ----------------------------------------------------------------------

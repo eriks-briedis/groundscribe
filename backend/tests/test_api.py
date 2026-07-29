@@ -215,12 +215,20 @@ async def test_two_executions_can_be_compared(client: TestClient, harness: Harne
     assert response.json()["left"]["id"] == job.stage_execution_id
 
 
-def test_an_experiment_can_be_opened(client: TestClient) -> None:
-    """plan/09 → ``POST /experiments``, as a stable contract for phase 12."""
+def test_an_experiment_needs_a_corpus_and_a_baseline(client: TestClient) -> None:
+    """plan/09 → ``POST /experiments``, as phase 12 filled it in.
+
+    The endpoint phase 09 held open now asks for the two things an experiment
+    cannot be run without: a corpus to run over, and something to compare
+    against. Both are refused as bad payloads rather than defaulted, because an
+    experiment with an invented baseline reports differences from whichever arm
+    happened to be listed first. The happy path lives with the rest of phase 12,
+    which has a corpus to point at.
+    """
     response = client.post("/experiments", json={"name": "prompt-a-vs-b"})
 
-    assert response.status_code == 201
-    assert response.json()["name"] == "prompt-a-vs-b"
+    assert response.status_code == 422
+    assert "dataset_id" in response.text
 
 
 async def test_a_jobs_progress_is_streamed_as_server_sent_events(
