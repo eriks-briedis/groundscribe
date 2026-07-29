@@ -310,3 +310,25 @@ tr[data-same='false'] {
   border: 1px solid var(--line);
   border-radius: 4px;
 }
+
+.new-project label {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.new-project input,
+.new-project select {
+  font: inherit;
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.new-project button {
+  margin-top: 1rem;
+}

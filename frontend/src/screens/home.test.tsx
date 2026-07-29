@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { HomeScreen } from './HomeScreen';
-import { fakeBackend } from '@/test/backend';
+import { fakeBackend, type RecordedRequest } from '@/test/backend';
 import { PROJECT_ID } from '@/test/fixtures';
 
 const INDEX = {
@@ -60,7 +60,7 @@ describe('the way in', () => {
 
   it('creates a project with the bounds it will publish under', async () => {
     const backend = fakeBackend({
-      '/projects': ({ method }) =>
+      '/projects': ({ method }: RecordedRequest) =>
         method === 'POST'
           ? { project_id: 'new-1', run_id: 'r9', state: 'source_ingested', available_actions: [] }
           : INDEX,
@@ -85,7 +85,7 @@ describe('the way in', () => {
 
   it('opens the project it just created, rather than leaving it to be found', async () => {
     fakeBackend({
-      '/projects': ({ method }) =>
+      '/projects': ({ method }: RecordedRequest) =>
         method === 'POST'
           ? { project_id: 'new-1', run_id: 'r9', state: 'source_ingested', available_actions: [] }
           : INDEX,
@@ -101,7 +101,7 @@ describe('the way in', () => {
   });
 
   it('reports a refusal instead of appearing to have worked', async () => {
-    fakeBackend({ '/projects': ({ method }) => (method === 'POST' ? null : INDEX) });
+    fakeBackend({ '/projects': ({ method }: RecordedRequest) => (method === 'POST' ? null : INDEX) });
 
     render(<HomeScreen actor="ada" />);
     await userEvent.type(await screen.findByLabelText(/title/i), 'Invalidation');

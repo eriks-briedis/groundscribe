@@ -21,6 +21,7 @@ import { ArchitectureBoardScreen } from '@/screens/ArchitectureBoardScreen';
 import { ArticleWorkspaceScreen } from '@/screens/ArticleWorkspaceScreen';
 import { DashboardScreen } from '@/screens/DashboardScreen';
 import { ExecutionTimelineScreen } from '@/screens/ExecutionTimelineScreen';
+import { HomeScreen } from '@/screens/HomeScreen';
 import { QuestionQueueScreen } from '@/screens/QuestionQueueScreen';
 import { ReviewHistoryScreen } from '@/screens/ReviewHistoryScreen';
 import { RunComparisonScreen } from '@/screens/RunComparisonScreen';
@@ -63,6 +64,11 @@ function Screen({ hash }: { hash: string }) {
   }
   if (route === 'executions' && id) {
     return <StageInspectorScreen executionId={id} />;
+  }
+  if (route === '' || route === 'projects') {
+    // The list, which is also what an empty address means: an application whose
+    // front door is "paste an id" has no front door.
+    return <HomeScreen actor={ACTOR} />;
   }
   if (route === 'compare') {
     const query = new URLSearchParams(hash.split('?')[1] ?? '');

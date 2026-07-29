@@ -41,6 +41,7 @@ export const api = createClient<paths>({
  * checks each one still exists.
  */
 export const ENDPOINTS = {
+  projects: { path: '/projects', method: 'get' },
   projectState: { path: '/projects/{project_id}', method: 'get' },
   dashboard: { path: '/projects/{project_id}/dashboard', method: 'get' },
   sourceWorkspace: { path: '/projects/{project_id}/source-workspace', method: 'get' },
@@ -79,6 +80,7 @@ export type DiffView = Schemas['DiffView'];
 export type QuestionView = Schemas['QuestionView'];
 export type ArticleCard = Schemas['ArticleCard'];
 export type SessionState = Schemas['SessionState'];
+export type ProjectIndex = Schemas['ProjectIndex'];
 
 /**
  * Told when the backend says the session is gone.
@@ -119,6 +121,10 @@ export async function fetchProjectState(projectId: string): Promise<CommandRespo
   return unwrap(
     await api.GET('/projects/{project_id}', { params: { path: { project_id: projectId } } }),
   );
+}
+
+export async function fetchProjects(): Promise<ProjectIndex> {
+  return unwrap(await api.GET('/projects'));
 }
 
 export async function fetchDashboard(projectId: string): Promise<Dashboard> {
