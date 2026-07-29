@@ -103,7 +103,8 @@ def test_the_client_is_built_with_the_installations_own_prices(
 
     client = openai_clients(pricing=table)["openai"]
 
-    assert client._pricing is table  # noqa: SLF001 - the wiring is the thing under test
+    assert isinstance(client, OpenAIClient)
+    assert client.pricing is table
 
 
 def test_a_reachable_provider_is_still_not_a_permitted_one() -> None:

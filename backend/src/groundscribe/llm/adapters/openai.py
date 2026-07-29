@@ -144,6 +144,16 @@ class OpenAIClient:
     def retry_policy(self) -> RetryPolicy:
         return self._retry_policy
 
+    @property
+    def pricing(self) -> PricingTable:
+        """The table this client costs calls against.
+
+        Readable so an operator can be shown it — `writer llm probe` reports
+        whether the model it is about to use has a price, which is the difference
+        between a cost metric that works and one that silently reads `n/a`.
+        """
+        return self._pricing
+
     async def complete(self, request: LLMRequest) -> LLMResponse:
         """One call. Raises only on *transport* failure, never on a bad answer."""
         payload = self.build_payload(request)

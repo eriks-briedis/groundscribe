@@ -22,7 +22,9 @@ from sqlalchemy.engine import Engine
 from groundscribe.app.runtime import Runtime
 from groundscribe.db import create_engine, session_factory
 from groundscribe.jobs.queue import JobQueue
+from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
 from groundscribe.llm.generation import StructuredGenerator
+from groundscribe.llm.pricing import PricingTable, default_pricing
 from groundscribe.llm.protocol import LLMClient
 from groundscribe.llm.routing import default_routing_policy
 from groundscribe.paths import repo_root
@@ -77,13 +79,41 @@ def engine() -> Engine:
     return create_engine(os.environ.get(DATABASE_URL_ENV, DEFAULT_DATABASE_URL))
 
 
+def openai_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMClient]:
+    """An OpenAI client, if this machine has been given a key. Otherwise nothing.
+
+    Configuration is what makes a provider *reachable*; it is not what makes it
+    permitted. A project's ``allowed_providers`` allow-list (phase 13) still
+    decides whether its material may go there, and it defaults to empty — so an
+    installation configured entirely for OpenAI still sends nothing until an
+    author names it. Two gates, two decisions, two people.
+
+    Keyed by the provider string the routing config uses, because that is what
+    the generator looks a client up by; registered under any other spelling it
+    would never be found, and the failure would read as "no client for openai" on
+    a machine that had configured one.
+    """
+    if not os.environ.get(OPENAI_API_KEY_ENV, "").strip():
+        return {}
+    return {
+        OpenAIClient.provider: OpenAIClient(
+            # A label, not a decision: the model each call uses comes from the
+            # stage's route, and is what the invocation records. One client per
+            # provider is the shape that keeps a single answer to "which model".
+            model=default_routing_policy().default.primary.model,
+            pricing=pricing if pricing is not None else default_pricing(),
+        )
+    }
+
+
 def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
     """Assemble the application layer against the local installation.
 
-    No provider clients are registered by default. Wiring real adapters is a
-    deployment decision (phase 14), and a local-first tool that silently reached
-    an external provider would be the opposite of what plan/00 promises — so a
-    stage that needs one fails loudly saying which provider it wanted.
+    Providers are registered only when this machine has been configured for one —
+    today that means an OpenAI key. Nothing is registered by default, because a
+    local-first tool that silently reached an external provider would be the
+    opposite of what plan/00 promises, so a stage that needs a provider nobody
+    configured fails loudly saying which one it wanted.
     """
     session = session_factory(engine())()
     blob_root = Path(os.environ.get(BLOB_ROOT_ENV) or repo_root() / "var" / "blobs")
@@ -94,7 +124,7 @@ def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
         snapshots=snapshots,
         recorder=recorder,
         generator=StructuredGenerator(
-            clients=clients or {},
+            clients=clients if clients is not None else openai_clients(),
             recorder=recorder,
             prompts=PromptStore(prompts_root()),
             routing=default_routing_policy(),
@@ -109,8 +139,10 @@ __all__ = [
     "DATABASE_URL_ENV",
     "DEFAULT_DATABASE_URL",
     "KEY_ROOT_ENV",
+    "OPENAI_API_KEY_ENV",
     "TRACE_ENCRYPTION_ENV",
     "blob_storage",
     "build_runtime",
     "engine",
+    "openai_clients",
 ]
