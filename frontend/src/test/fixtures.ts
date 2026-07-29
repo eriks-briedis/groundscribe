@@ -631,6 +631,30 @@ export const inspection: StageInspection = {
   error: null,
 };
 
+/**
+ * Two of the reproducibility contract's clauses, one of each kind.
+ *
+ * Two rather than all six: what the screen has to get right is that a promise
+ * and a refusal render differently, and the backend already asserts that the
+ * contract itself has five of the first and one of the second.
+ */
+const REPRODUCIBILITY: NonNullable<ExecutionComparison['reproducibility']> = [
+  {
+    name: 'complete_inspection',
+    title: 'Complete inspection',
+    detail: 'Every stage execution can be opened afterwards and shows what actually happened.',
+    promised: true,
+    evidence: 'test_inspecting_shows_exactly_what_was_recorded',
+  },
+  {
+    name: 'identical_model_output',
+    title: 'Identical output from a hosted model',
+    detail: 'Not promised, and not achievable: a hosted model may answer differently.',
+    promised: false,
+    evidence: 'test_a_replay_runs_the_stage_again_without_touching_the_original',
+  },
+];
+
 export const comparison: ExecutionComparison = {
   left: {
     id: 'e0',
@@ -668,4 +692,5 @@ export const comparison: ExecutionComparison = {
     { field: 'latency_ms', left: '30000', right: '60000', same: false },
   ],
   output_edit_distance: 14,
+  reproducibility: REPRODUCIBILITY,
 };
