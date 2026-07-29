@@ -52,7 +52,9 @@ from provenance_helpers import make_recorder
 
 PROMPT = "Summarise the March cache postmortem for a senior audience."
 
-RAW = '{"summary":"a read-through cache cut p99 latency"}'
+SUMMARY = "a read-through cache cut p99 latency"
+
+RAW = f'{{"summary":"{SUMMARY}"}}'
 
 
 def _project(session: Session, suffix: str, *, confidential: bool = False) -> str:
@@ -131,7 +133,9 @@ def test_a_full_export_carries_the_payloads(
     exported = export_traces(db_session, snapshot_store, project_id)
 
     assert PROMPT in exported.to_json()
-    assert RAW in exported.to_json()
+    # The response is a JSON string inside a JSON document, so its quoting is
+    # re-escaped; the sentence it contains is what a reader is looking for.
+    assert SUMMARY in exported.to_json()
     assert not exported.sanitised
 
 
@@ -152,7 +156,7 @@ def test_a_sanitised_export_drops_the_payloads_and_keeps_the_calls(
 
     assert exported.sanitised
     assert PROMPT not in body
-    assert RAW not in body
+    assert SUMMARY not in body
     assert "extract_source_truth" in body
     assert "llama3.1:70b-instruct" in body
 
