@@ -381,3 +381,33 @@ async def test_an_unattributed_answer_is_refused(
         queue.respond(
             queue.pending[0], response=AnswerResponse.ANSWERED, text="690ms", answered_by=""
         )
+
+
+async def test_a_second_round_may_reuse_a_label_without_colliding(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The model names its questions; two rounds may name them the same thing.
+
+    Nothing obliges a model to invent fresh labels for a source it is reading
+    again — re-extraction after an answer, or phase 12's replay, asks the same
+    question of the same document and tends to get ``g1`` back. Keying the row on
+    that label made the second round a primary-key collision, which surfaced as
+    an ``IntegrityError`` from a job rather than as anything a person could act
+    on.
+
+    The row keeps its own id and remembers the label as ``ref``, which is what
+    phase 07 already does for review findings: a reviewer renumbers from one
+    every round, and two rounds of findings have to coexist.
+    """
+    context, model_client = scripted_context(db_session, snapshot_store)
+    first = await extract_and_analyse(context, model_client)
+
+    # The same source, asked again — a rebuild after an answer, or a phase-12
+    # replay — and the model hands back the labels it used last time.
+    model_client.script_response(GAP_STAGE, GAPS)
+    second = await StageRunner(context).run(GenerateGapQuestions(source_model=first.model))
+
+    labels = [row.ref for row in first.analysis.gaps] + [row.ref for row in second.value.gaps]
+    ids = [row.id for row in first.analysis.gaps] + [row.id for row in second.value.gaps]
+    assert labels.count("g1") == 2, "the same question, asked twice"
+    assert len(set(ids)) == len(ids), "and two rows, not one row written over"

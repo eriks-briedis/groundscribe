@@ -226,16 +226,26 @@ async def test_a_human_action_without_an_actor_is_refused(harness: Harness) -> N
 
 
 async def test_replaying_an_execution_leaves_the_original_untouched(harness: Harness) -> None:
-    """plan/05 → replays cannot overwrite original executions."""
+    """plan/05 → replays cannot overwrite original executions.
+
+    Phase 12 gave the replay work to do, so the shape changed with it: the
+    service queues a job, and the linked execution exists once the worker has
+    opened it. The claim is the same one, checked further along — after the
+    replay has actually run.
+    """
     project_id = await with_source(harness)
     script_extraction(harness)
     await harness.service.extract_source_model(project_id)
     (job,) = await harness.drain()
     assert job.stage_execution_id is not None
 
-    replay = harness.service.replay_execution(job.stage_execution_id, requested_by=AUTHOR)
+    script_extraction(harness)
+    queued = harness.service.replay_execution(job.stage_execution_id, requested_by=AUTHOR)
+    (replayed_job,) = await harness.drain()
+    replay = harness.service.get_execution(str(replayed_job.stage_execution_id))
     original = harness.service.get_execution(job.stage_execution_id)
 
+    assert queued.source_execution_id == job.stage_execution_id
     assert replay.parent_execution_id == job.stage_execution_id
     assert replay.id != original.id
     assert original.status is ExecutionStatus.SUCCEEDED

@@ -40,6 +40,9 @@ from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import AnswerResponse, ArtifactType, SourceFormat
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.experiments.replay import Rerun as ExperimentRerun
+from groundscribe.experiments.replay import plan_rerun
+from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
 from groundscribe.provenance import models
@@ -88,6 +91,14 @@ class CommandResult:
     available_actions: tuple[str, ...]
     job: Job | None = None
     detail: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Rerun:
+    """A stage queued to run again, and the job that will do it."""
+
+    source_execution_id: str
+    job: Job
 
 
 @dataclass(frozen=True)
@@ -542,24 +553,43 @@ class ApplicationService:
         """
         return self.get_execution(left_id), self.get_execution(right_id)
 
-    def replay_execution(self, execution_id: str, *, requested_by: str) -> models.StageExecution:
-        """Re-run a stage as a new execution branched from the original."""
-        execution = self.get_execution(execution_id)
-        resumed = self._resume(execution.pipeline_run.project_id)
-        replayed = resumed.engine.replay(execution, requested_by=requested_by)
-        self._runtime.positions.capture(resumed.position, resumed.engine)
-        return replayed
+    def replay_execution(self, execution_id: str, *, requested_by: str) -> Rerun:
+        """Queue the stage again, exactly as it ran (phase 12)."""
+        return self.fork_execution(execution_id, requested_by=requested_by)
 
-    def fork_execution(self, execution_id: str, *, requested_by: str) -> models.StageExecution:
-        """Branch a new execution from an existing one, leaving it untouched.
+    def fork_execution(
+        self,
+        execution_id: str,
+        *,
+        requested_by: str,
+        variables: ForkVariables | None = None,
+        reason: str = "",
+    ) -> Rerun:
+        """Queue the stage again, with whatever this fork changes (phase 12).
 
-        The same mechanism as a replay, and deliberately so at this phase: both
-        produce a linked child execution whose parent is the original. What
-        distinguishes them — replaying the *same* inputs versus running altered
-        ones — is phase 12's experimentation work, and inventing a difference
-        here would be a guess the frontend then has to live with.
+        One mechanism for both: a fork is a replay that carries variables, and a
+        replay is a fork that carries none. The work goes to the worker like all
+        model work, so the answer is a job — the execution it opens is linked to
+        the original, and the job names it as soon as there is one.
         """
-        return self.replay_execution(execution_id, requested_by=requested_by)
+        execution = self.get_execution(execution_id)
+        instructions = ExperimentRerun(
+            source_execution_id=execution.id,
+            requested_by=requested_by,
+            reason=reason,
+            variables=variables or ForkVariables(),
+        )
+        job_type, payload = plan_rerun(self._runtime.session, execution, instructions)
+        job = self._runtime.queue.enqueue(
+            job_type=job_type,
+            run=execution.pipeline_run,
+            payload=payload,
+            # Keyed by the source execution, so asking twice while the first is
+            # still running hands back the run already happening rather than
+            # queueing a second identical one.
+            dedupe_key=f"rerun:{execution.id}",
+        )
+        return Rerun(source_execution_id=execution.id, job=job)
 
     def job(self, job_id: str) -> Job:
         job = self._runtime.queue.get(job_id)

@@ -156,6 +156,7 @@ class StageRunner:
         *,
         enter: bool = True,
         on_execution: Callable[[models.StageExecution], None] | None = None,
+        parent: models.StageExecution | None = None,
     ) -> StageResult[T]:
         """Run one stage end to end, or leave the run where it was.
 
@@ -174,12 +175,18 @@ class StageRunner:
         work happens. The worker uses it to link the job to the stage while it is
         still running; told only on completion, it would have nothing to point at
         in the one case that matters.
+
+        ``parent`` branches this execution from an earlier one — a replay or a
+        fork (phase 12). The link is what makes the pair comparable, and what
+        stops a re-run being mistaken for the thing it re-ran.
         """
         context = self._context
         if enter and stage.entry_action is not None:
             context.engine.apply(stage.entry_action, actor_id=context.actor_id)
 
-        execution = context.engine.begin_stage(stage.name, impl_version=stage.impl_version)
+        execution = context.engine.begin_stage(
+            stage.name, impl_version=stage.impl_version, parent=parent
+        )
         if on_execution is not None:
             on_execution(execution)
         try:
