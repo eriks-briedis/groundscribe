@@ -32,9 +32,9 @@ from typer.testing import CliRunner
 from golden import golden_text
 from groundscribe.api.app import create_app
 from groundscribe.api.routes import get_runtime, get_service
-from groundscribe.jobs.schemas import Job as JobSchema
 from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.cli import main as cli
+from groundscribe.jobs.schemas import Job as JobSchema
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.workflow.states import WorkflowState

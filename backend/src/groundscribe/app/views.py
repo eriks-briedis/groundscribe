@@ -185,6 +185,30 @@ class ProjectSummary(BaseModel):
     author_id: str
 
 
+class ProjectCard(BaseModel):
+    """One project as the way-in lists it.
+
+    Enough to choose between projects and nothing that needs a second query per
+    row: a list that cost a dashboard's worth of work per project would be the
+    slowest screen in the application and the first one anybody sees.
+    """
+
+    id: str
+    title: str
+    description: str = ""
+    author_id: str
+    run_id: str
+    state: WorkflowState
+    articles: int = 0
+    opened_at: datetime
+
+
+class ProjectIndex(BaseModel):
+    """Every project this installation holds, newest first."""
+
+    projects: list[ProjectCard] = Field(default_factory=list)
+
+
 class ConstraintsView(BaseModel):
     """The bounds the project publishes under, including who may see the source."""
 
@@ -773,7 +797,9 @@ __all__ = [
     "LineageGraph",
     "LineageNode",
     "ModelVersionView",
+    "ProjectCard",
     "ProjectDashboard",
+    "ProjectIndex",
     "ProjectSummary",
     "QuestionQueue",
     "QuestionView",

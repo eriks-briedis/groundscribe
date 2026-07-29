@@ -77,7 +77,9 @@ from groundscribe.app.views import (
     LineageGraph,
     LineageNode,
     ModelVersionView,
+    ProjectCard,
     ProjectDashboard,
+    ProjectIndex,
     ProjectSummary,
     QuestionQueue,
     QuestionView,
@@ -165,6 +167,43 @@ class ProjectionReader:
     # ------------------------------------------------------------------
     # Project dashboard
     # ------------------------------------------------------------------
+
+    def projects(self) -> ProjectIndex:
+        """Every project, newest first — the screen the application opens on.
+
+        Ordered by when the run was opened rather than by id, because an id is a
+        uuid and ordering by one is no order at all. A project whose run has no
+        recorded position is listed without a state rather than omitted: it
+        exists, and hiding it would make a broken project invisible instead of
+        visible and odd.
+        """
+        cards: list[ProjectCard] = []
+        for project in self._session.scalars(
+            select(domain_models.Project).order_by(domain_models.Project.id)
+        ):
+            run = self._session.scalars(
+                select(models.PipelineRun)
+                .where(models.PipelineRun.project_id == project.id)
+                .order_by(models.PipelineRun.started_at.desc(), models.PipelineRun.id.desc())
+            ).first()
+            if run is None:
+                continue
+            position = self._runtime.positions.load(run)
+            if position is None:
+                continue
+            cards.append(
+                ProjectCard(
+                    id=project.id,
+                    title=project.title,
+                    description=project.description,
+                    author_id=project.user_id,
+                    run_id=run.id,
+                    state=position.state,
+                    articles=len(self._articles(project.id)),
+                    opened_at=run.started_at,
+                )
+            )
+        return ProjectIndex(projects=sorted(cards, key=lambda card: card.opened_at, reverse=True))
 
     def dashboard(self, project_id: str) -> ProjectDashboard:
         """plan/11 → *Project dashboard*."""

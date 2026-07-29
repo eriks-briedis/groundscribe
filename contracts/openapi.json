@@ -2695,6 +2695,55 @@
         "title": "ModelVersionView",
         "type": "object"
       },
+      "ProjectCard": {
+        "description": "One project as the way-in lists it.\n\nEnough to choose between projects and nothing that needs a second query per\nrow: a list that cost a dashboard's worth of work per project would be the\nslowest screen in the application and the first one anybody sees.",
+        "properties": {
+          "articles": {
+            "default": 0,
+            "title": "Articles",
+            "type": "integer"
+          },
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkflowState"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "author_id",
+          "run_id",
+          "state",
+          "opened_at"
+        ],
+        "title": "ProjectCard",
+        "type": "object"
+      },
       "ProjectDashboard": {
         "description": "plan/11 \u2192 *Project dashboard*, assembled from rows and nothing else.",
         "properties": {
@@ -2779,6 +2828,20 @@
           "usage"
         ],
         "title": "ProjectDashboard",
+        "type": "object"
+      },
+      "ProjectIndex": {
+        "description": "Every project this installation holds, newest first.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCard"
+            },
+            "title": "Projects",
+            "type": "array"
+          }
+        },
+        "title": "ProjectIndex",
         "type": "object"
       },
       "ProjectSummary": {
@@ -5366,6 +5429,23 @@
       }
     },
     "/projects": {
+      "get": {
+        "description": "Every project this installation holds \u2014 the way into everything else.",
+        "operationId": "read_projects_projects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Projects"
+      },
       "post": {
         "description": "Open a project, its bounds, its run and its position.",
         "operationId": "create_project_projects_post",

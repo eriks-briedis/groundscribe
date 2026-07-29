@@ -582,7 +582,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Read Projects
+         * @description Every project this installation holds — the way into everything else.
+         */
+        get: operations["read_projects_projects_get"];
         put?: never;
         /**
          * Create Project
@@ -2268,6 +2272,40 @@ export interface components {
             template_version: string;
         };
         /**
+         * ProjectCard
+         * @description One project as the way-in lists it.
+         *
+         *     Enough to choose between projects and nothing that needs a second query per
+         *     row: a list that cost a dashboard's worth of work per project would be the
+         *     slowest screen in the application and the first one anybody sees.
+         */
+        ProjectCard: {
+            /**
+             * Articles
+             * @default 0
+             */
+            articles: number;
+            /** Author Id */
+            author_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Run Id */
+            run_id: string;
+            state: components["schemas"]["WorkflowState"];
+            /** Title */
+            title: string;
+        };
+        /**
          * ProjectDashboard
          * @description plan/11 → *Project dashboard*, assembled from rows and nothing else.
          */
@@ -2292,6 +2330,14 @@ export interface components {
             source: components["schemas"]["SourceCompleteness"];
             state: components["schemas"]["WorkflowState"];
             usage: components["schemas"]["UsageSummary"];
+        };
+        /**
+         * ProjectIndex
+         * @description Every project this installation holds, newest first.
+         */
+        ProjectIndex: {
+            /** Projects */
+            projects?: components["schemas"]["ProjectCard"][];
         };
         /** ProjectSummary */
         ProjectSummary: {
@@ -3905,6 +3951,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_projects_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectIndex"];
                 };
             };
         };

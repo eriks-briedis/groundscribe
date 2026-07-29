@@ -63,6 +63,7 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # commands: the frontend generates its client from this file, so a screen
     # whose projection is missing from the contract is a screen that cannot be
     # built, and the plan is what says which screens exist.
+    ("get", "/projects"),
     ("get", "/projects/{project_id}/dashboard"),
     ("get", "/projects/{project_id}/source-workspace"),
     ("get", "/projects/{project_id}/questions"),

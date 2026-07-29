@@ -31,6 +31,7 @@ from groundscribe.app.views import (
     ArticleWorkspace,
     LineageGraph,
     ProjectDashboard,
+    ProjectIndex,
     QuestionQueue,
     ReviewHistory,
     SourceWorkspace,
@@ -142,6 +143,12 @@ def create_project(body: schemas.CreateProject, service: Service) -> schemas.Com
             description=body.description,
         )
     )
+
+
+@router.get("/projects", response_model=ProjectIndex)
+def read_projects(reader: Reader) -> ProjectIndex:
+    """Every project this installation holds — the way into everything else."""
+    return reader.projects()
 
 
 @router.get("/projects/{project_id}", response_model=schemas.CommandResponse)
