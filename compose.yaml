@@ -40,6 +40,11 @@ services:
       # password nobody knows they have.
       GROUNDSCRIBE_PASSWORD: ${GROUNDSCRIBE_PASSWORD:?set GROUNDSCRIBE_PASSWORD in .env — scripts/install.sh writes one}
       GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
+      # Passed through, never defaulted. Absent, no provider is registered and a
+      # stage that needs one fails saying so — which is the honest state for an
+      # installation nobody has given a key.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
     volumes:
       - storage:/var/lib/groundscribe
     depends_on:
@@ -75,6 +80,11 @@ services:
       GROUNDSCRIBE_BLOB_ROOT: /var/lib/groundscribe/blobs
       GROUNDSCRIBE_KEY_ROOT: /var/lib/groundscribe/keys
       GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
+      # Passed through, never defaulted. Absent, no provider is registered and a
+      # stage that needs one fails saying so — which is the honest state for an
+      # installation nobody has given a key.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       GROUNDSCRIBE_WORKER_ID: ${GROUNDSCRIBE_WORKER_ID:-worker-1}
       GROUNDSCRIBE_WORKER_POLL: ${GROUNDSCRIBE_WORKER_POLL:-2}
     volumes:

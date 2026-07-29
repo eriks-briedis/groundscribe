@@ -38,6 +38,7 @@ to any of them changes what the system produces:
 prompts/<template_id>/metadata.yaml   # declared versions + which one is current
 prompts/<template_id>/v1.jinja2       # one file per version
 config/model-routing.yaml             # per-stage provider/model/params, versioned
+config/model-pricing.yaml             # per-model token prices, for the cost metric
 config/workflow-policy.yaml           # failure routing, rewrite limits, stagnation
 config/scoring-rubric.yaml            # dimension weights + what passes, versioned
 config/scoring-rubric-<version>.yaml  # a superseded or candidate rubric, kept
@@ -99,6 +100,85 @@ The suite runs on in-memory SQLite by default, and three switches take it furthe
 — PostgreSQL, and the container stack. They are opt-in because each costs minutes
 rather than seconds, and a suite nobody runs is worse than a narrow one; see
 [Choosing SQLite or PostgreSQL](#choosing-sqlite-or-postgresql) for the commands.
+
+## Connecting a model provider
+
+Every editorial stage runs against a model, so nothing works until one is
+configured. The shipped routing (`config/model-routing.yaml`, v9) points all
+twelve stages at **OpenAI**.
+
+```bash
+export OPENAI_API_KEY=sk-...       # an API key from platform.openai.com
+uv run writer llm probe            # one tiny call per routed model
+```
+
+`probe` is the pre-flight, and it exists because two things in a routing file
+can only be confirmed against a live account:
+
+- **whether these model ids exist for your key** — names change and access
+  differs per account;
+- **whether those models accept the sampling parameters the file sets** —
+  reasoning models reject `temperature` and `top_p` outright.
+
+```
+routing policy v9 · pricing table v1
+  [FAIL] gpt-5: openai returned 400: Unsupported parameter: 'temperature'
+         used by: align_voice, create_revision_plan, extract_source_truth, …
+  [ok  ] gpt-5-mini: ready.
+```
+
+Both fixes are one edit to `config/model-routing.yaml`: change the model id, or
+delete the parameter it rejected. The adapter sends **only** what that file sets,
+so a deleted parameter is genuinely not sent — it never supplies a default of its
+own, because a default nobody chose would make the recorded runtime config a lie
+about the call.
+
+> **An OpenAI API key is not a ChatGPT subscription.** They are separate products
+> with separate billing: the API is pay-as-you-go from `platform.openai.com`, and
+> a Plus/Pro/Team subscription does not carry a key. There is no supported way to
+> drive subscription entitlements from a third-party application.
+
+### A key is permission to reach, not permission to send
+
+Two gates, and they answer different questions for different people:
+
+| | who decides | how |
+|---|---|---|
+| is a provider **reachable**? | the operator | `OPENAI_API_KEY` on the machine |
+| may **this project's** material go there? | the author | `allowed_providers` on the project |
+
+`allowed_providers` defaults to empty, and `require_permitted_provider` refuses
+before any material moves. So an installation configured entirely for OpenAI
+still sends nothing until a project names it:
+
+```bash
+uv run writer project create --title "…" --author me --audience "…" \
+    --platform "…" --depth practitioner --provider openai
+```
+
+`writer privacy visibility <project>` shows the resulting data flow per stage:
+which provider, which model, whether it leaves this machine, whether the project
+permits it, and what is kept of it afterwards.
+
+### Cost
+
+`config/model-pricing.yaml` ships **empty on purpose**. Nobody preparing this
+repository can know what your account pays — prices change, differ by tier, and
+differ again with batch or cached-input discounts — and a guessed number produces
+a cost metric that is confidently wrong, which is worse than one honestly absent
+because a wrong number gets believed.
+
+So `writer project metrics` reports `cost: n/a` until you paste your own two
+figures per model into that file. `writer llm probe` tells you which models are
+unpriced, once, rather than leaving you to notice on a dashboard weeks later.
+
+### Running local models instead
+
+Routing v8 in git history points every stage at a local Ollama installation;
+restoring it is this one file. The Ollama and Anthropic adapters are still
+phase-04 stubs that raise rather than answer — wiring either is the same shape of
+work as `llm/adapters/openai.py`, which is about 200 lines against the provider's
+wire format.
 
 ## Running it
 
