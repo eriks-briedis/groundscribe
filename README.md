@@ -85,3 +85,51 @@ uv run pytest
 
 Coverage is enforced in CI. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the mandatory
 test-first workflow and commit discipline.
+
+## Running it
+
+groundscribe is two processes over one database. The API accepts commands and
+answers immediately; anything that calls a model is queued, and a **worker** runs
+it. Nothing that talks to a provider happens inside an HTTP request.
+
+```bash
+# apply migrations to the local SQLite database
+uv run alembic upgrade head
+
+# serve the API (interactive docs at /docs)
+uv run uvicorn groundscribe.api.asgi:app
+
+# drain whatever is queued, recovering anything a previous worker abandoned
+uv run writer worker run
+```
+
+The CLI is a second front door onto the same application service the API calls —
+it contains no workflow logic of its own:
+
+```bash
+uv run writer project create --title "…" --author me --audience "…" \
+    --platform "…" --depth practitioner --provider ollama
+uv run writer source import <project> --title "…" --file notes.md
+uv run writer source extract <project>
+uv run writer architecture propose <project>
+uv run writer architecture approve <project> --by me
+uv run writer article draft <article>
+uv run writer execution inspect <execution>
+uv run writer experiment compare <left> <right>
+```
+
+`GROUNDSCRIBE_DATABASE_URL` and `GROUNDSCRIBE_BLOB_ROOT` point the same binaries at
+a different installation. No provider client is registered by default: a
+local-first tool that silently reached an external provider would be the opposite
+of what it promises, so a stage that needs one fails loudly naming it.
+
+### The API contract
+
+`contracts/openapi.json` is generated from the app and committed, so a contract
+change is reviewed alongside the route that caused it and phase 11's generated
+client has something stable to build from. Regenerate it after adding or changing
+an endpoint — a test fails if it drifts:
+
+```bash
+uv run writer contracts export
+```
