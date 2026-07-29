@@ -40,6 +40,61 @@ jobs:
       - name: Pytest with coverage gate
         run: uv run pytest
 
+  # plan/14 → *the full test suite (or a designated integration subset) runs
+  # green against Postgres too*. Its own job, because a service container on
+  # every run is the cost the SQLite default exists to avoid — and because a
+  # parity failure should read as "Postgres disagrees", not as a red suite.
+  postgres:
+    name: parity · postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: groundscribe
+          POSTGRES_PASSWORD: groundscribe
+          POSTGRES_DB: groundscribe
+        ports:
+          - 5432:5432
+        # Without this the job races the server's first start-up, which fails
+        # roughly one run in five and looks exactly like a flaky test.
+        options: >-
+          --health-cmd "pg_isready -U groundscribe"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_URL: postgresql+psycopg://groundscribe:groundscribe@localhost:5432/groundscribe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      # The designated integration subset: a whole pipeline walk to export plus
+      # the invariants that hang off it, asserted exactly as the SQLite run
+      # asserts them.
+      - name: Parity subset
+        env:
+          GROUNDSCRIBE_TEST_POSTGRES_URL: ${{ env.PG_URL }}
+        run: uv run pytest tests/test_postgres_parity.py --no-cov
+
+      # And the whole suite against the same server, which is the stronger claim
+      # plan/14 makes. Coverage is measured by the SQLite job; measuring it twice
+      # would only produce a second number to reconcile.
+      - name: Whole suite on Postgres
+        env:
+          GROUNDSCRIBE_TEST_DATABASE_URL: ${{ env.PG_URL }}
+        run: uv run pytest --no-cov
+
   frontend:
     name: types · contract · component tests
     runs-on: ubuntu-latest
