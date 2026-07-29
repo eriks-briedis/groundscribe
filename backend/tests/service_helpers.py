@@ -49,7 +49,7 @@ class Harness:
 
 def build_harness(session: Session, snapshots: SnapshotStore) -> Harness:
     """An application layer over a rolled-back session and a scripted model."""
-    client = FakeLLMClient(provider=SHIPPED_PROVIDER, model="llama3.1:70b-instruct")
+    client = FakeLLMClient(provider=SHIPPED_PROVIDER, model="gpt-5")
     recorder = make_recorder(session, snapshots)
     runtime = Runtime(
         session=session,

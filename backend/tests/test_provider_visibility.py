@@ -37,7 +37,7 @@ from groundscribe.domain.confidentiality import Confidentiality, Exclusion
 from groundscribe.domain.enums import ArticleDepth, SegmentKind
 from groundscribe.domain.retention import RetentionMode
 from groundscribe.domain.schemas import EditorialConstraints
-from groundscribe.llm.routing import default_routing_policy
+from groundscribe.llm.routing import RoutingPolicy, default_routing_policy
 from groundscribe.privacy.visibility import provider_visibility
 
 LOCAL = "ollama"
@@ -111,6 +111,35 @@ def test_a_local_provider_is_reported_as_local(db_session: Session) -> None:
     ``ollama`` and a hosted API are the same shape of string and completely
     different decisions, so the surface answers the question rather than leaving
     it to whoever reads the name.
+
+    Asserted against a routing policy pointed at a local provider rather than
+    against the shipped one. The shipped policy is OpenAI now, and a test that
+    read "local" off whatever happened to be configured would be testing the
+    configuration instead of the surface — and would have flipped its own meaning
+    the moment routing changed, which is exactly what it did.
+    """
+    project_id = _seed(db_session)
+
+    surface = provider_visibility(
+        db_session,
+        project_id,
+        constraints=CONSTRAINTS,
+        routing=_routed_to("ollama"),
+    )
+
+    assert all(stage.local for stage in surface.stages)
+    assert not surface.leaves_this_machine
+
+
+def test_the_shipped_routing_is_honest_about_leaving_the_machine(
+    db_session: Session,
+) -> None:
+    """The shipped policy sends material to OpenAI, and the surface says so.
+
+    This is the pairing that matters: the config may point anywhere, and the
+    question a person actually asks — *does my material leave this machine?* —
+    has to be answered from the config rather than from a promise made when the
+    default was different.
     """
     project_id = _seed(db_session)
 
@@ -118,8 +147,32 @@ def test_a_local_provider_is_reported_as_local(db_session: Session) -> None:
         db_session, project_id, constraints=CONSTRAINTS, routing=default_routing_policy()
     )
 
-    assert all(stage.local for stage in surface.stages)
-    assert not surface.leaves_this_machine
+    assert surface.leaves_this_machine
+    assert all(not stage.local for stage in surface.stages)
+    assert {stage.provider for stage in surface.stages} == {"openai"}
+
+
+def _routed_to(provider: str) -> RoutingPolicy:
+    """The shipped policy with every route pointed at one provider.
+
+    Built from the real policy so the stage list stays the real stage list; only
+    the provider moves, which is the one variable these tests are about.
+    """
+    policy = default_routing_policy()
+    stages = {
+        name: route.model_copy(
+            update={
+                "primary": route.primary.model_copy(update={"provider": provider}),
+                "fallback": (
+                    route.fallback.model_copy(update={"provider": provider})
+                    if route.fallback is not None
+                    else None
+                ),
+            }
+        )
+        for name, route in policy.stages.items()
+    }
+    return policy.model_copy(update={"stages": stages})
 
 
 def test_a_hosted_provider_is_reported_as_external(db_session: Session) -> None:

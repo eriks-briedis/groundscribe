@@ -43,7 +43,7 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.position import PositionStore
 from read_helpers import Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
-from stage_helpers import DEFAULT_CONSTRAINTS
+from stage_helpers import DEFAULT_CONSTRAINTS, SHIPPED_PROVIDER
 from test_gap_questions import gap
 
 #: A first round that stops the run for the author, and a second that does not.
@@ -280,7 +280,7 @@ async def test_the_whole_run_is_reconstructible_afterwards(
         frames = "".join(stream.iter_text())
 
     assert [event["event_type"] for event in events][:2] == ["stage.started", "job.started"]
-    assert [invocation["provider"] for invocation in invocations] == ["ollama"]
+    assert [invocation["provider"] for invocation in invocations] == [SHIPPED_PROVIDER]
     assert "event: job.status" in frames
     assert '"status": "succeeded"' in frames
 

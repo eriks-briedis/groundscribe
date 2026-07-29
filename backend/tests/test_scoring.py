@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json
 from groundscribe.domain.enums import IssueSeverity
-from groundscribe.llm.routing import RouteOverride
+from groundscribe.llm.routing import RouteOverride, default_routing_policy
 from groundscribe.scoring.rubric import ScoreDimension
 from groundscribe.scoring.scoring import SCORE_STAGE, ScoreArticle, ScoreOutcome
 from groundscribe.stages.base import StageResult, StageRunner
@@ -43,6 +43,12 @@ from groundscribe.workflow.policy import FailureCategory
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from pipeline_helpers import AUTHOR
 from test_drafting import VOICE, Drafted, draft
+
+#: The model a second scoring pass is sent to. Any model that is *not* the one
+#: the routing config already chose for scoring — the information a repeat pass
+#: carries is in two models disagreeing, not in either of their names, so this
+#: follows the config rather than restating a string.
+SECOND_OPINION_MODEL = default_routing_policy().default.primary.model
 
 
 def golden_score(**overrides: Any) -> dict[str, Any]:
@@ -515,7 +521,7 @@ async def test_repeat_passes_may_run_against_different_models(
             repeats=2,
             repeat_overrides=(
                 RouteOverride(
-                    model="llama3.1:8b-instruct",
+                    model=SECOND_OPINION_MODEL,
                     requested_by=AUTHOR,
                     reason="a second model, because one model at temperature 0 agrees with itself",
                 ),
@@ -526,6 +532,9 @@ async def test_repeat_passes_may_run_against_different_models(
     assert execution is not None
     first, second = execution.model_invocations
 
-    assert first.model == "llama3.1:70b-instruct"
-    assert second.model == "llama3.1:8b-instruct"
+    # Which strings these are is the routing config's business; that the second
+    # pass ran against a *different* model is what carries the information.
+    assert first.model == default_routing_policy().stages[SCORE_STAGE].primary.model
+    assert second.model == SECOND_OPINION_MODEL
+    assert first.model != second.model
     assert len(result.value.confidence.repeat_scores) == 2

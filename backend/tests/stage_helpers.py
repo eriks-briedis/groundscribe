@@ -33,10 +33,10 @@ from groundscribe.workflow.states import WorkflowState
 from provenance_helpers import make_recorder, seed_project
 
 #: The provider the shipped routing config names for every local-first stage.
-SHIPPED_PROVIDER = "ollama"
+SHIPPED_PROVIDER = "openai"
 
 
-def fake_clients(model: str = "llama3.1:70b-instruct") -> Mapping[str, LLMClient]:
+def fake_clients(model: str = "gpt-5") -> Mapping[str, LLMClient]:
     """A client map keyed by the provider the shipped routing config asks for."""
     return {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model=model)}
 
