@@ -41,6 +41,7 @@ from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.position import PositionStore
+from read_helpers import Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
 from test_gap_questions import gap
@@ -211,6 +212,31 @@ async def test_a_project_walks_the_pipeline_over_http_with_a_worker_behind_it(
     reviewed = await pipeline.command("POST", f"/articles/{article_id}/review")
     assert reviewed["state"] == "revision_plan_required"
     assert "approve_revision_plan" in reviewed["available_actions"]
+
+
+async def test_a_project_walks_all_the_way_to_a_persons_decision(
+    client: TestClient, harness: Harness
+) -> None:
+    """The back half of the pipeline, over the same seam as the front half.
+
+    The walk above stops where the golden review parks the run. Everything after
+    it — plan, rewrite, voice, score, validate — had only ever been exercised by
+    phase 07 and 08, which construct each stage in-process and hand it the
+    document the stage before returned. A worker cannot do that: it rebuilds
+    every input from the row the previous stage wrote, so a version whose stored
+    shape does not survive the round trip fails here and nowhere else.
+
+    Which is the property being pinned. The run reaching ``human_approval_required``
+    means each stage could read what its predecessor stored, across five process
+    boundaries.
+    """
+    walk = Walkthrough(client, harness)
+
+    await walk.to_approval()
+
+    state = client.get(f"/projects/{walk.project_id}").json()
+    assert state["state"] == "human_approval_required"
+    assert "approve_final" in state["available_actions"]
 
 
 async def test_the_whole_run_is_reconstructible_afterwards(

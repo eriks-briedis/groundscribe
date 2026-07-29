@@ -59,6 +59,19 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("get", "/voice/suggestions"),
     ("post", "/voice/suggestions/{suggestion_id}/approve"),
     ("post", "/voice/suggestions/{suggestion_id}/reject"),
+    # plan/11 → one read per core screen. Listed here for the same reason as the
+    # commands: the frontend generates its client from this file, so a screen
+    # whose projection is missing from the contract is a screen that cannot be
+    # built, and the plan is what says which screens exist.
+    ("get", "/projects/{project_id}/dashboard"),
+    ("get", "/projects/{project_id}/source-workspace"),
+    ("get", "/projects/{project_id}/questions"),
+    ("get", "/projects/{project_id}/architecture"),
+    ("get", "/projects/{project_id}/trace"),
+    ("get", "/articles/{article_id}/workspace"),
+    ("get", "/articles/{article_id}/reviews"),
+    ("get", "/articles/{article_id}/lineage"),
+    ("get", "/executions/{execution_id}/inspect"),
 )
 
 
