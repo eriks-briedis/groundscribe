@@ -244,6 +244,45 @@ class Walkthrough:
         await self.score()
         return await self.validate()
 
+    async def approve(self) -> dict[str, Any]:
+        """The author publishes: the last human gate before export (phase 14)."""
+        return await self.command(
+            "POST", f"/articles/{self.article_id}/approve", json={"actor_id": AUTHOR}
+        )
+
+    def export(self, fmt: str = "markdown") -> dict[str, Any]:
+        """Render the version that passed validation, in one format.
+
+        A read rather than a command — nothing moves — and addressed by the
+        *validated* snapshot rather than by the article, so an export of the
+        wrong version is impossible rather than merely unlikely.
+        """
+        snapshot_id = self.validated_snapshot()
+        response = self.client.get(f"/versions/{snapshot_id}/export", params={"format": fmt})
+        assert response.status_code == 200, response.text
+        exported: dict[str, Any] = response.json()
+        return exported
+
+    def validated_snapshot(self) -> str:
+        """The snapshot the validation report passed, which is what is exported."""
+        report = self.session.scalars(
+            select(domain_models.ValidationReport)
+            .join(
+                domain_models.ArticleVersion,
+                domain_models.ArticleVersion.id
+                == domain_models.ValidationReport.article_version_id,
+            )
+            .where(
+                domain_models.ArticleVersion.article_id == self.article_id,
+                domain_models.ValidationReport.passed.is_(True),
+            )
+            .order_by(domain_models.ValidationReport.id.desc())
+        ).first()
+        assert report is not None, "nothing has passed validation yet"
+        snapshot_id = report.article_version.snapshot_id
+        assert snapshot_id is not None, "a validated version with no stored bytes"
+        return snapshot_id
+
     # ------------------------------------------------------------------
     # Reading ids a real client would have been handed
     # ------------------------------------------------------------------
