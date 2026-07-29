@@ -403,9 +403,24 @@ class Walkthrough:
         ]
 
     def source_model(self) -> dict[str, Any]:
-        """The golden source model, with its labels resolved to real segment ids."""
+        """The golden source model, with its labels resolved to real segment ids.
+
+        Scoped to *this walk's* project. Every walk ingests the same golden
+        document, so two of them in one session hold two sets of segments with
+        the same ordinals — and an unscoped query resolves ``S4`` to whichever
+        the database happened to return last. On SQLite that is insertion order
+        and the newest wins by luck; Postgres makes no such promise, and the
+        run fails citing segments the model was never shown. Found by the
+        phase-14 parity run, which is what it is for.
+        """
         segments = self.session.scalars(
-            select(domain_models.SourceSegment).order_by(domain_models.SourceSegment.ordinal)
+            select(domain_models.SourceSegment)
+            .join(
+                domain_models.SourceDocument,
+                domain_models.SourceDocument.id == domain_models.SourceSegment.document_id,
+            )
+            .where(domain_models.SourceDocument.project_id == self.project_id)
+            .order_by(domain_models.SourceSegment.ordinal)
         ).all()
         return relabel(
             golden_json("source_model.json"),
@@ -476,28 +491,51 @@ class Walkthrough:
         )
         return artefact.snapshot_id
 
+    # Every lookup below is scoped to this walk's project, and ordered by
+    # something the database guarantees. Two walks in one session are otherwise
+    # indistinguishable to an unscoped query, and "whatever came back first" is
+    # a different row on SQLite and Postgres.
+
     def surfaced_gap(self) -> str:
         row = self.session.scalars(
             select(domain_models.SourceGap)
-            .where(domain_models.SourceGap.surfaced.is_(True))
-            .order_by(domain_models.SourceGap.ordinal)
+            .where(
+                domain_models.SourceGap.project_id == self.project_id,
+                domain_models.SourceGap.surfaced.is_(True),
+            )
+            .order_by(domain_models.SourceGap.ordinal, domain_models.SourceGap.id)
         ).first()
         assert row is not None, "the blocking round should have surfaced a question"
         return row.id
 
     def first_article(self) -> str:
-        row = self.session.scalars(select(domain_models.Article)).first()
+        row = self.session.scalars(
+            select(domain_models.Article)
+            .where(domain_models.Article.project_id == self.project_id)
+            .order_by(domain_models.Article.id)
+        ).first()
         assert row is not None, "approving the architecture should have opened an article"
         return row.id
 
     def executions(self, stage: str) -> list[str]:
-        """The ids of every execution of one stage, oldest first."""
+        """The ids of every execution of one stage in this project, oldest first."""
         return [
             execution.id
             for execution in self.session.scalars(
                 select(provenance_models.StageExecution)
-                .where(provenance_models.StageExecution.stage == stage)
-                .order_by(provenance_models.StageExecution.ordinal)
+                .join(
+                    provenance_models.PipelineRun,
+                    provenance_models.PipelineRun.id
+                    == provenance_models.StageExecution.pipeline_run_id,
+                )
+                .where(
+                    provenance_models.PipelineRun.project_id == self.project_id,
+                    provenance_models.StageExecution.stage == stage,
+                )
+                .order_by(
+                    provenance_models.StageExecution.ordinal,
+                    provenance_models.StageExecution.id,
+                )
             )
         ]
 
