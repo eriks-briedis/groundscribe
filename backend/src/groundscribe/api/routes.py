@@ -50,8 +50,20 @@ EVENT_STREAM = "text/event-stream"
 
 
 def get_runtime(request: Request) -> Iterator[Runtime]:
-    """The runtime for one request, from whatever the app was built with."""
-    yield request.app.state.runtime_factory()
+    """The runtime for one request, closed when the request is over.
+
+    Closing is not tidiness. A session holds its connection — and, on SQLite,
+    the write lock — until the transaction ends, so a request that merely
+    stopped referring to its session would keep the database against the worker
+    until the garbage collector got round to it. The command path commits and so
+    released it by accident; the read path, which commits nothing by design,
+    never did.
+    """
+    runtime = request.app.state.runtime_factory()
+    try:
+        yield runtime
+    finally:
+        runtime.release()
 
 
 def get_service(
@@ -647,7 +659,10 @@ def stream_job_events(
     contract as SSE's ``Last-Event-ID``, which phase 03's stored event ordering
     already supports.
     """
-    stream = JobEventStream(runtime.session, runtime.queue)
+    # The session belongs to this request and only this stream uses it, so the
+    # stream may end its transaction between polls — which it must, or watching
+    # a job would hold the database against the worker running it.
+    stream = JobEventStream(runtime.session, runtime.queue, release=runtime.session.rollback)
 
     async def frames() -> AsyncIterator[str]:
         async for event in stream.stream(job_id, after=after):

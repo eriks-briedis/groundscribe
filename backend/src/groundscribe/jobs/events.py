@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -80,13 +80,15 @@ class JobEventStream:
         *,
         poll_seconds: float = DEFAULT_POLL_SECONDS,
         sleep: Sleeper | None = None,
+        release: Callable[[], None] | None = None,
     ) -> None:
         self._session = session
         self._queue = queue
         self._poll = poll_seconds
         self._sleep = sleep or asyncio.sleep
+        self._release = release
 
-    async def stream(self, job_id: str, *, after: int = -1) -> AsyncIterator[ProgressEvent]:
+    async def stream(self, job_id: str, *, after: int = -1) -> AsyncGenerator[ProgressEvent, None]:
         """Yield the job's events from ``after`` onwards, ending when it does.
 
         ``after`` is a sequence number, not a count: the client tells the server
@@ -111,6 +113,17 @@ class JobEventStream:
             self._session.refresh(job)
             if job.status.is_terminal:
                 break
+            # Let go of the database before waiting. What this stream waits *for*
+            # is the worker committing to it, so a loop that held its transaction
+            # would be waiting on something it had itself made impossible.
+            #
+            # Only when the caller said it may: the session is borrowed, and a
+            # caller that has uncommitted work in it — a test setting up
+            # fixtures, an in-process caller mid-transaction — would lose it. The
+            # request that serves this stream owns its session and is read-only,
+            # which is why the route passes a release and nobody else does.
+            if self._release is not None:
+                self._release()
             await self._sleep(self._poll)
 
         for event in self._events_since(job, cursor):

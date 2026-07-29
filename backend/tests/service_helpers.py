@@ -63,6 +63,9 @@ def build_harness(session: Session, snapshots: SnapshotStore) -> Harness:
         ),
         queue=JobQueue(session, id_factory=sequential_ids("job")),
         positions=PositionStore(session, id_factory=sequential_ids("pos")),
+        # Lent, not given: the test keeps reading through this session after the
+        # request that used it has returned.
+        owns_session=False,
     )
     service = ApplicationService(runtime)
     return Harness(

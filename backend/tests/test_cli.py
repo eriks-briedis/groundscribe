@@ -22,6 +22,7 @@ import inspect
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -30,7 +31,7 @@ from typer.testing import CliRunner
 
 from golden import golden_text
 from groundscribe.api.app import create_app
-from groundscribe.api.routes import get_service
+from groundscribe.api.routes import get_runtime, get_service
 from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.cli import main as cli
 from groundscribe.provenance import models
@@ -136,8 +137,17 @@ def cli_runner(recorder: RecordingService, monkeypatch: pytest.MonkeyPatch) -> C
 
 @pytest.fixture
 def client(recorder: RecordingService) -> TestClient:
+    """The API with its service replaced, and a runtime that owns nothing.
+
+    The reads take a runtime of their own — the comparison endpoint renders one
+    — so the double has to answer ``release()`` even though there is no database
+    behind it. Overridden rather than tolerated in the dependency: production
+    code that shrugged at a missing runtime would also shrug at a real one that
+    failed to build.
+    """
     app = create_app(runtime_factory=lambda: None)  # type: ignore[arg-type,return-value]
     app.dependency_overrides[get_service] = lambda: recorder
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(release=lambda: None)
     return TestClient(app)
 
 

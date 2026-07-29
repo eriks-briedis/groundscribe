@@ -20,12 +20,13 @@ against itself in a way a shared in-memory database would reproduce.
 from __future__ import annotations
 
 import asyncio
+from contextlib import aclosing
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from groundscribe.api.app import create_app
 from groundscribe.db import Base, create_engine, session_factory
@@ -42,7 +43,7 @@ def database(tmp_path: Path) -> Path:
     return tmp_path / "groundscribe.sqlite"
 
 
-def open_database(path: Path) -> tuple[object, object]:
+def open_database(path: Path) -> tuple[Engine, sessionmaker[Session]]:
     engine = create_engine(f"sqlite+pysqlite:///{path}")
     Base.metadata.create_all(engine)
     return engine, session_factory(engine)
@@ -75,7 +76,7 @@ def test_a_read_leaves_no_transaction_open(database: Path, tmp_path: Path) -> No
     assert client.get("/projects/nope/dashboard").status_code == 404
 
     assert can_write(database), "the read is over; nothing should still hold the database"
-    engine.dispose()  # type: ignore[attr-defined]
+    engine.dispose()
 
 
 async def test_a_progress_stream_does_not_hold_the_database_while_it_waits(
@@ -107,17 +108,18 @@ async def test_a_progress_stream_does_not_hold_the_database_while_it_waits(
     session.flush()
     run = session.get(models.PipelineRun, "run-1")
     assert run is not None
-    job = runtime.queue.enqueue(job_type=JobType.EXTRACT_SOURCE, run=run, payload={})
+    job = runtime.queue.enqueue(job_type=JobType.EXTRACT_SOURCE_MODEL, run=run, payload={})
     session.commit()
 
-    stream = JobEventStream(session, runtime.queue).stream(job.id)
-    await anext(stream)  # the first frame: the job's current status
+    async with aclosing(
+        JobEventStream(session, runtime.queue, release=session.rollback).stream(job.id)
+    ) as stream:
+        await anext(stream)  # the first frame: the job's current status
 
-    # One poll in, still waiting for a worker that will never come.
-    await asyncio.sleep(0.05)
+        # One poll in, still waiting for a worker that will never come.
+        await asyncio.sleep(0.05)
 
-    assert can_write(database), "a waiting stream must not hold the database"
+        assert can_write(database), "a waiting stream must not hold the database"
 
-    await stream.aclose()
     session.close()
-    engine.dispose()  # type: ignore[attr-defined]
+    engine.dispose()

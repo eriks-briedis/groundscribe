@@ -50,6 +50,24 @@ class Runtime:
     # Injected for the same reason the recorder's is: a record whose timestamp
     # cannot be controlled cannot be asserted on.
     clock: Callable[[], datetime] = _default_clock
+    #: Whether this runtime is responsible for closing its session.
+    #:
+    #: True where the session was made for one request — every deployment — and
+    #: false where a caller lent one it means to keep using, which is what the
+    #: test harness does to see the same rows the application wrote. Closing a
+    #: borrowed session would end a transaction its owner is still inside.
+    owns_session: bool = True
+
+    def release(self) -> None:
+        """Finish with the database for now.
+
+        Called when a request ends. A session holds its connection — and on
+        SQLite the write lock — until its transaction ends, so leaving one open
+        keeps the database against the worker until garbage collection gets to
+        it.
+        """
+        if self.owns_session:
+            self.session.close()
 
 
 __all__ = ["Runtime"]
