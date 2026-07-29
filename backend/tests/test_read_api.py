@@ -61,6 +61,51 @@ def read(client: TestClient, path: str, **params: Any) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------
+# The way in
+# ----------------------------------------------------------------------
+
+
+async def test_the_projects_can_be_listed(walk: Walkthrough, client: TestClient) -> None:
+    """Every screen phase 11 built addresses a project by id, and nothing said
+    where the first id comes from.
+
+    An interface whose entry point is "paste a uuid" is not an interface. The
+    list is what a person opens the app to, so it carries enough to choose
+    between projects — what each is called, where its run has got to — and
+    nothing that would need a second query per row.
+    """
+    await walk.open_project()
+    await walk.extract()
+
+    projects = read(client, "/projects")
+
+    (project,) = [item for item in projects["projects"] if item["id"] == walk.project_id]
+    assert project["title"] == "Read-through caching"
+    assert project["author_id"] == AUTHOR
+    assert project["state"] == "source_model_ready"
+    assert project["opened_at"]
+
+
+async def test_the_newest_project_is_first(walk: Walkthrough, client: TestClient) -> None:
+    """A list ordered by id would be ordered by uuid, which is no order at all."""
+    await walk.open_project()
+    first = walk.project_id
+    await walk.open_project()
+    second = walk.project_id
+
+    listed = [item["id"] for item in read(client, "/projects")["projects"]]
+
+    assert listed.index(second) < listed.index(first)
+
+
+async def test_an_empty_installation_lists_nothing_rather_than_failing(
+    client: TestClient,
+) -> None:
+    """The first thing a new installation does is ask this question."""
+    assert read(client, "/projects") == {"projects": []}
+
+
+# ----------------------------------------------------------------------
 # Project dashboard
 # ----------------------------------------------------------------------
 
