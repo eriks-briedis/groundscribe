@@ -119,7 +119,12 @@ uv run writer experiment compare <left> <right>
 ```
 
 `GROUNDSCRIBE_DATABASE_URL` and `GROUNDSCRIBE_BLOB_ROOT` point the same binaries at
-a different installation. No provider client is registered by default: a
+a different installation — note that Alembic reads its URL from `alembic.ini`
+rather than the environment, so a custom database has to be named in both places.
+On SQLite the engine turns on write-ahead logging and begins transactions
+immediately, because the API and the worker are two processes over one file; a
+stage holds its transaction for its whole run, so with a slow provider expect a
+command issued mid-stage to wait for it. No provider client is registered by default: a
 local-first tool that silently reached an external provider would be the opposite
 of what it promises, so a stage that needs one fails loudly naming it.
 
@@ -135,6 +140,21 @@ uv run writer contracts export
 cd frontend && npm run contract   # and the TypeScript types from it
 ```
 
+### Everything at once
+
+```bash
+scripts/dev.sh                # migrations, API, worker and web app on 127.0.0.1
+HOST=0.0.0.0 scripts/dev.sh   # the same, reachable from the LAN
+```
+
+Three processes, because the system is three: an API that queues work, a worker
+that does it, and the web app. `HOST`, `API_PORT`, `WEB_PORT` and `POLL` are the
+knobs; Ctrl-C stops all three. Nothing in the app asks who you are, so binding to
+`0.0.0.0` hands the whole pipeline to anything on the network — phase 13 is where
+authentication lands.
+
+The processes are also worth knowing individually:
+
 ### The web application
 
 A local-first React app over the same API, in `frontend/`. It renders artefacts —
@@ -147,6 +167,7 @@ command URLs.
 cd frontend
 npm install
 npm run dev        # http://localhost:5173, proxying /api to the backend on :8000
+                   # add -- --host 0.0.0.0 to serve the LAN
 npm test           # component + contract tests
 npm run typecheck  # tsc --strict, the frontend's equivalent of mypy --strict
 ```

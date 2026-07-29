@@ -72,6 +72,16 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+#: How long a writer waits for the lock before giving up, in milliseconds.
+#:
+#: Longer than pysqlite's five-second default, because the thing being waited on
+#: is a whole stage committing — its trace events, model invocations and
+#: artefacts land in one transaction — and a request that collided with one
+#: should wait for it rather than report a locked database to a person who did
+#: nothing wrong.
+BUSY_TIMEOUT_MS = 15_000
+
+
 def _is_sqlite(url: str) -> bool:
     return url.startswith("sqlite")
 
@@ -97,12 +107,12 @@ def create_engine(url: str = DEFAULT_URL, *, echo: bool = False) -> Engine:
     engine = sa_create_engine(url, **kwargs)
 
     if _is_sqlite(url):
-        _install_sqlite_transaction_control(engine)
+        _install_sqlite_transaction_control(engine, on_disk=not _is_in_memory_sqlite(url))
 
     return engine
 
 
-def _install_sqlite_transaction_control(engine: Engine) -> None:
+def _install_sqlite_transaction_control(engine: Engine, *, on_disk: bool) -> None:
     """Make pysqlite behave like a normal transactional database.
 
     pysqlite (the stdlib sqlite3 driver) does not emit ``BEGIN`` and silently
@@ -111,6 +121,18 @@ def _install_sqlite_transaction_control(engine: Engine) -> None:
     committed. The documented fix is to take transaction control away from the
     driver (``isolation_level = None``) and emit ``BEGIN`` ourselves. We also
     enable ``PRAGMA foreign_keys`` so referential integrity matches Postgres.
+
+    A database on disk additionally gets **write-ahead logging** and a busy
+    timeout, because the local installation runs two processes against it: the
+    API writes for the length of a command while the worker polls the queue
+    (plan/09). Under the rollback journal a commit locks the whole database and a
+    reader arriving during one is refused rather than delayed, which is how
+    running the pair surfaces as ``database is locked``. Both settings bring
+    SQLite closer to what Postgres already does, so nothing above the engine has
+    to know which it is talking to.
+
+    The in-memory database gets neither: there is no file to write ahead into,
+    and the single shared connection cannot contend with itself.
     """
 
     @event.listens_for(engine, "connect")
@@ -118,11 +140,32 @@ def _install_sqlite_transaction_control(engine: Engine) -> None:
         dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        if on_disk:
+            # Per connection, not once per engine: the journal mode is a property
+            # of the database and persists, but the timeout is a property of the
+            # connection and would otherwise be the driver's default on every
+            # connection after the first.
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         cursor.close()
 
     @event.listens_for(engine, "begin")
     def _on_begin(conn: Any) -> None:
-        conn.exec_driver_sql("BEGIN")
+        # ``IMMEDIATE`` on disk, and this is the setting that makes two processes
+        # work at all. A deferred transaction begins as a reader; a reader that
+        # later writes must upgrade its snapshot, and if anything committed in
+        # between SQLite refuses *immediately* — the one busy case where the
+        # timeout is not consulted, because waiting cannot refresh a stale
+        # snapshot. Every command here reads before it writes (resume the run,
+        # load its position, then record what happened), so under contention with
+        # the worker that refusal is the common case rather than a rare one.
+        #
+        # The cost is that a read-only transaction also takes the write lock for
+        # its duration, serialising transactions on one file. For a local-first
+        # tool with one author and one worker that is a fair trade: the
+        # transactions are milliseconds long, and the alternative is a person
+        # being told the database is locked for doing two things at once.
+        conn.exec_driver_sql("BEGIN IMMEDIATE" if on_disk else "BEGIN")
 
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:
