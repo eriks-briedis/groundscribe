@@ -95,6 +95,11 @@ uv run pytest
 Coverage is enforced in CI. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the mandatory
 test-first workflow and commit discipline.
 
+The suite runs on in-memory SQLite by default, and three switches take it further
+— PostgreSQL, and the container stack. They are opt-in because each costs minutes
+rather than seconds, and a suite nobody runs is worse than a narrow one; see
+[Choosing SQLite or PostgreSQL](#choosing-sqlite-or-postgresql) for the commands.
+
 ## Running it
 
 groundscribe is two processes over one database. The API accepts commands and
@@ -232,6 +237,43 @@ work.
 Defects found and consciously left open are in
 [KNOWN-ISSUES.md](KNOWN-ISSUES.md), with what reproduces each one.
 
+### Watching it run
+
+Seventeen numbers, over the whole installation or one project:
+
+```bash
+uv run writer project metrics            # every project
+uv run writer project metrics <project>  # one of them
+curl -s localhost:8000/metrics           # the same, for a monitoring check
+```
+
+Stage durations, tokens, cost, retries, validation failures, schema-repair and
+model-fallback frequency, score change, rewrite count, what became of each review
+finding, stagnation, overrides, question response rate, context truncation, tool
+failures, human edit distance, final approval rate.
+
+Every one is a **query over the trace**, not a counter kept beside it. Nothing is
+incremented at runtime, so a metric cannot drift from the record it summarises,
+and any figure can be argued with by opening the rows it read. A rate with nothing
+to divide reports `n/a` rather than `0` — "no tool has ever failed" and "no tool
+has ever run" are different facts.
+
+The API and worker write **structured logs** — one JSON object per line — carrying
+the ids that resolve them: project, article, pipeline run, stage execution, job,
+model request, tool invocation, trace event. A log line is a pointer into the
+trace rather than a second copy of it, so "something failed overnight" becomes a
+query:
+
+```json
+{"timestamp": "2026-07-29T11:18:41+00:00", "level": "ERROR", "event": "job.failed",
+ "project_id": "…", "pipeline_run_id": "…", "stage_execution_id": "…",
+ "job_id": "…", "trace_event_id": "…", "error_type": "LLMTimeoutError"}
+```
+
+Ids that are not known are absent rather than null, and secrets are removed
+before the record reaches `logging` — not in the formatter, so a deployment that
+attaches its own log shipper still receives redacted material.
+
 ### The API contract
 
 `contracts/openapi.json` is generated from the app and committed, so a contract
@@ -244,7 +286,100 @@ uv run writer contracts export
 cd frontend && npm run contract   # and the TypeScript types from it
 ```
 
-### Everything at once
+## Installing it
+
+One command, and the whole stack runs in containers:
+
+```bash
+scripts/install.sh              # SQLite: three containers, nothing to tune
+scripts/install.sh --postgres   # add PostgreSQL, for concurrent use
+scripts/install.sh --no-start   # write the configuration, build nothing
+```
+
+It checks Docker is reachable, writes a `.env` with a generated password if there
+is not one already, builds the images, starts the stack, waits for the API to
+answer, and prints where to go. It does not continue past a failure, and it does
+not claim success from `compose up` returning zero — if the API never answers it
+prints the backend's own log.
+
+Afterwards it is ordinary Compose:
+
+```bash
+docker compose up -d                      # the SQLite stack
+docker compose --profile postgres up -d   # with the database service
+docker compose logs -f worker             # what the background process is doing
+docker compose down                       # stop; add -v to delete every artefact
+docker compose run --rm backend writer project metrics   # any CLI command
+```
+
+| | |
+|---|---|
+| web app | http://127.0.0.1:3000 |
+| API | http://127.0.0.1:8000 (proxied at `/api`, so it need not be exposed) |
+| artefacts, key, SQLite file | the `storage` volume |
+
+`GROUNDSCRIBE_API_PORT` and `GROUNDSCRIBE_WEB_PORT` move the published ports if
+something already has them.
+
+**The worker is its own container** running the same image as the API with a
+different command. They are the same application, so one image; the process must
+be separate, or model calls happen inside HTTP requests.
+
+### Choosing SQLite or PostgreSQL
+
+SQLite is the default everywhere — local runs, the container stack, and the test
+suite — because a first run should need no server and no credentials beyond the
+one password. Move to PostgreSQL when two things want to write at once: a real
+provider makes a stage take as long as the model does, and a job holds the SQLite
+write lock for its whole run ([KNOWN-ISSUES §1](./KNOWN-ISSUES.md)).
+
+```bash
+# containers: adds the database service and points the app at it
+scripts/install.sh --postgres
+
+# without containers: anything SQLAlchemy understands
+export GROUNDSCRIBE_DATABASE_URL=postgresql+psycopg://user:pass@localhost/groundscribe
+uv sync --extra postgres
+uv run alembic upgrade head
+```
+
+Migrations follow `GROUNDSCRIBE_DATABASE_URL` and fall back to `alembic.ini`, so
+the database that gets migrated is always the one the application opens.
+
+The domain avoids SQLite-specific behaviour, and that is tested rather than
+asserted:
+
+```bash
+docker run -d -p 55432:5432 -e POSTGRES_PASSWORD=groundscribe \
+    -e POSTGRES_USER=groundscribe -e POSTGRES_DB=groundscribe postgres:16-alpine
+
+# the designated integration subset — a whole pipeline run, on Postgres
+GROUNDSCRIBE_TEST_POSTGRES_URL=postgresql+psycopg://groundscribe:groundscribe@localhost:55432/groundscribe \
+    uv run pytest tests/test_postgres_parity.py --no-cov
+
+# or the entire suite against the same server
+GROUNDSCRIBE_TEST_DATABASE_URL=postgresql+psycopg://groundscribe:groundscribe@localhost:55432/groundscribe \
+    uv run pytest --no-cov
+
+# and the container stack itself, built and started for real
+GROUNDSCRIBE_TEST_COMPOSE=1 uv run pytest tests/test_deployment.py --no-cov
+```
+
+CI runs both databases on every push.
+
+### Packaging as a desktop app
+
+Deferred, deliberately. The spec's guidance is to wrap groundscribe in
+[Tauri](https://tauri.app/) *after* the workflow is validated, and wrapping it
+now would freeze an install path while the thing being installed is still
+changing. The pieces it would need are already in place: the API binds a port and
+holds no session state a wrapper would have to reproduce, `paths.py` takes its
+roots from the environment, the OS-keychain path for secrets is written up under
+"Confidentiality, retention and export", and the frontend is a static bundle. The
+work is a Tauri shell that starts the API and worker as sidecars and points a
+webview at the bundle — a packaging job, not a change to the system.
+
+## Everything at once, without containers
 
 ```bash
 scripts/dev.sh                # migrations, API, worker and web app on 127.0.0.1

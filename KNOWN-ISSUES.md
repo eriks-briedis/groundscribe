@@ -59,17 +59,22 @@ mid-stage, which is a change to the recovery model, not a tweak.
 
 ## 2. Alembic ignores `GROUNDSCRIBE_DATABASE_URL`
 
-**Status:** open. **Found:** phase 11, pointing a smoke test at its own database.
-**Severity:** low, but it wastes an afternoon the first time.
+**Status:** **fixed in phase 14.** **Found:** phase 11, pointing a smoke test at
+its own database. **Severity when open:** low, but it wasted an afternoon.
 
 The application reads `GROUNDSCRIBE_DATABASE_URL`
-(`backend/src/groundscribe/app/bootstrap.py`); Alembic reads `sqlalchemy.url`
+(`backend/src/groundscribe/app/bootstrap.py`); Alembic read `sqlalchemy.url`
 from `alembic.ini`. Point the app at a custom database and `alembic upgrade head`
-migrates a *different* file, with no error — the application then fails at
+migrated a *different* file, with no error — the application then failed at
 runtime with `no such table: projects`, which names neither cause.
 
-**Fix:** have `backend/alembic/env.py` prefer the environment variable, falling
-back to the ini. Two lines and a test that the resolver prefers the environment.
+It stopped being a papercut the moment phase 14 built the container stack, where
+the two are *always* different: the entrypoint migrates and the API reads, and
+the first run reported twenty-one successful upgrades followed by a 500 on the
+first command.
+
+`backend/alembic/env.py` now prefers the environment variable, falls back to the
+ini, and treats whitespace as unset (`backend/tests/test_migration_target.py`).
 
 ---
 
@@ -170,12 +175,45 @@ and the choice is a product decision, not a patch.
 
 ---
 
+## 6. `StageExecution.ordinal` is never assigned
+
+**Status:** open. **Found:** phase 14, running the whole suite against
+PostgreSQL. **Severity:** low now that the ordering is fixed; it was the cause of
+a real defect before that.
+
+Nothing ever passes `ordinal` to `ProvenanceRecorder.start_stage`, so every stage
+execution in the database carries the default `0`. The column is dead weight
+carrying a name that promises otherwise.
+
+It mattered because `PipelineRun.stage_executions` was ordered by it alone.
+A constant sort key means the database decides, SQLite decides insertion order
+and looks correct, and PostgreSQL reorders a run's history — which surfaced as
+`test_the_failed_pass_keeps_its_trace` asserting on the wrong "last" stage, and
+would have surfaced in the trace view, the stage inspector and the dashboard.
+The relationship now sorts by `ordinal, started_at, id`, which is total whatever
+`ordinal` holds.
+
+**Why the column is not simply removed or populated:** populating it means
+deciding what the number should *mean* — position within the run, or within the
+run including the replays and forks that branch off it, which phase 12 makes a
+live question. Removing it means a migration and losing a natural place for that
+answer. Both are phase-03 decisions rather than phase-14 ones, and neither is
+urgent now that nothing depends on the column for ordering.
+
+**Where:** `backend/src/groundscribe/provenance/models.py` (`stage_executions`),
+`backend/src/groundscribe/provenance/recorder.py` (`start_stage`).
+
+---
+
 ## Not issues, recorded so they are not rediscovered as bugs
 
 - **`writer worker run` drains the queue once and exits.** Deliberate (a crash
   halfway through a batch keeps what the finished jobs did). A long-lived worker
-  polls on top of it; `scripts/dev.sh` is that loop. A supervised worker is
-  phase 14's.
+  polls on top of it: `scripts/dev.sh` is that loop locally, and
+  `docker/entrypoint.sh worker` is the supervised one, restarted by Compose.
+- **No Tauri desktop build.** Deferred on the spec's own guidance — wrap the
+  workflow once it is validated, not while it is still moving. The README says
+  what is already in place for it and what remains.
 - **No Markdown *editor*, only a preview.** No endpoint accepts a manually edited
   version, so the editor would be a text box with nowhere to save to. It arrives
   with the endpoint.
