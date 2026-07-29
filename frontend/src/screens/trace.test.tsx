@@ -161,4 +161,33 @@ describe('the run comparison', () => {
     expect(backend.requests[0]?.query.get('left')).toBe('e0');
     expect(backend.requests[0]?.query.get('right')).toBe('e2');
   });
+
+  /**
+   * plan/12 → *misleading reproducibility claims* is that phase's named risk,
+   * and this screen is where one gets made. Two executions of one stage showing
+   * different output is a fact; what it *proves* depends on a contract the
+   * reader has to be holding while they look at the diff.
+   */
+  it('says what repeating a stage does and does not guarantee', async () => {
+    fakeBackend({ '/executions/compare': comparison });
+
+    render(<RunComparisonScreen left="e0" right="e2" />);
+
+    const contract = await screen.findByTestId('reproducibility');
+    expect(contract).toHaveTextContent('Complete inspection');
+    expect(contract).toHaveTextContent('Identical output from a hosted model');
+  });
+
+  it('marks the refusal as a refusal rather than listing it as a promise', async () => {
+    fakeBackend({ '/executions/compare': comparison });
+
+    render(<RunComparisonScreen left="e0" right="e2" />);
+
+    const refused = await screen.findByTestId('guarantee-identical_model_output');
+    expect(refused).toHaveAttribute('data-promised', 'false');
+    expect(screen.getByTestId('guarantee-complete_inspection')).toHaveAttribute(
+      'data-promised',
+      'true',
+    );
+  });
 });
