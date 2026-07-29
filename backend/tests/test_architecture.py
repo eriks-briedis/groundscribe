@@ -196,7 +196,7 @@ async def test_the_proposal_is_stored_with_its_concepts_and_parks_for_review(
     assert architecture.created_by_execution_id == execution.id
     assert architecture.snapshot_id == snapshot.id
     concepts = list(db_session.execute(select(domain_models.ArticleConcept)).scalars())
-    assert [concept.id for concept in concepts] == ["a1", "a2"]
+    assert [concept.ref for concept in concepts] == ["a1", "a2"]
     assert all(concept.architecture_id == architecture.id for concept in concepts)
     assert all(concept.thesis for concept in concepts)
     # The source model it was derived from is the recorded input.
@@ -228,3 +228,40 @@ async def test_an_invalid_risk_level_is_repaired_by_the_phase_04_ladder(
         InvocationOutcome.ACCEPTED,
     ]
     assert proposed.value.proposal.articles[0].thin_content_risk is RiskLevel.LOW
+
+
+async def test_a_second_proposal_may_reuse_a_label_without_colliding(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The model names its articles; two proposals may name them the same thing.
+
+    The same shape as phase 06's gap labels and phase 07's review findings, found
+    the same way: phase 12 replays a stage, and a model asked to shape the same
+    source again hands back ``a1`` and ``a2``. Keying the concept row on that
+    label made the second proposal a primary-key collision — an ``IntegrityError``
+    out of a job, which names neither the cause nor anything a person can do.
+
+    So the row keeps its own id and remembers the model's label as ``ref``. The
+    id is what the API addresses an article by, and it must not be a name a model
+    chose.
+    """
+    context, model_client = scripted_context(db_session, snapshot_store)
+    extracted = await extract(context, model_client)
+    stage = ProposeContentArchitecture(
+        source_model=extracted.value, source_model_snapshot=extracted.outputs[0]
+    )
+
+    model_client.script_response(ARCHITECTURE_STAGE, golden_json("architecture.json"))
+    first = await StageRunner(context).run(stage)
+    # The same source, shaped again, with the model reusing its own labels. Run
+    # as a replay does — no transitions — because the run has already parked for
+    # review and re-proposing is not a second trip round the machine.
+    model_client.script_response(ARCHITECTURE_STAGE, golden_json("architecture.json"))
+    second = await StageRunner(context).run(stage, enter=False, transitions=False)
+
+    concepts = list(db_session.execute(select(domain_models.ArticleConcept)).scalars())
+    assert [concept.ref for concept in concepts] == ["a1", "a2", "a1", "a2"]
+    assert len({concept.id for concept in concepts}) == 4, "four rows, not two written over"
+    assert first.value.concept("a1") is not None, "and a label still finds its row"
+    assert second.value.concept("a1") is not None
+    assert first.value.concept("a1") is not second.value.concept("a1")
