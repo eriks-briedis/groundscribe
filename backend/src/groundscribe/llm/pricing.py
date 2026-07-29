@@ -96,10 +96,21 @@ class PricingTable(BaseModel):
         return None if entry is None else round(entry.cost(usage), 10)
 
     def entry_for(self, model: str) -> ModelPrice | None:
-        """The price that applies to ``model``, exact match or longest prefix."""
+        """The price that applies to ``model``: exact, or its dated snapshot.
+
+        Prefix matching exists for **snapshots** — ``gpt-5-2026-01-01`` priced by
+        a ``gpt-5`` entry — and for nothing else. A bare ``startswith`` would also
+        make ``gpt-5-mini`` match ``gpt-5``, charging the cheap model at the
+        flagship's rate for an installation that had priced only one of them.
+        That is the error nobody catches, because the number merely looks high.
+
+        So the remainder after the prefix has to look like a version suffix: a
+        dash followed by a digit. ``-2026-01-01`` qualifies, ``-mini`` does not,
+        and an unpriced sibling stays honestly unpriced.
+        """
         if model in self.models:
             return self.models[model]
-        candidates = [name for name in self.models if model.startswith(name)]
+        candidates = [name for name in self.models if _is_snapshot_of(model, name)]
         if not candidates:
             return None
         return self.models[max(candidates, key=len)]
@@ -117,6 +128,14 @@ class PricingTable(BaseModel):
             return cls.model_validate(raw or {})
         except ValidationError as exc:
             raise PricingConfigError(f"invalid pricing config {path}: {exc}") from exc
+
+
+def _is_snapshot_of(model: str, family: str) -> bool:
+    """Whether ``model`` is a dated build of ``family`` rather than a relative."""
+    if not model.startswith(family):
+        return False
+    suffix = model[len(family) :]
+    return len(suffix) > 1 and suffix[0] == "-" and suffix[1].isdigit()
 
 
 def default_pricing() -> PricingTable:

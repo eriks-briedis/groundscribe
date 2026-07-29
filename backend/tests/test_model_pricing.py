@@ -72,6 +72,27 @@ def test_the_longest_matching_prefix_wins() -> None:
     assert TABLE.price(USAGE, model="gpt-5-mini-2026-01-01") == pytest.approx(0.25 + 1.0)
 
 
+def test_a_sibling_model_is_not_priced_as_its_shorter_relative() -> None:
+    """The same hazard with the entry missing rather than present.
+
+    Prefix matching exists for dated snapshots and nothing else. A bare
+    `startswith` would price `gpt-5-mini` off the `gpt-5` entry on an
+    installation that had only priced the flagship — quietly charging the cheap
+    model at the expensive rate, which reads as a plausible bill.
+
+    Found by the probe reporting a model as priced when nobody had priced it.
+    """
+    flagship_only = PricingTable(
+        version="test",
+        models={"gpt-5": ModelPrice(input_per_million=1.25, output_per_million=10.0)},
+    )
+
+    assert flagship_only.entry_for("gpt-5-mini") is None
+    assert flagship_only.price(USAGE, model="gpt-5-mini") is None
+    # ...while a dated build of the flagship itself still is priced.
+    assert flagship_only.entry_for("gpt-5-2026-01-01") is not None
+
+
 def test_a_call_that_used_nothing_costs_zero_rather_than_nothing_known() -> None:
     """Zero tokens against a priced model is a genuine zero: it was measured.
     The distinction the whole module exists for, from the other side."""
