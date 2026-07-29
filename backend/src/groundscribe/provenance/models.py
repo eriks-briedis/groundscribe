@@ -154,8 +154,7 @@ class StageExecution(ProvenanceRecord, Base):
     # them. Same failure as the run's executions above, one level down.
     model_invocations: Mapped[list[ModelInvocation]] = relationship(
         back_populates="stage_execution",
-        order_by="ModelInvocation.started_at, ModelInvocation.attempt_ordinal, "
-        "ModelInvocation.id",
+        order_by="ModelInvocation.started_at, ModelInvocation.attempt_ordinal, ModelInvocation.id",
     )
     tool_invocations: Mapped[list[ToolInvocation]] = relationship(back_populates="stage_execution")
     decision_records: Mapped[list[DecisionRecord]] = relationship(back_populates="stage_execution")
