@@ -36,9 +36,12 @@ from groundscribe.app.services import UnknownProject
 from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
+from groundscribe.privacy.export import ExportIntegrityError
+from groundscribe.privacy.traces import ConfidentialExportRefused
 from groundscribe.workflow.errors import (
     ArtifactProvenanceError,
     AttributionRequired,
+    ConfidentialMaterialError,
     ExportMismatchError,
     HumanActionRequired,
     IllegalTransition,
@@ -84,6 +87,15 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # is a bad payload (422); a judgement filed against an arm that does not
     # exist names something missing (404).
     (IncomparableExperiment, 422),
+    # Phase 13. A full trace export of a project holding confidential material,
+    # without the caller saying it means to. 409 rather than 403: the request is
+    # permitted, it conflicts with what the project has declared about itself,
+    # and re-issuing it with the acknowledgement succeeds.
+    (ConfidentialExportRefused, 409),
+    # Publishing an article that reprints flagged material, or a version whose
+    # stored bytes no longer match their recorded hash.
+    (ConfidentialMaterialError, 409),
+    (ExportIntegrityError, 409),
     (SensitiveProject, 422),
     (UnknownArm, 404),
 )

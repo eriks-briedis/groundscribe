@@ -2178,6 +2178,51 @@
         "title": "ExperimentResultOut",
         "type": "object"
       },
+      "ExportFormat": {
+        "description": "The four forms plan/13 names.\n\n``CLIPBOARD`` is plain text with nothing around it. It is its own member\nrather than a flag on plain text because it is what a person *asks for*, and\nan option nobody can name in the UI is an option nobody uses.",
+        "enum": [
+          "markdown",
+          "plain_text",
+          "html",
+          "clipboard"
+        ],
+        "title": "ExportFormat",
+        "type": "string"
+      },
+      "ExportedArticleOut": {
+        "description": "One article version rendered in a named format.\n\nThe version id and content hash travel with the content because an exported\nfile otherwise loses its provenance at the moment it leaves the system: a\nMarkdown file on a desktop cannot say which run produced it.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "content_hash",
+          "format",
+          "media_type",
+          "content"
+        ],
+        "title": "ExportedArticleOut",
+        "type": "object"
+      },
       "ExtractSourceModel": {
         "description": "Build the structured source model.",
         "properties": {
@@ -3437,6 +3482,76 @@
         "title": "ProjectSummary",
         "type": "object"
       },
+      "ProviderVisibilityOut": {
+        "description": "plan/13's data-flow surface: counts and routes, never content.\n\nA screen that displayed the confidential passages in order to warn about\nthem would be the leak it was drawn to prevent, so nothing here carries\nsource text.",
+        "properties": {
+          "confidential_segments": {
+            "title": "Confidential Segments",
+            "type": "integer"
+          },
+          "has_confidential_material": {
+            "title": "Has Confidential Material",
+            "type": "boolean"
+          },
+          "internal_segments": {
+            "title": "Internal Segments",
+            "type": "integer"
+          },
+          "leaves_this_machine": {
+            "title": "Leaves This Machine",
+            "type": "boolean"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "retention_mode": {
+            "title": "Retention Mode",
+            "type": "string"
+          },
+          "routing_version": {
+            "title": "Routing Version",
+            "type": "string"
+          },
+          "segments_sent": {
+            "title": "Segments Sent",
+            "type": "integer"
+          },
+          "segments_withheld": {
+            "title": "Segments Withheld",
+            "type": "integer"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageVisibilityOut"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "trace_preserves": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Trace Preserves",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "stages",
+          "routing_version",
+          "confidential_segments",
+          "internal_segments",
+          "segments_sent",
+          "segments_withheld",
+          "retention_mode",
+          "trace_preserves",
+          "leaves_this_machine",
+          "has_confidential_material"
+        ],
+        "title": "ProviderVisibilityOut",
+        "type": "object"
+      },
       "QuestionQueue": {
         "description": "plan/11 \u2192 *Question queue*.",
         "properties": {
@@ -4085,6 +4200,62 @@
         "title": "StageInspection",
         "type": "object"
       },
+      "StageVisibilityOut": {
+        "description": "Where one stage's material goes.",
+        "properties": {
+          "fallback_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Model"
+          },
+          "fallback_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Provider"
+          },
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "permitted": {
+            "title": "Permitted",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "provider",
+          "model",
+          "local",
+          "permitted"
+        ],
+        "title": "StageVisibilityOut",
+        "type": "object"
+      },
       "ToolCallView": {
         "properties": {
           "approval_required": {
@@ -4181,6 +4352,40 @@
           "started_at"
         ],
         "title": "ToolCallView",
+        "type": "object"
+      },
+      "TraceDeletionOut": {
+        "description": "What a deletion removed, so an irreversible act can be checked.",
+        "properties": {
+          "bytes_reclaimed": {
+            "title": "Bytes Reclaimed",
+            "type": "integer"
+          },
+          "payloads": {
+            "title": "Payloads",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "records_kept": {
+            "title": "Records Kept",
+            "type": "integer"
+          },
+          "shared_payloads": {
+            "title": "Shared Payloads",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "payloads",
+          "bytes_reclaimed",
+          "records_kept",
+          "shared_payloads"
+        ],
+        "title": "TraceDeletionOut",
         "type": "object"
       },
       "TraceEventOut": {
@@ -4336,6 +4541,47 @@
           "usage"
         ],
         "title": "TraceExecution",
+        "type": "object"
+      },
+      "TraceExportOut": {
+        "description": "One project's execution records, with what was withheld from them.",
+        "properties": {
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "sanitised": {
+            "title": "Sanitised",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "withheld_payloads": {
+            "title": "Withheld Payloads",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "sanitised",
+          "warnings",
+          "withheld_payloads",
+          "runs"
+        ],
+        "title": "TraceExportOut",
         "type": "object"
       },
       "TraceFilter": {
@@ -6663,6 +6909,46 @@
         "summary": "Read Dashboard"
       }
     },
+    "/projects/{project_id}/provider-visibility": {
+      "get": {
+        "description": "Where this project's material goes, and what is kept of it (plan/13).\n\nCounts and routes only. A screen that displayed the confidential passages in\norder to warn about them would be the leak it was drawn to prevent.",
+        "operationId": "read_provider_visibility_projects__project_id__provider_visibility_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderVisibilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Provider Visibility"
+      }
+    },
     "/projects/{project_id}/questions": {
       "get": {
         "description": "Every question the source raised, answered ones included.",
@@ -6961,6 +7247,104 @@
         "summary": "Read Trace"
       }
     },
+    "/projects/{project_id}/traces": {
+      "delete": {
+        "description": "Drop this project's stored payloads, keeping the record of what ran.",
+        "operationId": "delete_project_traces_projects__project_id__traces_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceDeletionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Project Traces"
+      },
+      "get": {
+        "description": "This project's execution records (plan/13).\n\nA full export of a project holding confidential material is refused \u2014 409,\nvia the status map \u2014 unless the caller acknowledges it in the request. The\nguard has to live here rather than in a warning field on a 200 response: by\nthe time anyone could read such a field, the bytes have already been sent.",
+        "operationId": "export_project_traces_projects__project_id__traces_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sanitise",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Sanitise",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confidential_material_acknowledged",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confidential Material Acknowledged",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Project Traces"
+      }
+    },
     "/projects/{project_id}/voice": {
       "get": {
         "description": "The voice in force here, and where each instruction came from.",
@@ -7038,6 +7422,55 @@
           }
         },
         "summary": "Read Reproducibility"
+      }
+    },
+    "/versions/{version_id}/export": {
+      "get": {
+        "description": "One article version, rendered in a named format (plan/13).\n\nAddressed by version rather than by article: what a person exports is the\nversion that passed validation, and naming it is what makes exporting the\nwrong one impossible rather than merely unlikely. The bytes are read back\nfrom the store and hash-checked before anything is rendered.",
+        "operationId": "export_version_versions__version_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ExportFormat",
+              "default": "markdown"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportedArticleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Version"
       }
     },
     "/voice/profiles": {

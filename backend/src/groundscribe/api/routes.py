@@ -44,6 +44,7 @@ from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkRequest
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
+from groundscribe.privacy.export import ExportFormat
 from groundscribe.provenance import models
 from groundscribe.voice.schemas import VoiceProfileDocument
 
@@ -812,3 +813,64 @@ __all__ = [
     "render",
     "router",
 ]
+
+
+# ----------------------------------------------------------------------
+# Privacy and export (phase 13)
+# ----------------------------------------------------------------------
+
+
+@router.get("/versions/{version_id}/export", response_model=schemas.ExportedArticleOut)
+def export_version(
+    version_id: str, service: Service, format: ExportFormat = ExportFormat.MARKDOWN
+) -> schemas.ExportedArticleOut:
+    """One article version, rendered in a named format (plan/13).
+
+    Addressed by version rather than by article: what a person exports is the
+    version that passed validation, and naming it is what makes exporting the
+    wrong one impossible rather than merely unlikely. The bytes are read back
+    from the store and hash-checked before anything is rendered.
+    """
+    return schemas.ExportedArticleOut.model_validate(service.render_version(version_id, format))
+
+
+@router.get(
+    "/projects/{project_id}/provider-visibility",
+    response_model=schemas.ProviderVisibilityOut,
+)
+def read_provider_visibility(project_id: str, service: Service) -> schemas.ProviderVisibilityOut:
+    """Where this project's material goes, and what is kept of it (plan/13).
+
+    Counts and routes only. A screen that displayed the confidential passages in
+    order to warn about them would be the leak it was drawn to prevent.
+    """
+    return schemas.ProviderVisibilityOut.model_validate(service.provider_visibility(project_id))
+
+
+@router.get("/projects/{project_id}/traces", response_model=schemas.TraceExportOut)
+def export_project_traces(
+    project_id: str,
+    service: Service,
+    sanitise: bool = False,
+    confidential_material_acknowledged: bool = False,
+) -> schemas.TraceExportOut:
+    """This project's execution records (plan/13).
+
+    A full export of a project holding confidential material is refused — 409,
+    via the status map — unless the caller acknowledges it in the request. The
+    guard has to live here rather than in a warning field on a 200 response: by
+    the time anyone could read such a field, the bytes have already been sent.
+    """
+    return schemas.TraceExportOut.model_validate(
+        service.export_traces(
+            project_id,
+            sanitise=sanitise,
+            confidential_material_acknowledged=confidential_material_acknowledged,
+        )
+    )
+
+
+@router.delete("/projects/{project_id}/traces", response_model=schemas.TraceDeletionOut)
+def delete_project_traces(project_id: str, service: Service) -> schemas.TraceDeletionOut:
+    """Drop this project's stored payloads, keeping the record of what ran."""
+    return schemas.TraceDeletionOut.model_validate(service.delete_traces(project_id))

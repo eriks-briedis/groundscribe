@@ -21,8 +21,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from typer.testing import CliRunner
 
 from groundscribe.api.app import create_app
+from groundscribe.cli import main as cli
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.confidentiality import Confidentiality
 from groundscribe.domain.enums import ArtifactType, SegmentKind
@@ -33,6 +35,7 @@ from groundscribe.stages.schemas import ArticleDraft
 from groundscribe.storage.snapshot_store import SnapshotStore
 from provenance_helpers import seed_project
 from service_helpers import Harness, build_harness
+from stage_helpers import DEFAULT_CONSTRAINTS
 
 ARTICLE = ArticleDraft(
     title="Read-through caching for the render pipeline",
@@ -49,12 +52,35 @@ def harness(db_session: Session, snapshot_store: SnapshotStore) -> Harness:
 
 
 @pytest.fixture
+def cli_runner() -> CliRunner:
+    return CliRunner()
+
+
+@pytest.fixture
 def api(harness: Harness) -> TestClient:
     return TestClient(create_app(runtime_factory=lambda: harness.runtime))
 
 
 def _project(session: Session) -> str:
-    return seed_project(session)
+    """A project with the constraints every real project is created with.
+
+    ``seed_project`` makes the bare rows; the visibility surface reads the
+    project's declared bounds, which a project created through the service
+    always has.
+    """
+    project_id = seed_project(session)
+    session.add(
+        domain_models.ProjectConstraints(
+            id="constraints-api",
+            project_id=project_id,
+            audience=DEFAULT_CONSTRAINTS.audience,
+            platform=DEFAULT_CONSTRAINTS.platform,
+            depth=DEFAULT_CONSTRAINTS.depth,
+            allowed_providers=list(DEFAULT_CONSTRAINTS.allowed_providers),
+        )
+    )
+    session.flush()
+    return project_id
 
 
 def _recorded(harness: Harness, project_id: str) -> None:
@@ -225,3 +251,27 @@ def test_a_trace_can_be_deleted_over_http(
 
     assert response.status_code == 200, response.text
     assert response.json()["payloads"] > 0
+
+
+# ---------------------------------------------------------------------------
+# The CLI
+# ---------------------------------------------------------------------------
+
+
+def test_the_cli_offers_the_same_four_things(cli_runner: CliRunner) -> None:
+    """Both front doors, or the CLI quietly becomes the second-class one.
+
+    plan/09 made the CLI a peer of the API over one service layer. A phase that
+    added capabilities to only one of them would leave the two disagreeing about
+    what the product can do.
+    """
+    output = cli_runner.invoke(cli.app, ["--help"]).output
+
+    assert "privacy" in output
+
+    privacy = cli_runner.invoke(cli.app, ["privacy", "--help"]).output
+    for command in ("visibility", "traces", "forget"):
+        assert command in privacy
+
+    article = cli_runner.invoke(cli.app, ["article", "--help"]).output
+    assert "render" in article

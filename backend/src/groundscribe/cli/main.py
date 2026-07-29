@@ -35,6 +35,7 @@ from groundscribe.experiments.reproducibility import contract
 from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
+from groundscribe.privacy.export import ExportFormat
 from groundscribe.voice.schemas import VoiceProfileDocument
 
 app = typer.Typer(help="groundscribe — a local-first, inspectable editorial workflow.")
@@ -46,6 +47,7 @@ execution_app = typer.Typer(help="Inspect, replay and fork execution records.")
 experiment_app = typer.Typer(help="Compare executions and open experiments.")
 voice_app = typer.Typer(help="Manage the personal voice profile.")
 worker_app = typer.Typer(help="Run the background worker.")
+privacy_app = typer.Typer(help="See where material goes, and export or forget a trace.")
 contracts_app = typer.Typer(help="Generate the API contract.")
 
 app.add_typer(project_app, name="project")
@@ -56,6 +58,7 @@ app.add_typer(execution_app, name="execution")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(voice_app, name="voice")
 app.add_typer(worker_app, name="worker")
+app.add_typer(privacy_app, name="privacy")
 app.add_typer(contracts_app, name="contracts")
 
 
@@ -583,6 +586,93 @@ def contracts_export(
         else export_schema(contract_app())
     )
     typer.echo(str(written))
+
+
+# ----------------------------------------------------------------------
+# Privacy and export (phase 13)
+# ----------------------------------------------------------------------
+
+
+@article_app.command("render")
+def article_render(
+    version: str,
+    fmt: Annotated[ExportFormat, typer.Option("--format")] = ExportFormat.MARKDOWN,
+    out: Annotated[Path | None, typer.Option(help="Write here instead of stdout.")] = None,
+) -> None:
+    """Render one validated article version in a publishable format.
+
+    Addressed by version rather than by article: what a person publishes is the
+    version that passed validation, and naming it is what makes rendering the
+    wrong one impossible rather than merely unlikely.
+    """
+    with _command() as service:
+        exported = service.render_version(version, fmt)
+    if out is not None:
+        out.write_text(exported.content, encoding="utf-8")
+        typer.echo(f"{out} ({exported.format.value}, {exported.content_hash})")
+    else:
+        typer.echo(exported.content)
+
+
+@privacy_app.command("visibility")
+def privacy_visibility(project: str) -> None:
+    """Which provider sees this project's material, and what is kept of it."""
+    with _command() as service:
+        surface = service.provider_visibility(project)
+    where = "leaves this machine" if surface.leaves_this_machine else "stays on this machine"
+    typer.echo(f"{surface.project_id}: {where}; retention {surface.retention_mode.value}")
+    typer.echo(
+        f"  {surface.segments_sent} segment(s) sent, {surface.segments_withheld} withheld; "
+        f"{surface.confidential_segments} confidential, {surface.internal_segments} internal"
+    )
+    for stage in surface.stages:
+        locality = "local" if stage.local else "external"
+        allowed = "permitted" if stage.permitted else "NOT PERMITTED"
+        typer.echo(f"  {stage.stage}: {stage.provider}/{stage.model} ({locality}, {allowed})")
+
+
+@privacy_app.command("traces")
+def privacy_traces(
+    project: str,
+    out: Annotated[Path | None, typer.Option(help="Write here instead of stdout.")] = None,
+    sanitise: Annotated[bool, typer.Option(help="Withhold every stored payload.")] = False,
+    yes_i_know: Annotated[
+        bool,
+        typer.Option(
+            "--i-know-this-may-contain-confidential-material",
+            help="Required for a full export of a project holding confidential material.",
+        ),
+    ] = False,
+) -> None:
+    """Export this project's execution records.
+
+    The flag is spelled out at length on purpose. It is the last thing between
+    confidential material and a file, and an option called ``--force`` would be
+    typed by reflex.
+    """
+    with _command() as service:
+        exported = service.export_traces(
+            project, sanitise=sanitise, confidential_material_acknowledged=yes_i_know
+        )
+    for warning in exported.warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    if out is not None:
+        out.write_text(exported.to_json(), encoding="utf-8")
+        typer.echo(f"{out} ({len(exported.runs)} run(s), {exported.withheld_payloads} withheld)")
+    else:
+        typer.echo(exported.to_json())
+
+
+@privacy_app.command("forget")
+def privacy_forget(project: str) -> None:
+    """Delete this project's stored payloads, keeping the record of what ran."""
+    with _command() as service:
+        removed = service.delete_traces(project)
+    typer.echo(
+        f"{removed.project_id}: {removed.payloads} payload(s) removed, "
+        f"{removed.bytes_reclaimed} byte(s); {removed.shared_payloads} kept (shared), "
+        f"{removed.records_kept} call(s) still recorded"
+    )
 
 
 def run() -> None:  # pragma: no cover - the console-script entry point

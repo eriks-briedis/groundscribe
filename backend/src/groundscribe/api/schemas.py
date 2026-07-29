@@ -386,6 +386,89 @@ class ExperimentReportOut(BaseModel):
     comparison: list[ArmMetrics] = Field(default_factory=list)
 
 
+# ----------------------------------------------------------------------
+# Privacy and export (phase 13)
+# ----------------------------------------------------------------------
+
+
+class ExportedArticleOut(BaseModel):
+    """One article version rendered in a named format.
+
+    The version id and content hash travel with the content because an exported
+    file otherwise loses its provenance at the moment it leaves the system: a
+    Markdown file on a desktop cannot say which run produced it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    version_id: str
+    content_hash: str
+    format: str
+    media_type: str
+    content: str
+
+
+class StageVisibilityOut(BaseModel):
+    """Where one stage's material goes."""
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+    stage: str
+    provider: str
+    model: str
+    local: bool
+    permitted: bool
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
+
+
+class ProviderVisibilityOut(BaseModel):
+    """plan/13's data-flow surface: counts and routes, never content.
+
+    A screen that displayed the confidential passages in order to warn about
+    them would be the leak it was drawn to prevent, so nothing here carries
+    source text.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: str
+    stages: list[StageVisibilityOut]
+    routing_version: str
+    confidential_segments: int
+    internal_segments: int
+    segments_sent: int
+    segments_withheld: int
+    retention_mode: str
+    trace_preserves: list[str]
+    leaves_this_machine: bool
+    has_confidential_material: bool
+
+
+class TraceExportOut(BaseModel):
+    """One project's execution records, with what was withheld from them."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: str
+    sanitised: bool
+    warnings: list[str]
+    withheld_payloads: int
+    runs: list[dict[str, Any]]
+
+
+class TraceDeletionOut(BaseModel):
+    """What a deletion removed, so an irreversible act can be checked."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: str
+    payloads: int
+    bytes_reclaimed: int
+    records_kept: int
+    shared_payloads: int
+
+
 __all__ = [
     "ActiveInstructionOut",
     "ActorAction",
@@ -405,14 +488,19 @@ __all__ = [
     "ExperimentOut",
     "ExperimentReportOut",
     "ExperimentResultOut",
+    "ExportedArticleOut",
     "ExtractSourceModel",
     "GuaranteeOut",
     "ImportSource",
     "ModelInvocationOut",
     "PreferenceOut",
+    "ProviderVisibilityOut",
     "RecordPreference",
     "RejectSuggestion",
+    "StageVisibilityOut",
+    "TraceDeletionOut",
     "TraceEventOut",
+    "TraceExportOut",
     "UpdateArchitecture",
     "VoiceProfileSummary",
     "VoiceSuggestionOut",

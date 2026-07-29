@@ -55,8 +55,11 @@ from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
+from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
 from groundscribe.privacy.material import restricted_spans
 from groundscribe.privacy.retention import RetentionPolicy
+from groundscribe.privacy.traces import TraceDeletion, TraceExport, delete_traces, export_traces
+from groundscribe.privacy.visibility import ProviderVisibility, provider_visibility
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageRunner
@@ -554,6 +557,56 @@ class ApplicationService:
             state=position.state,
             available_actions=available_actions(position.state),
         )
+
+    # ------------------------------------------------------------------
+    # Privacy and export (phase 13)
+    # ------------------------------------------------------------------
+
+    def render_version(self, version_id: str, fmt: ExportFormat) -> ExportedArticle:
+        """One stored article version, rendered in a named format.
+
+        Addressed by *snapshot*, not by article: what a person exports is the
+        version that passed validation, and naming it by id is what makes an
+        export of the wrong one impossible rather than merely unlikely.
+        """
+        snapshot = self._runtime.session.get(ArtifactSnapshot, version_id)
+        if snapshot is None:
+            raise UnknownProject(f"no article version {version_id}")
+        return render_article(self._runtime.snapshots, snapshot, fmt)
+
+    def provider_visibility(self, project_id: str) -> ProviderVisibility:
+        """Where this project's material goes, and what is kept of it."""
+        return provider_visibility(
+            self._runtime.session,
+            project_id,
+            constraints=rehydrate.constraints(self._runtime.session, project_id),
+            routing=self._runtime.generator.routing,
+        )
+
+    def export_traces(
+        self,
+        project_id: str,
+        *,
+        sanitise: bool = False,
+        confidential_material_acknowledged: bool = False,
+    ) -> TraceExport:
+        """This project's execution records, as a document.
+
+        The acknowledgement is passed straight through rather than defaulted
+        here: the refusal only means anything if the caller has to say, in the
+        call, that it intends to carry confidential material out.
+        """
+        return export_traces(
+            self._runtime.session,
+            self._runtime.snapshots,
+            project_id,
+            sanitise=sanitise,
+            confidential_material_acknowledged=confidential_material_acknowledged,
+        )
+
+    def delete_traces(self, project_id: str) -> TraceDeletion:
+        """Drop this project's stored payloads, keeping what ran."""
+        return delete_traces(self._runtime.session, self._runtime.snapshots, project_id)
 
     def get_execution(self, execution_id: str) -> models.StageExecution:
         execution = self._runtime.session.get(models.StageExecution, execution_id)

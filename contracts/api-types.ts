@@ -851,6 +851,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/provider-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Provider Visibility
+         * @description Where this project's material goes, and what is kept of it (plan/13).
+         *
+         *     Counts and routes only. A screen that displayed the confidential passages in
+         *     order to warn about them would be the leak it was drawn to prevent.
+         */
+        get: operations["read_provider_visibility_projects__project_id__provider_visibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/questions": {
         parameters: {
             query?: never;
@@ -974,6 +997,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Project Traces
+         * @description This project's execution records (plan/13).
+         *
+         *     A full export of a project holding confidential material is refused — 409,
+         *     via the status map — unless the caller acknowledges it in the request. The
+         *     guard has to live here rather than in a warning field on a 200 response: by
+         *     the time anyone could read such a field, the bytes have already been sent.
+         */
+        get: operations["export_project_traces_projects__project_id__traces_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project Traces
+         * @description Drop this project's stored payloads, keeping the record of what ran.
+         */
+        delete: operations["delete_project_traces_projects__project_id__traces_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/voice": {
         parameters: {
             query?: never;
@@ -1009,6 +1061,31 @@ export interface paths {
          *     looking at two executions, not while reading a README.
          */
         get: operations["read_reproducibility_reproducibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/versions/{version_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Version
+         * @description One article version, rendered in a named format (plan/13).
+         *
+         *     Addressed by version rather than by article: what a person exports is the
+         *     version that passed validation, and naming it is what makes exporting the
+         *     wrong one impossible rather than merely unlikely. The bytes are read back
+         *     from the store and hash-checked before anything is rendered.
+         */
+        get: operations["export_version_versions__version_id__export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2082,6 +2159,36 @@ export interface components {
             status: components["schemas"]["ExecutionStatus"];
         };
         /**
+         * ExportFormat
+         * @description The four forms plan/13 names.
+         *
+         *     ``CLIPBOARD`` is plain text with nothing around it. It is its own member
+         *     rather than a flag on plain text because it is what a person *asks for*, and
+         *     an option nobody can name in the UI is an option nobody uses.
+         * @enum {string}
+         */
+        ExportFormat: "markdown" | "plain_text" | "html" | "clipboard";
+        /**
+         * ExportedArticleOut
+         * @description One article version rendered in a named format.
+         *
+         *     The version id and content hash travel with the content because an exported
+         *     file otherwise loses its provenance at the moment it leaves the system: a
+         *     Markdown file on a desktop cannot say which run produced it.
+         */
+        ExportedArticleOut: {
+            /** Content */
+            content: string;
+            /** Content Hash */
+            content_hash: string;
+            /** Format */
+            format: string;
+            /** Media Type */
+            media_type: string;
+            /** Version Id */
+            version_id: string;
+        };
+        /**
          * ExtractSourceModel
          * @description Build the structured source model.
          */
@@ -2703,6 +2810,38 @@ export interface components {
             title: string;
         };
         /**
+         * ProviderVisibilityOut
+         * @description plan/13's data-flow surface: counts and routes, never content.
+         *
+         *     A screen that displayed the confidential passages in order to warn about
+         *     them would be the leak it was drawn to prevent, so nothing here carries
+         *     source text.
+         */
+        ProviderVisibilityOut: {
+            /** Confidential Segments */
+            confidential_segments: number;
+            /** Has Confidential Material */
+            has_confidential_material: boolean;
+            /** Internal Segments */
+            internal_segments: number;
+            /** Leaves This Machine */
+            leaves_this_machine: boolean;
+            /** Project Id */
+            project_id: string;
+            /** Retention Mode */
+            retention_mode: string;
+            /** Routing Version */
+            routing_version: string;
+            /** Segments Sent */
+            segments_sent: number;
+            /** Segments Withheld */
+            segments_withheld: number;
+            /** Stages */
+            stages: components["schemas"]["StageVisibilityOut"][];
+            /** Trace Preserves */
+            trace_preserves: string[];
+        };
+        /**
          * QuestionQueue
          * @description plan/11 → *Question queue*.
          */
@@ -3026,6 +3165,26 @@ export interface components {
             tool_calls?: components["schemas"]["ToolCallView"][];
             usage: components["schemas"]["UsageSummary"];
         };
+        /**
+         * StageVisibilityOut
+         * @description Where one stage's material goes.
+         */
+        StageVisibilityOut: {
+            /** Fallback Model */
+            fallback_model?: string | null;
+            /** Fallback Provider */
+            fallback_provider?: string | null;
+            /** Local */
+            local: boolean;
+            /** Model */
+            model: string;
+            /** Permitted */
+            permitted: boolean;
+            /** Provider */
+            provider: string;
+            /** Stage */
+            stage: string;
+        };
         /** ToolCallView */
         ToolCallView: {
             /**
@@ -3070,6 +3229,22 @@ export interface components {
             tool_name: string;
             /** Tool Version */
             tool_version: string;
+        };
+        /**
+         * TraceDeletionOut
+         * @description What a deletion removed, so an irreversible act can be checked.
+         */
+        TraceDeletionOut: {
+            /** Bytes Reclaimed */
+            bytes_reclaimed: number;
+            /** Payloads */
+            payloads: number;
+            /** Project Id */
+            project_id: string;
+            /** Records Kept */
+            records_kept: number;
+            /** Shared Payloads */
+            shared_payloads: number;
         };
         /**
          * TraceEventOut
@@ -3143,6 +3318,24 @@ export interface components {
             started_at: string;
             status: components["schemas"]["ExecutionStatus"];
             usage: components["schemas"]["UsageSummary"];
+        };
+        /**
+         * TraceExportOut
+         * @description One project's execution records, with what was withheld from them.
+         */
+        TraceExportOut: {
+            /** Project Id */
+            project_id: string;
+            /** Runs */
+            runs: {
+                [key: string]: unknown;
+            }[];
+            /** Sanitised */
+            sanitised: boolean;
+            /** Warnings */
+            warnings: string[];
+            /** Withheld Payloads */
+            withheld_payloads: number;
         };
         /**
          * TraceFilter
@@ -4798,6 +4991,37 @@ export interface operations {
             };
         };
     };
+    read_provider_visibility_projects__project_id__provider_visibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderVisibilityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_questions_projects__project_id__questions_get: {
         parameters: {
             query?: never;
@@ -4999,6 +5223,71 @@ export interface operations {
             };
         };
     };
+    export_project_traces_projects__project_id__traces_get: {
+        parameters: {
+            query?: {
+                sanitise?: boolean;
+                confidential_material_acknowledged?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceExportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_traces_projects__project_id__traces_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceDeletionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_effective_voice_projects__project_id__voice_get: {
         parameters: {
             query?: {
@@ -5048,6 +5337,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuaranteeOut"][];
+                };
+            };
+        };
+    };
+    export_version_versions__version_id__export_get: {
+        parameters: {
+            query?: {
+                format?: components["schemas"]["ExportFormat"];
+            };
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportedArticleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
