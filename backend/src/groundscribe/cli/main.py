@@ -636,6 +636,7 @@ def privacy_traces(
     project: str,
     out: Annotated[Path | None, typer.Option(help="Write here instead of stdout.")] = None,
     sanitise: Annotated[bool, typer.Option(help="Withhold every stored payload.")] = False,
+    report: Annotated[bool, typer.Option(help="Render for a person rather than a tool.")] = False,
     yes_i_know: Annotated[
         bool,
         typer.Option(
@@ -656,11 +657,33 @@ def privacy_traces(
         )
     for warning in exported.warnings:
         typer.echo(f"warning: {warning}", err=True)
+    body = exported.to_report() if report else exported.to_json()
     if out is not None:
-        out.write_text(exported.to_json(), encoding="utf-8")
+        out.write_text(body, encoding="utf-8")
         typer.echo(f"{out} ({len(exported.runs)} run(s), {exported.withheld_payloads} withheld)")
     else:
-        typer.echo(exported.to_json())
+        typer.echo(body)
+
+
+@privacy_app.command("report")
+def privacy_report(
+    project: Annotated[str | None, typer.Argument(help="One project, or all of them.")] = None,
+) -> None:
+    """What the trace costs, and what deduplication already saved.
+
+    The breakdown is the useful part: a total prompts no decision, and "most of
+    it is raw provider payloads" prompts exactly one.
+    """
+    with _command() as service:
+        report = service.storage_report(project)
+    scope = report.project_id or "all projects"
+    typer.echo(
+        f"{scope}: {report.total_bytes} byte(s) in {report.snapshots} artefact(s); "
+        f"{report.stored_bytes} on disk across {report.distinct_blobs} blob(s) "
+        f"({report.deduplicated_bytes} saved by deduplication)"
+    )
+    for kind, usage in sorted(report.by_type.items(), key=lambda item: -item[1].bytes):
+        typer.echo(f"  {kind}: {usage.count} artefact(s), {usage.bytes} byte(s)")
 
 
 @privacy_app.command("forget")

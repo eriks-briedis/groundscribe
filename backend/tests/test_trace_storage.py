@@ -28,8 +28,11 @@ a person.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.orm import Session
+from typer.testing import CliRunner
 
+from groundscribe.cli import main as cli
 from groundscribe.privacy.storage import storage_report
 from groundscribe.privacy.traces import export_traces
 from groundscribe.provenance.enums import InvocationOutcome
@@ -39,6 +42,11 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from provenance_helpers import make_recorder, seed_project
 
 PROMPT = "Summarise the March cache postmortem for a senior audience."
+
+
+@pytest.fixture
+def cli_runner() -> CliRunner:
+    return CliRunner()
 
 
 def _record(recorder: ProvenanceRecorder, project_id: str, *, prompt: str = PROMPT) -> None:
@@ -186,3 +194,16 @@ def test_a_full_report_says_that_it_is_not_sanitised(
     report = export_traces(db_session, snapshot_store, project_id).to_report()
 
     assert "not sanitised" in report
+
+
+def test_the_report_and_the_cost_are_both_reachable(cli_runner: CliRunner) -> None:
+    """Built and unreachable is the defect phase 12 had to record (KNOWN-ISSUES §4).
+
+    A storage figure nobody can ask for cannot inform a retention decision, and
+    a report nobody can render is a rendering nobody uses.
+    """
+    privacy = cli_runner.invoke(cli.app, ["privacy", "--help"]).output
+    assert "report" in privacy
+
+    traces = cli_runner.invoke(cli.app, ["privacy", "traces", "--help"]).output
+    assert "--report" in traces

@@ -80,6 +80,57 @@ class TraceExport:
             sort_keys=True,
         )
 
+    def to_report(self) -> str:
+        """The same export, rendered for a person (plan/13's execution report).
+
+        Rendered *from this export* rather than from the database, which is what
+        makes "the report cannot show what the export withheld" a structural
+        fact instead of a second policy that has to be kept in agreement with
+        the first.
+
+        The heading says whether it is sanitised. The two documents look alike,
+        only one is safe to paste into a thread, and that is not a difference a
+        reader should have to infer.
+        """
+        state = "sanitised" if self.sanitised else "not sanitised — carries stored payloads"
+        lines = [
+            "# Execution report",
+            "",
+            f"Project **{self.project_id}** — {state}.",
+            "",
+        ]
+        if self.warnings:
+            lines += [f"> **Warning:** {warning}" for warning in self.warnings] + [""]
+        if self.sanitised:
+            lines += [f"{self.withheld_payloads} stored payload(s) withheld from this report.", ""]
+
+        for run in self.runs:
+            lines += [f"## Run {run['id']} ({run['status']})", ""]
+            executions = run["executions"]
+            if not executions:
+                lines += ["_No stages ran._", ""]
+            for execution in executions:
+                lines += [
+                    f"### {execution['stage']} — {execution['status']}",
+                    "",
+                ]
+                if execution["error_message"]:
+                    lines += [f"Failed: {execution['error_message']}", ""]
+                for invocation in execution["model_invocations"]:
+                    lines.append(
+                        f"- attempt {invocation['attempt_ordinal']}: "
+                        f"`{invocation['provider']}/{invocation['model']}` → "
+                        f"{invocation['outcome']} "
+                        f"({invocation['input_tokens']}+{invocation['output_tokens']} tokens)"
+                    )
+                for decision in execution["decisions"]:
+                    lines.append(
+                        f"- decided *{decision['decision_type']}* → {decision['outcome']} "
+                        f"({decision['decided_by']})"
+                    )
+                lines.append("")
+        return "\n".join(lines)
+
 
 @dataclass(frozen=True)
 class TraceDeletion:

@@ -58,6 +58,7 @@ from groundscribe.jobs.models import Job
 from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
 from groundscribe.privacy.material import restricted_spans
 from groundscribe.privacy.retention import RetentionPolicy
+from groundscribe.privacy.storage import StorageReport, storage_report
 from groundscribe.privacy.traces import TraceDeletion, TraceExport, delete_traces, export_traces
 from groundscribe.privacy.visibility import ProviderVisibility, provider_visibility
 from groundscribe.provenance import models
@@ -603,6 +604,10 @@ class ApplicationService:
             sanitise=sanitise,
             confidential_material_acknowledged=confidential_material_acknowledged,
         )
+
+    def storage_report(self, project_id: str | None = None) -> StorageReport:
+        """What the stored artefacts come to, broken down by kind."""
+        return storage_report(self._runtime.session, project_id=project_id)
 
     def delete_traces(self, project_id: str) -> TraceDeletion:
         """Drop this project's stored payloads, keeping what ran."""
