@@ -297,8 +297,8 @@ class Walkthrough:
                 "instructions": [
                     {
                         "id": "plain-openings",
-                        "category": "sentence_construction",
-                        "strength": "preference",
+                        "category": "structure",
+                        "strength": "tendency",
                         "text": "Open with the concrete fact rather than the framing.",
                     }
                 ],
@@ -349,18 +349,24 @@ class Walkthrough:
             {f"S{segment.ordinal}": segment.id for segment in segments},
         )
 
-    def voice_pass(self) -> dict[str, Any]:
-        """A style-only pass over the body currently stored for the article."""
-        version = self.session.scalars(
-            select(domain_models.ArticleVersion)
-            .where(domain_models.ArticleVersion.article_id == self.article_id)
-            .order_by(domain_models.ArticleVersion.ordinal.desc())
-        ).first()
-        assert version is not None and version.snapshot is not None
+    def voice_pass(self, *, snapshot_id: str | None = None) -> dict[str, Any]:
+        """A style-only pass over one stored body, the article's newest by default.
+
+        ``snapshot_id`` names an older one, which is what a replay needs: the
+        pass it is repeating read the version *before* the voice pass, and a
+        payload built from the current body would quote edits that had already
+        been applied.
+        """
+        snapshot = (
+            self.session.get(domain_models.ArtifactSnapshot, snapshot_id)
+            if snapshot_id
+            else self._latest_version_snapshot()
+        )
+        assert snapshot is not None
         # Read as JSON rather than through a schema: the stored version is an
         # ``ArticleDraft`` after a draft and a ``RewrittenArticle`` after a
         # rewrite, and the voice pass only needs the prose either way.
-        stored = json.loads(self.harness.runtime.snapshots.read(version.snapshot))
+        stored = json.loads(self.harness.runtime.snapshots.read(snapshot))
         body = str(stored["body"])
         return {
             "schema_version": 1,
@@ -375,6 +381,28 @@ class Walkthrough:
             ],
             "structural_problems": [],
         }
+
+    def _latest_version_snapshot(self) -> domain_models.ArtifactSnapshot | None:
+        version = self.session.scalars(
+            select(domain_models.ArticleVersion)
+            .where(domain_models.ArticleVersion.article_id == self.article_id)
+            .order_by(domain_models.ArticleVersion.ordinal.desc())
+        ).first()
+        return version.snapshot if version is not None else None
+
+    def input_snapshot(self, execution_id: str, role: str) -> str:
+        """The snapshot one execution recorded consuming in a named role."""
+        artefact = next(
+            item
+            for item in self.session.scalars(
+                select(provenance_models.ExecutionArtifact).where(
+                    provenance_models.ExecutionArtifact.stage_execution_id == execution_id,
+                    provenance_models.ExecutionArtifact.direction == ArtifactDirection.INPUT,
+                    provenance_models.ExecutionArtifact.role == role,
+                )
+            )
+        )
+        return artefact.snapshot_id
 
     def surfaced_gap(self) -> str:
         row = self.session.scalars(

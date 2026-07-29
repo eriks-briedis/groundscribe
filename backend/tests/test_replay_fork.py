@@ -32,6 +32,8 @@ from read_helpers import SETTLED_GAPS, Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
 
 EXTRACTION = "extract_source_truth"
+VOICE = "align_voice"
+SCORING = "score_article"
 
 
 @pytest.fixture
@@ -272,3 +274,35 @@ async def test_a_fork_nobody_asked_for_is_refused(walk: Walkthrough) -> None:
     )
 
     assert response.status_code == 422
+
+
+# ----------------------------------------------------------------------
+# Recorded inputs
+# ----------------------------------------------------------------------
+
+
+async def test_a_replay_reads_the_inputs_the_original_read(walk: Walkthrough) -> None:
+    """plan/12 → *re-execute a stage with recorded inputs + config*.
+
+    Inputs, and not only config. Every handler rebuilds a stage's inputs from
+    rows and takes the *newest* of each, which is right for advancing a run and
+    wrong for repeating one: by the time the voice pass is worth replaying, the
+    newest version of the article is the one that pass produced. A replay
+    reading it would be editing its own output and calling it a repeat.
+
+    It does not fail quietly, which is the only good thing about it: the voice
+    stage refuses a pass quoting text the previous version does not contain, so
+    the job dies naming a phrase rather than the mistake. A stage without that
+    check would have replayed the wrong thing and reported success.
+    """
+    await walk.to_approval()
+    voice_id = walk.executions(VOICE)[0]
+    read_originally = walk.input_snapshot(voice_id, "article_version")
+    assert read_originally != walk.input_snapshot(
+        walk.executions(SCORING)[0], "article_version"
+    ), "the voice pass produced a newer version, which is what makes this a real question"
+
+    walk.script(VOICE, walk.voice_pass(snapshot_id=read_originally))
+    replayed_id = await send(walk, f"/executions/{voice_id}/replay", actor_id=AUTHOR)
+
+    assert walk.input_snapshot(replayed_id, "article_version") == read_originally
