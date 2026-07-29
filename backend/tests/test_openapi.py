@@ -115,9 +115,7 @@ def test_exporting_writes_the_contract_where_the_frontend_reads_it(
     harness = build_harness(db_session, snapshot_store)
     destination = tmp_path / "openapi.json"
 
-    written = export_schema(
-        create_app(runtime_factory=lambda: harness.runtime), path=destination
-    )
+    written = export_schema(create_app(runtime_factory=lambda: harness.runtime), path=destination)
 
     assert written == destination
     assert json.loads(destination.read_text(encoding="utf-8"))["info"]["title"] == "groundscribe"

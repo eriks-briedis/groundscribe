@@ -1,0 +1,2305 @@
+{
+  "components": {
+    "schemas": {
+      "ActorAction": {
+        "description": "A human action. The actor is mandatory: an anonymous decision is unreviewable.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id"
+        ],
+        "title": "ActorAction",
+        "type": "object"
+      },
+      "ActorType": {
+        "description": "What kind of thing acted: who emitted an event or made a decision.\n\n``POLICY`` is not a person \u2014 it is a versioned rule set, which is why a\npolicy decision must also carry a ``policy_version``.",
+        "enum": [
+          "user",
+          "model",
+          "policy",
+          "tool",
+          "system"
+        ],
+        "title": "ActorType",
+        "type": "string"
+      },
+      "AnswerGap": {
+        "description": "One answer to one surfaced question.",
+        "properties": {
+          "answered_by": {
+            "title": "Answered By",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/AnswerResponse",
+            "default": "answered"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answered_by"
+        ],
+        "title": "AnswerGap",
+        "type": "object"
+      },
+      "AnswerResponse": {
+        "description": "What the author did with a question (phase 06 \u00a73).\n\nAll six are answers in the sense that matters: each one tells the pipeline\nsomething it did not know, and each is recorded. They differ in two ways that\nthe code depends on \u2014 whether the question is closed, and whether the text may\nbe sent to a model.\n\n``DEFERRED`` is the only one that leaves the question pending: postponing is\nnot resolving, and marking it closed would erase the record that the author\nmeant to come back. ``CONFIDENTIAL`` is the only one whose text is deliberately\nwithheld from the provider while still being kept locally \u2014 it is an answer to\nthe pipeline and a refusal to the model at the same time.",
+        "enum": [
+          "answered",
+          "skipped",
+          "unknown",
+          "confidential",
+          "deferred",
+          "premise_incorrect"
+        ],
+        "title": "AnswerResponse",
+        "type": "string"
+      },
+      "ArticleDepth": {
+        "description": "How deep the finished article goes, declared per project.\n\nA project constraint rather than a stage decision: it bounds scope for every\nstage at once (extraction's token budget, the architecture's article count,\nthe brief's length), and letting each stage infer it would let them disagree.",
+        "enum": [
+          "overview",
+          "practitioner",
+          "deep_dive"
+        ],
+        "title": "ArticleDepth",
+        "type": "string"
+      },
+      "CommandResponse": {
+        "description": "The answer to every command: position, affordances, and any queued work.",
+        "properties": {
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Job"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkflowState"
+          }
+        },
+        "required": [
+          "project_id",
+          "run_id",
+          "state",
+          "available_actions"
+        ],
+        "title": "CommandResponse",
+        "type": "object"
+      },
+      "CreateExperiment": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateExperiment",
+        "type": "object"
+      },
+      "CreateProject": {
+        "description": "Open a project. The constraints are required, not defaulted.\n\nA project's audience, platform and permitted providers decide what may be\nwritten and who may see the material; guessing them would mean guessing\nwhether an external provider is allowed to read the source.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/EditorialConstraints"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "author_id",
+          "constraints"
+        ],
+        "title": "CreateProject",
+        "type": "object"
+      },
+      "EditorialConstraints": {
+        "description": "The bounds a project publishes under (phase 06 \u00a71).\n\nA *value*, not a record: :class:`ProjectConstraints` is the versioned row that\nholds one of these. Splitting them is what lets ingestion ask \"are these the\nconstraints already in force?\" by comparing values, and version them only when\nthe answer is no.\n\n``allowed_providers`` is an allow-list. A project that has not named a\nprovider has not consented to it seeing the material, so the default is that\nnothing external may \u2014 local-first by default (plan/00), enforced end to end\nin phase 13.",
+        "properties": {
+          "allowed_providers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Providers",
+            "type": "array"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "confidential_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Names",
+            "type": "array"
+          },
+          "depth": {
+            "$ref": "#/components/schemas/ArticleDepth"
+          },
+          "first_person_allowed": {
+            "default": true,
+            "title": "First Person Allowed",
+            "type": "boolean"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "target_length_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Length Words"
+          },
+          "trace_retention_consent": {
+            "default": false,
+            "title": "Trace Retention Consent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "audience",
+          "platform",
+          "depth"
+        ],
+        "title": "EditorialConstraints",
+        "type": "object"
+      },
+      "ExecutionComparison": {
+        "description": "Two executions, side by side. Phase 12 says what the difference means.",
+        "properties": {
+          "left": {
+            "$ref": "#/components/schemas/ExecutionSummary"
+          },
+          "right": {
+            "$ref": "#/components/schemas/ExecutionSummary"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "title": "ExecutionComparison",
+        "type": "object"
+      },
+      "ExecutionStatus": {
+        "description": "Lifecycle of a pipeline run or a stage execution.\n\n``FAILED`` and ``CANCELLED`` are deliberately distinct: one is the system\ngiving up, the other a human stopping the work. Both keep their partial\ntrace (plan/03 \u2192 *Failure handling*, partial data preserved).",
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "ExecutionStatus",
+        "type": "string"
+      },
+      "ExecutionSummary": {
+        "description": "One stage execution, as a client sees it.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "impl_version": {
+            "title": "Impl Version",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "parent_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Execution Id"
+          },
+          "pipeline_run_id": {
+            "title": "Pipeline Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "pipeline_run_id",
+          "stage",
+          "impl_version",
+          "ordinal",
+          "status",
+          "correlation_id",
+          "started_at"
+        ],
+        "title": "ExecutionSummary",
+        "type": "object"
+      },
+      "ExperimentOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "ExperimentOut",
+        "type": "object"
+      },
+      "ExtractSourceModel": {
+        "description": "Build the structured source model.",
+        "properties": {
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget"
+          }
+        },
+        "title": "ExtractSourceModel",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImportSource": {
+        "description": "Add one piece of source material to a project.",
+        "properties": {
+          "confidential": {
+            "default": false,
+            "title": "Confidential",
+            "type": "boolean"
+          },
+          "source_format": {
+            "$ref": "#/components/schemas/SourceFormat",
+            "default": "plain_text"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          }
+        },
+        "required": [
+          "title",
+          "text"
+        ],
+        "title": "ImportSource",
+        "type": "object"
+      },
+      "InvocationOutcome": {
+        "description": "How a single model invocation ended.\n\n``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can\nbe useful yet unparseable, or parseable yet non-conforming; both are\npreserved alongside their repaired successor rather than discarded.",
+        "enum": [
+          "accepted",
+          "invalid_json",
+          "invalid_schema",
+          "refused",
+          "timeout",
+          "provider_error",
+          "rate_limited",
+          "cancelled"
+        ],
+        "title": "InvocationOutcome",
+        "type": "string"
+      },
+      "Job": {
+        "description": "One unit of queued work, as stored and as reported.",
+        "properties": {
+          "active_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Key"
+          },
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "claimed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At"
+          },
+          "claimed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed By"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dedupe_key": {
+            "title": "Dedupe Key",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "max_attempts": {
+            "default": 1,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "pipeline_run_id": {
+            "title": "Pipeline Run Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "stage_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Execution Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus",
+            "default": "pending"
+          },
+          "superseded_by_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By Id"
+          }
+        },
+        "required": [
+          "id",
+          "job_type",
+          "project_id",
+          "pipeline_run_id",
+          "dedupe_key",
+          "created_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "JobStatus": {
+        "description": "Where a queued unit of work has got to.\n\n``SUPERSEDED`` is the member that earns this enum its own existence: a job\nreplaced by a newer command is neither cancelled (nobody stopped it) nor\nfailed (nothing went wrong). It is work the system decided not to do, and\nsaying so is the difference between a queue that can be audited and one that\nsilently drops requests.",
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "superseded"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "ModelInvocationOut": {
+        "description": "One model call, including the attempts that failed.\n\nThe failed ones are published, not filtered: a client showing only accepted\ncalls would under-report exactly the runs that cost the most.",
+        "properties": {
+          "attempt_ordinal": {
+            "title": "Attempt Ordinal",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/InvocationOutcome"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "parent_invocation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Invocation Id"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "attempt_ordinal",
+          "outcome",
+          "provider",
+          "model",
+          "template_id",
+          "template_version",
+          "input_tokens",
+          "output_tokens",
+          "started_at"
+        ],
+        "title": "ModelInvocationOut",
+        "type": "object"
+      },
+      "SourceFormat": {
+        "description": "How a source document arrived, which decides how it is segmented.\n\nFrom *Editorial workflow \u00a71 Source ingestion*: Markdown, plain text and pasted\nnotes are the three supported inputs. The distinction is kept after parsing\nbecause it explains the segmentation: a heading in Markdown is a structural\nfact, whereas the same line in pasted notes is just a line.",
+        "enum": [
+          "markdown",
+          "plain_text",
+          "pasted_notes"
+        ],
+        "title": "SourceFormat",
+        "type": "string"
+      },
+      "TraceEventOut": {
+        "description": "One event in a run's timeline.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_type": {
+            "$ref": "#/components/schemas/ActorType"
+          },
+          "causation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causation Id"
+          },
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "timestamp",
+          "actor_type",
+          "actor_id",
+          "payload",
+          "correlation_id",
+          "sequence"
+        ],
+        "title": "TraceEventOut",
+        "type": "object"
+      },
+      "UpdateArchitecture": {
+        "description": "An author's edits to a proposed architecture.",
+        "properties": {
+          "accepted_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted Warnings",
+            "type": "array"
+          },
+          "commands": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commands",
+          "requested_by"
+        ],
+        "title": "UpdateArchitecture",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkflowState": {
+        "description": "Where a pipeline run currently sits.\n\nThe order mirrors the editorial pipeline: source \u2192 architecture \u2192 brief \u2192\ndraft \u2192 review \u2192 voice \u2192 score \u2192 validate \u2192 approve, with the three endings\nlast. Names ending in ``_REQUIRED`` are the human-pause states \u2014 the engine\nparks there until a person acts (see\n:func:`~groundscribe.workflow.transitions.human_pause_states`).",
+        "enum": [
+          "source_ingested",
+          "source_model_extracting",
+          "source_questions_required",
+          "source_model_ready",
+          "architecture_proposing",
+          "architecture_review_required",
+          "architecture_approved",
+          "brief_generating",
+          "brief_review_required",
+          "draft_generating",
+          "substantive_reviewing",
+          "revision_plan_required",
+          "substantive_rewriting",
+          "voice_aligning",
+          "scoring",
+          "revision_required",
+          "passed",
+          "final_validating",
+          "human_approval_required",
+          "completed",
+          "failed",
+          "cancelled",
+          "stalled"
+        ],
+        "title": "WorkflowState",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "A local-first, inspectable editorial workflow. Every command returns where the run now is and what may be done to it next; work that calls a model is queued for a worker rather than done in the request.",
+    "title": "groundscribe",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/articles/{article_id}/approve": {
+      "post": {
+        "description": "The author publishes the validated article.",
+        "operationId": "approve_articles__article_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve"
+      }
+    },
+    "/articles/{article_id}/brief/approve": {
+      "post": {
+        "description": "Accept the brief, which is what opens drafting.",
+        "operationId": "approve_brief_articles__article_id__brief_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Brief"
+      }
+    },
+    "/articles/{article_id}/brief/generate": {
+      "post": {
+        "description": "Queue the brief this article will be drafted against.",
+        "operationId": "generate_brief_articles__article_id__brief_generate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Brief"
+      }
+    },
+    "/articles/{article_id}/draft": {
+      "post": {
+        "description": "Queue the first draft.",
+        "operationId": "draft_articles__article_id__draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft"
+      }
+    },
+    "/articles/{article_id}/override-approve": {
+      "post": {
+        "description": "Accept an article the score refused, on a person's explicit say-so.",
+        "operationId": "override_and_approve_articles__article_id__override_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Override And Approve"
+      }
+    },
+    "/articles/{article_id}/review": {
+      "post": {
+        "description": "Queue a substantive review of the current version.",
+        "operationId": "review_articles__article_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review"
+      }
+    },
+    "/articles/{article_id}/revision-plan": {
+      "post": {
+        "description": "Queue the plan a rewrite will be bound by.",
+        "operationId": "plan_revision_articles__article_id__revision_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Revision"
+      }
+    },
+    "/articles/{article_id}/revision-plan/approve": {
+      "post": {
+        "description": "Authorise the rewrite the plan describes.",
+        "operationId": "approve_revision_plan_articles__article_id__revision_plan_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Revision Plan"
+      }
+    },
+    "/articles/{article_id}/rewrite": {
+      "post": {
+        "description": "Queue the rewrite.",
+        "operationId": "rewrite_articles__article_id__rewrite_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rewrite"
+      }
+    },
+    "/articles/{article_id}/score": {
+      "post": {
+        "description": "Queue the scoring pass, which is also what routes a failure.",
+        "operationId": "score_articles__article_id__score_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Score"
+      }
+    },
+    "/articles/{article_id}/validate": {
+      "post": {
+        "description": "Run final validation here and now: it calls no model (plan/08).",
+        "operationId": "validate_articles__article_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate"
+      }
+    },
+    "/articles/{article_id}/voice-align": {
+      "post": {
+        "description": "Queue the voice pass.",
+        "operationId": "voice_align_articles__article_id__voice_align_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice Align"
+      }
+    },
+    "/executions/compare": {
+      "get": {
+        "description": "Two executions side by side. Declared before ``/executions/{id}`` so the\nliteral path is matched first rather than read as an execution called\n\"compare\".",
+        "operationId": "compare_executions_executions_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "left",
+            "required": true,
+            "schema": {
+              "title": "Left",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "right",
+            "required": true,
+            "schema": {
+              "title": "Right",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionComparison"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Executions"
+      }
+    },
+    "/executions/{execution_id}": {
+      "get": {
+        "description": "One stage execution, with how it ended.",
+        "operationId": "read_execution_executions__execution_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Execution"
+      }
+    },
+    "/executions/{execution_id}/events": {
+      "get": {
+        "description": "The execution's timeline, in the order it was recorded.",
+        "operationId": "read_execution_events_executions__execution_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TraceEventOut"
+                  },
+                  "title": "Response Read Execution Events Executions  Execution Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Execution Events"
+      }
+    },
+    "/executions/{execution_id}/fork": {
+      "post": {
+        "description": "Branch a new execution from an existing one.",
+        "operationId": "fork_execution_executions__execution_id__fork_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fork Execution"
+      }
+    },
+    "/executions/{execution_id}/invocations": {
+      "get": {
+        "description": "Every model call the execution made, failed attempts included.",
+        "operationId": "read_execution_invocations_executions__execution_id__invocations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelInvocationOut"
+                  },
+                  "title": "Response Read Execution Invocations Executions  Execution Id  Invocations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Execution Invocations"
+      }
+    },
+    "/executions/{execution_id}/replay": {
+      "post": {
+        "description": "Re-run a stage as a new execution. The original is never touched.",
+        "operationId": "replay_execution_executions__execution_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Execution"
+      }
+    },
+    "/experiments": {
+      "post": {
+        "description": "Open an experiment record; phase 12 fills in what it means.",
+        "operationId": "create_experiment_experiments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExperiment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Experiment"
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "description": "One job, for a client that would rather poll than stream.",
+        "operationId": "read_job_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Job"
+      }
+    },
+    "/jobs/{job_id}/events": {
+      "get": {
+        "description": "Stream a job's progress until it finishes.\n\n``after`` is a sequence number rather than a count, so a client that\nreconnects resumes from what it saw instead of replaying the run \u2014 the same\ncontract as SSE's ``Last-Event-ID``, which phase 03's stored event ordering\nalready supports.",
+        "operationId": "stream_job_events_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last event sequence already seen.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": -1,
+              "description": "Last event sequence already seen.",
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Job Events"
+      }
+    },
+    "/projects": {
+      "post": {
+        "description": "Open a project, its bounds, its run and its position.",
+        "operationId": "create_project_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Project"
+      }
+    },
+    "/projects/{project_id}": {
+      "get": {
+        "description": "Where the run is and what may be done to it, changing nothing.",
+        "operationId": "read_project_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Project"
+      }
+    },
+    "/projects/{project_id}/architecture/propose": {
+      "post": {
+        "description": "Queue a proposal of the article or series the source supports.",
+        "operationId": "propose_architecture_projects__project_id__architecture_propose_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Architecture"
+      }
+    },
+    "/projects/{project_id}/architecture/{version}": {
+      "put": {
+        "description": "Commit an author's edits as a new version.\n\n``version`` addresses the architecture the author was looking at. The service\nedits the version currently in force; a mismatch is a conflict the engine's\nlineage guard raises, which is the check that actually matters.",
+        "operationId": "update_architecture_projects__project_id__architecture__version__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateArchitecture"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Architecture"
+      }
+    },
+    "/projects/{project_id}/architecture/{version}/approve": {
+      "post": {
+        "description": "Lock the architecture, and open an article for each approved concept.",
+        "operationId": "approve_architecture_projects__project_id__architecture__version__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Architecture"
+      }
+    },
+    "/projects/{project_id}/cancel": {
+      "post": {
+        "description": "Stop the run. Available in every non-terminal state, so none is a trap.",
+        "operationId": "cancel_projects__project_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel"
+      }
+    },
+    "/projects/{project_id}/source-gaps/{gap_id}/answer": {
+      "post": {
+        "description": "Record an answer and rebuild the source model from it.",
+        "operationId": "answer_gap_projects__project_id__source_gaps__gap_id__answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "gap_id",
+            "required": true,
+            "schema": {
+              "title": "Gap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerGap"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Gap"
+      }
+    },
+    "/projects/{project_id}/source-model/extract": {
+      "post": {
+        "description": "Queue the source-model build, and the gap analysis that follows it.",
+        "operationId": "extract_source_model_projects__project_id__source_model_extract_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractSourceModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract Source Model"
+      }
+    },
+    "/projects/{project_id}/sources": {
+      "post": {
+        "description": "Store one piece of source material. No model is involved, so no job.",
+        "operationId": "import_source_projects__project_id__sources_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Source"
+      }
+    }
+  }
+}
