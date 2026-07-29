@@ -366,9 +366,7 @@ async def test_the_board_says_how_the_architecture_is_edited_and_approved(
     assert board["approve_command"]["requires_actor"] is True
 
 
-async def test_an_empty_board_offers_nothing_to_edit(
-    walk: Walkthrough, client: TestClient
-) -> None:
+async def test_an_empty_board_offers_nothing_to_edit(walk: Walkthrough, client: TestClient) -> None:
     """Before anything is proposed there is no version to address."""
     await walk.open_project()
 
