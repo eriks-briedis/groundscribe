@@ -63,7 +63,7 @@ class JobQueue:
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
-        self._session = session
+        self.session = session
         self._clock = clock or _default_clock
         self._new_id = id_factory or _default_id
 
@@ -120,27 +120,27 @@ class JobQueue:
             # is inserted, and the replacement must exist *before* anything
             # points a foreign key at it.
             self._release(existing, status=JobStatus.SUPERSEDED, at=now)
-            self._session.flush()
+            self.session.flush()
 
-        self._session.add(job)
-        self._session.flush()
+        self.session.add(job)
+        self.session.flush()
 
         if existing is not None:
             existing.superseded_by_id = job.id
-            self._session.flush()
+            self.session.flush()
         return job
 
     def active(self, dedupe_key: str) -> Job | None:
         """The claimable job for ``dedupe_key``, if there is one."""
-        return self._session.scalars(select(Job).where(Job.active_key == dedupe_key)).one_or_none()
+        return self.session.scalars(select(Job).where(Job.active_key == dedupe_key)).one_or_none()
 
     def get(self, job_id: str) -> Job | None:
-        return self._session.get(Job, job_id)
+        return self.session.get(Job, job_id)
 
     def pending_count(self) -> int:
         """How many jobs are waiting; the API reports it, the tests assert it."""
         return int(
-            self._session.execute(
+            self.session.execute(
                 select(func.count()).select_from(Job).where(Job.status == JobStatus.PENDING)
             ).scalar_one()
         )
@@ -160,7 +160,7 @@ class JobQueue:
         """
         now = self._clock()
         candidates = list(
-            self._session.scalars(
+            self.session.scalars(
                 select(Job).where(Job.status == JobStatus.PENDING).order_by(Job.created_at, Job.id)
             )
         )
@@ -170,7 +170,7 @@ class JobQueue:
             # zero means another worker got there first.
             result = cast(
                 "CursorResult[Any]",
-                self._session.execute(
+                self.session.execute(
                     update(Job)
                     .where(Job.id == job.id, Job.status == JobStatus.PENDING)
                     .values(
@@ -184,27 +184,33 @@ class JobQueue:
                 ),
             )
             if result.rowcount:
-                self._session.expire(job)
+                self.session.expire(job)
                 return job
         return None
 
     def attach_execution(self, job: Job, execution: models.StageExecution) -> Job:
-        """Name the stage execution this job opened, while it is still running."""
-        job.stage_execution_id = execution.id
-        self._session.flush()
+        """Name the stage execution this job opened, while it is still running.
+
+        Assigned through the relationship rather than the id column: writing the
+        column alone leaves ``job.stage_execution`` reading ``None`` until
+        something expires it, and the worker asks for it moments later to anchor
+        the job's own progress events.
+        """
+        job.stage_execution = execution
+        self.session.flush()
         return job
 
     def heartbeat(self, job: Job) -> Job:
         """Say the worker is still alive, so the reclaimer leaves the job alone."""
         job.heartbeat_at = self._clock()
-        self._session.flush()
+        self.session.flush()
         return job
 
     def complete(self, job: Job, *, result: Mapping[str, Any] | None = None) -> Job:
         """Finish a job, recording what it produced."""
         job.result = dict(result or {})
         self._release(job, status=JobStatus.SUCCEEDED, at=self._clock())
-        self._session.flush()
+        self.session.flush()
         return job
 
     def fail(self, job: Job, *, error_type: str, error_message: str) -> Job:
@@ -223,13 +229,13 @@ class JobQueue:
             job.heartbeat_at = None
         else:
             self._release(job, status=JobStatus.FAILED, at=self._clock())
-        self._session.flush()
+        self.session.flush()
         return job
 
     def cancel(self, job: Job) -> Job:
         """Stop a job a person no longer wants run."""
         self._release(job, status=JobStatus.CANCELLED, at=self._clock())
-        self._session.flush()
+        self.session.flush()
         return job
 
     # ------------------------------------------------------------------
@@ -246,7 +252,7 @@ class JobQueue:
         """
         cutoff = self._clock() - lease
         lost = list(
-            self._session.scalars(
+            self.session.scalars(
                 select(Job)
                 .where(Job.status == JobStatus.RUNNING, Job.heartbeat_at < cutoff)
                 .order_by(Job.created_at, Job.id)
@@ -276,7 +282,7 @@ class JobQueue:
             Job.status == JobStatus.RUNNING, Job.stage_execution_id.is_not(None)
         )
         return tuple(
-            self._session.scalars(
+            self.session.scalars(
                 select(models.StageExecution)
                 .where(
                     models.StageExecution.status == ExecutionStatus.RUNNING,
