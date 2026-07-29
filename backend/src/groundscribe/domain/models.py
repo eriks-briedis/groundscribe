@@ -30,6 +30,7 @@ from sqlalchemy.ext.associationproxy import AssociationProxy, association_proxy
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from groundscribe.db import Base, enum_column
+from groundscribe.domain.confidentiality import Confidentiality, ConfidentialityFlags
 from groundscribe.domain.enums import (
     AnswerResponse,
     ArticleDepth,
@@ -51,6 +52,31 @@ class EntityMixin:
     id: Mapped[str] = mapped_column(String, primary_key=True)
     schema_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by_execution_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class ConfidentialityMixin:
+    """What may be sent, published, and exported, for one span of source (phase 13).
+
+    Two columns rather than one because they are two different facts: the
+    classification a person set, and any extra boundaries they named on top of
+    it. Storing only the resolved set would lose which was which, and a record
+    that cannot say what was chosen cannot be argued with.
+
+    Both default to the permissive end, so material written before this phase
+    reads back as publishable rather than as null. That is what keeps the
+    enforcement points total — a check that had to handle "no flag" would grow a
+    third branch, and the third branch is where material leaks.
+    """
+
+    confidentiality: Mapped[Confidentiality] = mapped_column(
+        enum_column(Confidentiality), default=Confidentiality.PUBLISHABLE, nullable=False
+    )
+    excluded: Mapped[list[str]] = mapped_column(JSONColumn, default=list, nullable=False)
+
+    @property
+    def flags(self) -> ConfidentialityFlags:
+        """The two columns resolved into the one question callers ask."""
+        return ConfidentialityFlags(self.confidentiality, self.excluded or ())
 
 
 class LineageMixin:
@@ -150,7 +176,7 @@ class SourceDocument(LineageMixin, EntityMixin, Base):
     snapshot: Mapped[ArtifactSnapshot | None] = relationship(foreign_keys=[snapshot_id])
 
 
-class SourceSegment(EntityMixin, Base):
+class SourceSegment(ConfidentialityMixin, EntityMixin, Base):
     __tablename__ = "source_segments"
 
     document_id: Mapped[str] = mapped_column(ForeignKey("source_documents.id"), nullable=False)
@@ -171,7 +197,15 @@ class SourceSegment(EntityMixin, Base):
     )
 
 
-class SourceClaim(EntityMixin, Base):
+class SourceClaim(ConfidentialityMixin, EntityMixin, Base):
+    """A claim drawn from the source, with its own confidentiality (phase 13).
+
+    Flagged independently of the segments behind it: extraction can narrow a
+    publishable paragraph into a claim that names a customer, and if only
+    segments could be flagged the only way to withhold that claim would be to
+    withhold the paragraph it came from.
+    """
+
     __tablename__ = "source_claims"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)

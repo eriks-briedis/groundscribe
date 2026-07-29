@@ -51,7 +51,7 @@ def test_both_tables_carry_the_flags(migrated_url: str, table: str) -> None:
     engine = create_engine(migrated_url)
     try:
         columns = {column["name"] for column in inspect(engine).get_columns(table)}
-        assert FLAG_COLUMNS <= columns
+        assert columns >= FLAG_COLUMNS
     finally:
         engine.dispose()
 
