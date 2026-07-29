@@ -178,6 +178,35 @@ def test_a_profile_lists_the_hard_rules_it_can_enforce() -> None:
     assert [rule.id for rule in profile.hard_rules] == ["no-em-dash"]
 
 
+def test_a_profile_collects_every_term_it_forbids() -> None:
+    """One list, for the two places that need it.
+
+    The voice pass checks its output against it, and phase 08's final validation
+    checks the published article against it. Deriving it twice would let the two
+    disagree about what the author actually banned.
+
+    Preferences contribute too: a term is either allowed in the prose or it is
+    not, and the strength governs how hard the *model* is pushed, not whether a
+    person meant the word to appear.
+    """
+    profile = VoiceProfileDocument(
+        name="ada",
+        version="1",
+        instructions=(
+            instruction(),
+            instruction(
+                "no-hype",
+                category=VoiceCategory.PROHIBITED_PATTERNS,
+                strength=InstructionStrength.STRONG_PREFERENCE,
+                text="Avoid hype words.",
+                prohibits=("game-changer", "seamless"),
+            ),
+        ),
+    )
+
+    assert profile.prohibited_terms == ("—", "game-changer", "seamless")
+
+
 def test_a_profile_is_immutable() -> None:
     """plan/00 → no silent mutation. A profile is superseded, never edited.
 

@@ -38,8 +38,10 @@ from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult, StageRunner
 from groundscribe.stages.drafting import DRAFT_STAGE, DraftOutcome, GenerateInitialDraft
 from groundscribe.stages.errors import DraftContractError, EvidenceError
-from groundscribe.stages.schemas import ArticleDraft, VoiceProfileDocument
+from groundscribe.stages.schemas import ArticleDraft
 from groundscribe.storage.snapshot_store import SnapshotStore
+from groundscribe.voice.enums import InstructionStrength, VoiceCategory
+from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
 from groundscribe.workflow.states import WorkflowState
 from pipeline_helpers import BriefedArticle, run_to_approved_brief
 from stage_helpers import scripted_context
@@ -47,8 +49,21 @@ from stage_helpers import scripted_context
 VOICE = VoiceProfileDocument(
     name="default",
     description="Plain, first-person, technical without ceremony.",
-    tone="direct",
-    avoid=("delve", "in today's fast-paced world", "it is important to note"),
+    instructions=(
+        VoiceInstruction(
+            id="direct",
+            category=VoiceCategory.TONE,
+            strength=InstructionStrength.STRONG_PREFERENCE,
+            text="State the finding, then the evidence. Do not build up to it.",
+        ),
+        VoiceInstruction(
+            id="no-filler",
+            category=VoiceCategory.PROHIBITED_PATTERNS,
+            strength=InstructionStrength.HARD_RULE,
+            text="Never write these phrases.",
+            prohibits=("delve", "in today's fast-paced world", "it is important to note"),
+        ),
+    ),
 )
 
 

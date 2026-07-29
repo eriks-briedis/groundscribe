@@ -66,7 +66,7 @@ def checks_for(article: ArticleDraft | None = None, **overrides: Any) -> Validat
         "brief": sized_brief(),
         "source_text": str(golden_json("source_model.json")),
         "constraints": DEFAULT_CONSTRAINTS,
-        "prohibited_terms": VOICE.avoid,
+        "prohibited_terms": VOICE.prohibited_terms,
     }
     return ValidationInput(**(fields | overrides))
 
@@ -337,7 +337,7 @@ async def validate(
             passed_version=drafted.result.value.version,
             brief=kwargs.pop("brief", sized_brief()),
             source_model=drafted.briefed.source_model,
-            prohibited_terms=VOICE.avoid,
+            prohibited_terms=VOICE.prohibited_terms,
             **kwargs,
         )
     )
@@ -432,7 +432,7 @@ async def test_validating_a_version_other_than_the_one_that_passed_is_refused(
             passed_version=other,
             brief=sized_brief(),
             source_model=drafted.briefed.source_model,
-            prohibited_terms=VOICE.avoid,
+            prohibited_terms=VOICE.prohibited_terms,
         )
     )
 
@@ -463,7 +463,7 @@ async def test_a_tampered_snapshot_fails_the_hash_check(
             passed_version=drafted.result.value.version,
             brief=sized_brief(),
             source_model=drafted.briefed.source_model,
-            prohibited_terms=VOICE.avoid,
+            prohibited_terms=VOICE.prohibited_terms,
         )
     )
 

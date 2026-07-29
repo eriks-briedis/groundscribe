@@ -121,6 +121,21 @@ class VoiceProfileDocument(BaseModel):
             if instruction.strength is InstructionStrength.HARD_RULE
         )
 
+    @property
+    def prohibited_terms(self) -> tuple[str, ...]:
+        """Every literal this profile forbids, in the order the rules declare them.
+
+        One list for the two places that need it — the voice pass checking what it
+        just wrote, and phase 08's final validation checking what is about to be
+        published. Deriving it separately in each would let the two disagree
+        about what the author actually banned.
+
+        Preferences contribute alongside hard rules. A term is either wanted in
+        the prose or it is not; the strength governs how hard the *model* is
+        pushed toward the style, not whether a person meant the word to appear.
+        """
+        return tuple(term for instruction in self.instructions for term in instruction.prohibits)
+
     def with_instructions(self, *added: VoiceInstruction, version: str) -> VoiceProfileDocument:
         """A new version of this profile with ``added`` applied.
 

@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from groundscribe.domain.enums import ClaimClassification, GapPriority, IssueSeverity
 from groundscribe.scoring.rubric import ScoreDimension
+from groundscribe.voice.schemas import VoiceProfileDocument
 from groundscribe.workflow.policy import FailureCategory
 
 
@@ -418,29 +419,11 @@ class ArticleBriefDocument(_Output):
         )
 
 
-class VoiceProfileDocument(BaseModel):
-    """The voice an article is written in (phase 07 consumes; phase 10 learns).
-
-    Deliberately thin. Phase 10 builds the real profile — learned from the author's
-    own writing, with precedence rules and drift detection — and this is the
-    minimum a drafting or voice-alignment prompt needs until then. It carries a
-    version so an article can name the profile it was written under even while the
-    profile itself is still a placeholder.
-
-    ``avoid`` is the one field that earns its place early: the generic-AI phrasing
-    plan/07 lists among the things a voice pass exists to remove is easier to name
-    than to describe.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    schema_version: int = 1
-    name: str = "default"
-    version: str = "1"
-    description: str = ""
-    tone: str = ""
-    avoid: tuple[str, ...] = ()
-    first_person: bool = True
+# The voice profile used to be a placeholder here — a name, a tone and a list of
+# phrases to avoid, which was the minimum a drafting prompt needed before there
+# was a voice system. Phase 10 built the real one in ``groundscribe.voice``:
+# categorised instructions carrying strengths, resolved across three scopes. It
+# is imported above so every consumer of the old name gets the new document.
 
 
 class UnresolvedMarker(BaseModel):
