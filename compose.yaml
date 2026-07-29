@@ -1,7 +1,125 @@
-# Compose stack for groundscribe.
+# The local-first stack (plan/14).
 #
-# Real services (API, worker, Postgres) are wired up in later phases (09 jobs/worker,
-# 14 deployment). This file is an intentional placeholder in phase 01 so the monorepo
-# layout matches plan/00-overview.md; adding services here without their implementation
-# would violate the phase's non-goals.
-services: {}
+#   docker compose up -d                      # SQLite: three services, no server
+#   docker compose --profile postgres up -d   # add PostgreSQL for concurrent use
+#
+# `scripts/install.sh` writes the .env this reads and runs one of the two.
+#
+# Two decisions shape this file.
+#
+# **The worker is its own container.** It runs the same image as the API and a
+# different command, because they are the same application: the worker executes
+# the stage handlers the API queues work for, and a second image would let one
+# run code the other had not been given. What must not be shared is the
+# *process* — a worker inside the API is model calls inside a request, which is
+# the seam phase 09 exists to keep.
+#
+# **SQLite is the default and PostgreSQL is a profile.** A first run should need
+# no server, no tuning and no credentials beyond the one password. A person who
+# hits contention moves to Postgres by adding a flag, and KNOWN-ISSUES §1 says
+# exactly when they should.
+
+name: groundscribe
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    command: ["api"]
+    ports:
+      - "${GROUNDSCRIBE_API_PORT:-8000}:8000"
+    environment:
+      # A file on the shared volume unless a deployment says otherwise, so the
+      # default stack needs nothing started for it.
+      GROUNDSCRIBE_DATABASE_URL: ${GROUNDSCRIBE_DATABASE_URL:-sqlite+pysqlite:////var/lib/groundscribe/groundscribe.db}
+      GROUNDSCRIBE_BLOB_ROOT: /var/lib/groundscribe/blobs
+      GROUNDSCRIBE_KEY_ROOT: /var/lib/groundscribe/keys
+      # No default. The served application refuses to start without it, which is
+      # the point: a stack that invented a password would be a stack with a
+      # password nobody knows they have.
+      GROUNDSCRIBE_PASSWORD: ${GROUNDSCRIBE_PASSWORD:?set GROUNDSCRIBE_PASSWORD in .env — scripts/install.sh writes one}
+      GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
+    volumes:
+      - storage:/var/lib/groundscribe
+    depends_on:
+      database:
+        condition: service_healthy
+        # False, so the SQLite stack does not refuse to start over a database it
+        # was never going to use. With the profile on, the condition applies.
+        required: false
+    healthcheck:
+      # Liveness, not readiness: touching the database here would make a busy
+      # SQLite file (KNOWN-ISSUES §1) read as a dead container and restart the
+      # process that was doing the work.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    command: ["worker"]
+    environment:
+      GROUNDSCRIBE_DATABASE_URL: ${GROUNDSCRIBE_DATABASE_URL:-sqlite+pysqlite:////var/lib/groundscribe/groundscribe.db}
+      GROUNDSCRIBE_BLOB_ROOT: /var/lib/groundscribe/blobs
+      GROUNDSCRIBE_KEY_ROOT: /var/lib/groundscribe/keys
+      GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
+      GROUNDSCRIBE_WORKER_ID: ${GROUNDSCRIBE_WORKER_ID:-worker-1}
+      GROUNDSCRIBE_WORKER_POLL: ${GROUNDSCRIBE_WORKER_POLL:-2}
+    volumes:
+      # The same directory as the API, because the artefact store is
+      # content-addressed bytes both of them read and write.
+      - storage:/var/lib/groundscribe
+    depends_on:
+      # Started, not healthy: the worker polls, so arriving before the API has
+      # finished migrating costs one empty pass rather than a failure.
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "${GROUNDSCRIBE_WEB_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  database:
+    image: postgres:16-alpine
+    # Off unless asked for. `docker compose --profile postgres up`.
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-groundscribe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-groundscribe}
+      POSTGRES_DB: ${POSTGRES_DB:-groundscribe}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-groundscribe}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  # The artefact directory: content-addressed bytes, the encryption key, and the
+  # SQLite file when that is the database. Named rather than anonymous because
+  # artefacts *are* the product — a stack that lost them on `compose down` would
+  # be a demonstration rather than an installation.
+  storage:
+  database:

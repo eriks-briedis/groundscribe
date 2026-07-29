@@ -638,6 +638,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Whether this process is up (plan/14).
+         *
+         *     Liveness and nothing else — no counts, no ids, no configuration. It is the
+         *     one route reachable without a session, because a container orchestrator has
+         *     no credential and never will, and it must therefore be worth nothing to an
+         *     unauthenticated caller beyond what the open socket already told them.
+         *
+         *     Deliberately not a readiness check either. Touching the database here would
+         *     make a busy SQLite file (KNOWN-ISSUES §1) read as a dead container and
+         *     restart the process that was doing the work.
+         */
+        get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -4826,6 +4855,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
         };

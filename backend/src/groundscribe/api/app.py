@@ -141,7 +141,7 @@ async def _require_session(
     also tells an unauthenticated caller nothing about what is served here.
     """
     password: str | None = request.app.state.password
-    if request.url.path.startswith(auth.PUBLIC_PREFIX):
+    if request.url.path.startswith(auth.PUBLIC_PREFIXES):
         return await call_next(request)
     if password is not None and not auth.session_is_valid(
         request.cookies.get(auth.SESSION_COOKIE), password

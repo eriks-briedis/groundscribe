@@ -903,3 +903,19 @@ def read_project_metrics(project_id: str, service: Service) -> RunMetrics:
     which is the failure that makes an operator stop believing any of it.
     """
     return service.metrics(project_id)
+
+
+@router.get("/health", tags=["health"])
+def health() -> dict[str, str]:
+    """Whether this process is up (plan/14).
+
+    Liveness and nothing else — no counts, no ids, no configuration. It is the
+    one route reachable without a session, because a container orchestrator has
+    no credential and never will, and it must therefore be worth nothing to an
+    unauthenticated caller beyond what the open socket already told them.
+
+    Deliberately not a readiness check either. Touching the database here would
+    make a busy SQLite file (KNOWN-ISSUES §1) read as a dead container and
+    restart the process that was doing the work.
+    """
+    return {"status": "ok", "service": "groundscribe"}

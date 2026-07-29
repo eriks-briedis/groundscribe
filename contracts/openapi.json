@@ -6697,6 +6697,32 @@
         "summary": "Start Experiment"
       }
     },
+    "/health": {
+      "get": {
+        "description": "Whether this process is up (plan/14).\n\nLiveness and nothing else \u2014 no counts, no ids, no configuration. It is the\none route reachable without a session, because a container orchestrator has\nno credential and never will, and it must therefore be worth nothing to an\nunauthenticated caller beyond what the open socket already told them.\n\nDeliberately not a readiness check either. Touching the database here would\nmake a busy SQLite file (KNOWN-ISSUES \u00a71) read as a dead container and\nrestart the process that was doing the work.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/jobs/{job_id}": {
       "get": {
         "description": "One job, for a client that would rather poll than stream.",

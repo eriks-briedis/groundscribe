@@ -105,9 +105,16 @@ class SessionState(BaseModel):
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 #: Paths reachable without a session. Everything else is refused by the guard —
-#: including anything added later, which is why this is a prefix and not a list
+#: including anything added later, which is why these are prefixes and not a list
 #: of endpoints.
-PUBLIC_PREFIX = "/auth"
+#:
+#: ``/health`` joins ``/auth`` in phase 14 because a container orchestrator has
+#: no credential and never will: a health check that had to sign in would report
+#: the stack unhealthy for as long as the password was wrong, which is precisely
+#: backwards. It answers with liveness and nothing else — no counts, no ids, no
+#: configuration — so an unauthenticated caller learns only that something is
+#: listening, which they could tell from the socket anyway.
+PUBLIC_PREFIXES = ("/auth", "/health")
 
 
 @router.post("/login", status_code=204)
@@ -159,7 +166,7 @@ def configured_password_of(request: Request) -> str | None:
 
 
 __all__ = [
-    "PUBLIC_PREFIX",
+    "PUBLIC_PREFIXES",
     "SESSION_COOKIE",
     "SESSION_TTL_SECONDS",
     "LoginRequest",
