@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from groundscribe.paths import repo_root
@@ -45,13 +46,20 @@ def golden_json(name: str, *, suite: str = DEFAULT_SUITE) -> dict[str, Any]:
 
 
 def with_segment_ids(payload: dict[str, Any], source: IngestedSource) -> dict[str, Any]:
-    """Replace ``S<n>`` segment labels with the ids of ``source``'s segments.
+    """Replace ``S<n>`` segment labels with the ids of ``source``'s segments."""
+    return relabel(payload, {f"S{segment.ordinal}": segment.id for segment in source.segments})
 
-    Unknown labels are left untouched so a test can deliberately script a
+
+def relabel(payload: dict[str, Any], ids: Mapping[str, str]) -> dict[str, Any]:
+    """Replace ``S<n>`` labels using an explicit map.
+
+    The form a caller needs when it has the segment rows but not the
+    :class:`~groundscribe.stages.ingestion.IngestedSource` they came in on —
+    which is every caller that reloaded them from the database, as a worker
+    does. Unknown labels are left untouched so a test can deliberately script a
     dangling reference.
     """
-    ids = {f"S{segment.ordinal}": segment.id for segment in source.segments}
-    substituted = _substitute(payload, ids)
+    substituted = _substitute(payload, dict(ids))
     assert isinstance(substituted, dict)
     return substituted
 
@@ -66,4 +74,11 @@ def _substitute(value: Any, ids: dict[str, str]) -> Any:
     return value
 
 
-__all__ = ["DEFAULT_SUITE", "GOLDEN_ROOT", "golden_json", "golden_text", "with_segment_ids"]
+__all__ = [
+    "DEFAULT_SUITE",
+    "GOLDEN_ROOT",
+    "golden_json",
+    "golden_text",
+    "relabel",
+    "with_segment_ids",
+]
