@@ -1083,10 +1083,19 @@ export interface components {
         /**
          * ArchitectureBoard
          * @description plan/11 → *Architecture board*, including the versions to compare.
+         *
+         *     ``operations``, ``edit_command`` and ``approve_command`` are served for the
+         *     reason ``ActionLink`` is: the seven edits are phase 06's closed vocabulary,
+         *     and a client holding its own copy of the list or of the URL would be a second
+         *     definition of the override API.
          */
         ArchitectureBoard: {
+            approve_command?: components["schemas"]["ActionLink"] | null;
             /** Current Version Id */
             current_version_id?: string | null;
+            edit_command?: components["schemas"]["ActionLink"] | null;
+            /** Operations */
+            operations?: string[];
             /** Proposal */
             proposal?: {
                 [key: string]: unknown;
@@ -1196,6 +1205,8 @@ export interface components {
             run_id: string;
             /** Scores */
             scores?: components["schemas"]["ScoreView"][];
+            /** Source Evidence */
+            source_evidence?: components["schemas"]["ClaimView"][];
             state: components["schemas"]["WorkflowState"];
             validation?: components["schemas"]["ValidationView"] | null;
             voice: components["schemas"]["VoiceView"];
@@ -2277,10 +2288,32 @@ export interface components {
             version_ordinal: number;
         };
         /**
+         * ScoreConfidenceView
+         * @description How far the repeat passes of one scoring run sat apart.
+         *
+         *     plan/08 runs a score more than once precisely so disagreement is visible;
+         *     dropping the spread here would leave the interface showing a single number
+         *     with nothing to doubt it by.
+         */
+        ScoreConfidenceView: {
+            /** Dispersion */
+            dispersion?: number | null;
+            /** Repeat Scores */
+            repeat_scores?: number[];
+            /**
+             * Repeats
+             * @default 1
+             */
+            repeats: number;
+            /** Stdev */
+            stdev?: number | null;
+        };
+        /**
          * ScoreView
          * @description One scoring pass, as the review-history table shows it.
          */
         ScoreView: {
+            confidence?: components["schemas"]["ScoreConfidenceView"];
             /**
              * Created At
              * Format: date-time

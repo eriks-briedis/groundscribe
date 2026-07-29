@@ -280,8 +280,18 @@
         "type": "object"
       },
       "ArchitectureBoard": {
-        "description": "plan/11 \u2192 *Architecture board*, including the versions to compare.",
+        "description": "plan/11 \u2192 *Architecture board*, including the versions to compare.\n\n``operations``, ``edit_command`` and ``approve_command`` are served for the\nreason ``ActionLink`` is: the seven edits are phase 06's closed vocabulary,\nand a client holding its own copy of the list or of the URL would be a second\ndefinition of the override API.",
         "properties": {
+          "approve_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "current_version_id": {
             "anyOf": [
               {
@@ -292,6 +302,23 @@
               }
             ],
             "title": "Current Version Id"
+          },
+          "edit_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
           },
           "proposal": {
             "anyOf": [
@@ -593,6 +620,13 @@
               "$ref": "#/components/schemas/ScoreView"
             },
             "title": "Scores",
+            "type": "array"
+          },
+          "source_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimView"
+            },
+            "title": "Source Evidence",
             "type": "array"
           },
           "state": {
@@ -2816,9 +2850,53 @@
         "title": "ReviewRound",
         "type": "object"
       },
+      "ScoreConfidenceView": {
+        "description": "How far the repeat passes of one scoring run sat apart.\n\nplan/08 runs a score more than once precisely so disagreement is visible;\ndropping the spread here would leave the interface showing a single number\nwith nothing to doubt it by.",
+        "properties": {
+          "dispersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispersion"
+          },
+          "repeat_scores": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Repeat Scores",
+            "type": "array"
+          },
+          "repeats": {
+            "default": 1,
+            "title": "Repeats",
+            "type": "integer"
+          },
+          "stdev": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stdev"
+          }
+        },
+        "title": "ScoreConfidenceView",
+        "type": "object"
+      },
       "ScoreView": {
         "description": "One scoring pass, as the review-history table shows it.",
         "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/ScoreConfidenceView"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",

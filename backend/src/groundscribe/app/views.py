@@ -107,6 +107,20 @@ class UsageSummary(BaseModel):
     cost_usd: float | None = None
 
 
+class ScoreConfidenceView(BaseModel):
+    """How far the repeat passes of one scoring run sat apart.
+
+    plan/08 runs a score more than once precisely so disagreement is visible;
+    dropping the spread here would leave the interface showing a single number
+    with nothing to doubt it by.
+    """
+
+    repeats: int = 1
+    repeat_scores: list[float] = Field(default_factory=list)
+    dispersion: float | None = None
+    stdev: float | None = None
+
+
 class ScoreView(BaseModel):
     """One scoring pass, as the review-history table shows it."""
 
@@ -117,6 +131,7 @@ class ScoreView(BaseModel):
     evaluator_version: str
     dimensions: dict[str, float] = Field(default_factory=dict)
     failures: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: ScoreConfidenceView = Field(default_factory=ScoreConfidenceView)
     created_at: datetime
 
 
@@ -352,11 +367,20 @@ class ArchitectureVersionView(BaseModel):
 
 
 class ArchitectureBoard(BaseModel):
-    """plan/11 → *Architecture board*, including the versions to compare."""
+    """plan/11 → *Architecture board*, including the versions to compare.
+
+    ``operations``, ``edit_command`` and ``approve_command`` are served for the
+    reason ``ActionLink`` is: the seven edits are phase 06's closed vocabulary,
+    and a client holding its own copy of the list or of the URL would be a second
+    definition of the override API.
+    """
 
     current_version_id: str | None = None
     versions: list[ArchitectureVersionView] = Field(default_factory=list)
     proposal: dict[str, Any] | None = None
+    operations: list[str] = Field(default_factory=list)
+    edit_command: ActionLink | None = None
+    approve_command: ActionLink | None = None
 
 
 # ----------------------------------------------------------------------
@@ -505,6 +529,8 @@ class ArticleWorkspace(BaseModel):
     diff: DiffView | None = None
     findings: list[FindingView] = Field(default_factory=list)
     revision_plan: dict[str, Any] | None = None
+    #: The claims the brief was written from, beside the prose written from them.
+    source_evidence: list[ClaimView] = Field(default_factory=list)
     voice: VoiceView
     scores: list[ScoreView] = Field(default_factory=list)
     validation: ValidationView | None = None
@@ -753,6 +779,7 @@ __all__ = [
     "QuestionView",
     "ReviewHistory",
     "ReviewRound",
+    "ScoreConfidenceView",
     "ScoreView",
     "SegmentView",
     "SourceCompleteness",

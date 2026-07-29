@@ -83,6 +83,7 @@ from groundscribe.app.views import (
     QuestionView,
     ReviewHistory,
     ReviewRound,
+    ScoreConfidenceView,
     ScoreView,
     SegmentView,
     SourceCompleteness,
@@ -112,6 +113,7 @@ from groundscribe.provenance.enums import (
 )
 from groundscribe.provenance.redaction import PLACEHOLDER
 from groundscribe.scoring.scoring import SCORE_STAGE
+from groundscribe.stages.override import OverrideOperation
 from groundscribe.stages.rewriting import REWRITE_STAGE
 from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.position import WorkflowPosition
@@ -304,6 +306,13 @@ class ProjectionReader:
                 for version in versions
             ],
             proposal=self._document(current.snapshot if current else None),
+            operations=[operation.value for operation in OverrideOperation],
+            edit_command=_architecture_command(
+                "PUT", project_id, current.id if current else None, ""
+            ),
+            approve_command=_architecture_command(
+                "POST", project_id, current.id if current else None, "/approve", actor=True
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -353,6 +362,7 @@ class ProjectionReader:
             ),
             findings=findings,
             revision_plan=self._document(plan.snapshot if plan else None),
+            source_evidence=self._evidence_for(article.project_id, article_id, findings),
             voice=self._voice(article.project_id, article_id),
             scores=scores,
             validation=validation,
@@ -970,6 +980,7 @@ class ProjectionReader:
                             for name, value in evaluation.scores.get("dimensions", {}).items()
                         },
                         failures=list(evaluation.scores.get("failures", [])),
+                        confidence=_confidence(evaluation),
                         created_at=evaluation.created_at,
                     )
                 )
@@ -989,6 +1000,25 @@ class ProjectionReader:
             for execution in self._executions(run)
             if execution.stage == REWRITE_STAGE and execution.status is ExecutionStatus.SUCCEEDED
         )
+
+    def _evidence_for(
+        self, project_id: str, article_id: str, findings: Sequence[FindingView]
+    ) -> list[ClaimView]:
+        """The source claims this article was built on, and argued about.
+
+        Two sources, both the run's own: the claims the brief names as its
+        argument, and the claims the reviewer pointed at. Anything else in the
+        source model belongs to the source workspace — this is the evidence for
+        *this* article.
+        """
+        brief = self._document(self._brief_snapshot(article_id)) or {}
+        wanted = {
+            str(claim_id)
+            for section in brief.get("argument_structure", [])
+            for claim_id in section.get("claim_ids", [])
+        }
+        wanted.update(finding.source_ref for finding in findings if finding.source_ref)
+        return [claim for claim in self._claims(project_id) if claim.id in wanted]
 
     def _stagnation_warnings(self, run: models.PipelineRun) -> list[str]:
         """What the loop itself said about going round again.
@@ -1255,6 +1285,24 @@ def _action_or_none(name: str) -> WorkflowAction | None:
         return None
 
 
+def _architecture_command(
+    method: str, project_id: str, version_id: str | None, suffix: str, *, actor: bool = False
+) -> ActionLink | None:
+    """Where an architecture version is edited or approved, or nothing.
+
+    ``None`` before anything is proposed: there is no version to address, and a
+    URL with a hole in it would be a button that fails when pressed.
+    """
+    if version_id is None:
+        return None
+    return ActionLink(
+        action="edit_architecture" if method == "PUT" else "approve_architecture",
+        method=method,
+        path=f"/projects/{project_id}/architecture/{version_id}{suffix}",
+        requires_actor=actor,
+    )
+
+
 def _constraints_view(row: domain_models.ProjectConstraints) -> ConstraintsView:
     return ConstraintsView(
         audience=row.audience,
@@ -1389,6 +1437,17 @@ def _usage(invocations: Sequence[models.ModelInvocation]) -> UsageSummary:
         input_tokens=sum(call.input_tokens for call in invocations),
         output_tokens=sum(call.output_tokens for call in invocations),
         cost_usd=sum(costs) if costs else None,
+    )
+
+
+def _confidence(evaluation: models.EvaluationRun) -> ScoreConfidenceView:
+    """What the repeat passes of this score said, as the evaluation recorded it."""
+    recorded = evaluation.scores.get("confidence", {})
+    return ScoreConfidenceView(
+        repeats=int(recorded.get("repeats", 1)),
+        repeat_scores=[float(value) for value in recorded.get("repeat_scores", [])],
+        dispersion=recorded.get("dispersion"),
+        stdev=recorded.get("stdev"),
     )
 
 
