@@ -34,9 +34,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.app import rehydrate
-from groundscribe.app.actions import available_actions
+from groundscribe.app.actions import (
+    ACTION_ENDPOINTS,
+    STATE_COMMANDS,
+    available_actions,
+    resolve,
+)
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.views import (
+    ActionLink,
     ActiveInstructionView,
     AnswerView,
     ApprovalView,
@@ -109,6 +115,7 @@ from groundscribe.scoring.scoring import SCORE_STAGE
 from groundscribe.stages.rewriting import REWRITE_STAGE
 from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.position import WorkflowPosition
+from groundscribe.workflow.states import WorkflowAction, WorkflowState
 
 #: What counts as an expensive call, in dollars. A threshold has to be a number
 #: somewhere; it is here, named, rather than inside the filter that uses it, so a
@@ -175,6 +182,10 @@ class ProjectionReader:
             run_id=run.id,
             state=position.state,
             available_actions=list(available_actions(position.state)),
+            action_links=_action_links(position.state, project_id=project_id, article_id=None),
+            pending_command=_pending_command(
+                position.state, project_id=project_id, article_id=None
+            ),
             constraints=_constraints_view(constraints),
             source=self._completeness(project_id, questions),
             articles=[self._card(article) for article in self._articles(project_id)],
@@ -326,6 +337,12 @@ class ProjectionReader:
             run_id=run.id,
             state=position.state,
             available_actions=list(available_actions(position.state)),
+            action_links=_action_links(
+                position.state, project_id=article.project_id, article_id=article_id
+            ),
+            pending_command=_pending_command(
+                position.state, project_id=article.project_id, article_id=article_id
+            ),
             brief=self._document(self._brief_snapshot(article_id)),
             current_version=current_view,
             previous_version=previous_view,
@@ -1010,6 +1027,7 @@ class ProjectionReader:
                 surfaced=gap.surfaced,
                 resolved=gap.resolved,
                 answer=_answer_view(answers.get(gap.id)),
+                answer_path=f"/projects/{project_id}/source-gaps/{gap.id}/answer",
             )
             for gap in gaps
         ]
@@ -1183,6 +1201,58 @@ class ProjectionReader:
 # ----------------------------------------------------------------------
 # Arrangements that need no session
 # ----------------------------------------------------------------------
+
+
+def _action_links(
+    state: WorkflowState, *, project_id: str | None, article_id: str | None
+) -> list[ActionLink]:
+    """Every action the state offers, each with the endpoint that performs it.
+
+    One link per *offered* action, never one per endpoint: the list of actions is
+    the transition table's answer and this only annotates it. An action no
+    endpoint takes keeps a null path rather than being dropped, so a client can
+    show the true set of transitions and still offer buttons for only the ones a
+    person can take.
+    """
+    links: list[ActionLink] = []
+    for name in available_actions(state):
+        action = _action_or_none(name)
+        endpoint = ACTION_ENDPOINTS.get(action) if action is not None else None
+        path = resolve(endpoint, project_id=project_id, article_id=article_id)
+        links.append(
+            ActionLink(
+                action=name,
+                method=endpoint.method if endpoint and path else None,
+                path=path,
+                requires_actor=bool(endpoint and endpoint.requires_actor and path),
+            )
+        )
+    return links
+
+
+def _pending_command(
+    state: WorkflowState, *, project_id: str | None, article_id: str | None
+) -> ActionLink | None:
+    """The command that starts the work this state is waiting for, if any."""
+    endpoint = STATE_COMMANDS.get(state)
+    path = resolve(endpoint, project_id=project_id, article_id=article_id)
+    if endpoint is None or path is None:
+        return None
+    return ActionLink(action=state.value, method=endpoint.method, path=path)
+
+
+def _action_or_none(name: str) -> WorkflowAction | None:
+    """The workflow action a name refers to, or nothing.
+
+    ``available_actions`` also carries the two execution affordances, which are
+    not transitions and have no member here; they act on an execution a screen
+    already has in hand, so they are addressed from the trace rather than from
+    the run.
+    """
+    try:
+        return WorkflowAction(name)
+    except ValueError:
+        return None
 
 
 def _constraints_view(row: domain_models.ProjectConstraints) -> ConstraintsView:

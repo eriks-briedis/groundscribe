@@ -26,7 +26,8 @@
 
     "baseUrl": ".",
     "paths": {
-      "@contracts/*": ["../contracts/*"]
+      "@contracts/*": ["../contracts/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "vite.config.ts", "vitest.setup.ts", "../contracts/api-types.ts"]

@@ -1,6 +1,47 @@
 {
   "components": {
     "schemas": {
+      "ActionLink": {
+        "description": "One offered action, and how a client performs it.\n\n``path`` is ``None`` where no endpoint takes the action \u2014 the machine's own\nedges, and article actions seen from a project screen where no article is in\nview. Reported rather than filtered out, so the interface can show the true\nset of transitions and offer buttons only for what a person can actually do.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "requires_actor": {
+            "default": false,
+            "title": "Requires Actor",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ActionLink",
+        "type": "object"
+      },
       "ActiveInstructionOut": {
         "description": "One instruction in force, and where it came from.\n\nThe source travels to the client because the question it answers \u2014 \"why does\nit write like this, and where do I change it?\" \u2014 is asked by a person looking\nat a screen, not by the resolver.",
         "properties": {
@@ -439,6 +480,13 @@
       "ArticleWorkspace": {
         "description": "plan/11 \u2192 *Article workspace*, and the approval view built on it.",
         "properties": {
+          "action_links": {
+            "items": {
+              "$ref": "#/components/schemas/ActionLink"
+            },
+            "title": "Action Links",
+            "type": "array"
+          },
           "approval": {
             "$ref": "#/components/schemas/ApprovalView"
           },
@@ -493,6 +541,16 @@
           },
           "lineage": {
             "$ref": "#/components/schemas/LineageGraph"
+          },
+          "pending_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "previous_version": {
             "anyOf": [
@@ -2460,6 +2518,13 @@
       "ProjectDashboard": {
         "description": "plan/11 \u2192 *Project dashboard*, assembled from rows and nothing else.",
         "properties": {
+          "action_links": {
+            "items": {
+              "$ref": "#/components/schemas/ActionLink"
+            },
+            "title": "Action Links",
+            "type": "array"
+          },
           "active_jobs": {
             "items": {
               "$ref": "#/components/schemas/JobView"
@@ -2483,6 +2548,16 @@
           },
           "constraints": {
             "$ref": "#/components/schemas/ConstraintsView"
+          },
+          "pending_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project": {
             "$ref": "#/components/schemas/ProjectSummary"
@@ -2580,6 +2655,17 @@
                 "type": "null"
               }
             ]
+          },
+          "answer_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Path"
           },
           "description": {
             "default": "",

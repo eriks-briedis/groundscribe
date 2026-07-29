@@ -22,13 +22,118 @@ be answering a different question from the one it was asked.
 
 from __future__ import annotations
 
-from groundscribe.workflow.states import WorkflowState
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from groundscribe.workflow.transitions import available_actions as transition_actions
 
 #: Offered everywhere, because neither changes where the run is. Their endpoints
 #: (``POST /executions/{id}/replay``, ``.../fork``) act on an execution, not on
 #: the machine, so a terminal run still offers them.
 EXECUTION_ACTIONS: tuple[str, ...] = ("fork_execution", "replay_execution")
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    """One API affordance: how a thing is done, and to what.
+
+    ``scope`` says which id the template needs, so an action offered where that
+    id is unknown — an article action seen from the project dashboard — reports
+    itself as unavailable instead of producing a URL with a hole in it.
+    """
+
+    method: str
+    template: str
+    scope: str
+    requires_actor: bool = False
+
+
+PROJECT = "project"
+ARTICLE = "article"
+
+#: Which endpoint performs which action (phase 11).
+#:
+#: The table exists because the alternative is worse. ``available_actions`` gives
+#: a client the *names* of what may happen next; turning a name into a request
+#: needs the API's own shape, and a frontend that kept that mapping would hold a
+#: second copy of the API which nothing tests. Here it sits beside the list it
+#: annotates, in the module that already answers "what may be done next".
+#:
+#: Absent deliberately: every action no endpoint performs. ``fail``, ``stall``,
+#: ``route_revision`` and the ``submit_*`` edges are the machine's own — a person
+#: does not take them, and inventing a URL for them would say they could.
+ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
+    WorkflowAction.EXTRACT_SOURCE_MODEL: Endpoint(
+        "POST", "/projects/{project_id}/source-model/extract", PROJECT
+    ),
+    WorkflowAction.PROPOSE_ARCHITECTURE: Endpoint(
+        "POST", "/projects/{project_id}/architecture/propose", PROJECT
+    ),
+    WorkflowAction.APPROVE_ARCHITECTURE: Endpoint(
+        "POST",
+        "/projects/{project_id}/architecture/current/approve",
+        PROJECT,
+        requires_actor=True,
+    ),
+    WorkflowAction.CANCEL: Endpoint(
+        "POST", "/projects/{project_id}/cancel", PROJECT, requires_actor=True
+    ),
+    WorkflowAction.GENERATE_BRIEF: Endpoint(
+        "POST", "/articles/{article_id}/brief/generate", ARTICLE
+    ),
+    WorkflowAction.APPROVE_BRIEF: Endpoint(
+        "POST", "/articles/{article_id}/brief/approve", ARTICLE, requires_actor=True
+    ),
+    WorkflowAction.REQUIRE_REVISION_PLAN: Endpoint(
+        "POST", "/articles/{article_id}/revision-plan", ARTICLE
+    ),
+    WorkflowAction.APPROVE_REVISION_PLAN: Endpoint(
+        "POST", "/articles/{article_id}/revision-plan/approve", ARTICLE, requires_actor=True
+    ),
+    WorkflowAction.VALIDATE_FINAL: Endpoint("POST", "/articles/{article_id}/validate", ARTICLE),
+    WorkflowAction.APPROVE_FINAL: Endpoint(
+        "POST", "/articles/{article_id}/approve", ARTICLE, requires_actor=True
+    ),
+    WorkflowAction.OVERRIDE_AND_APPROVE: Endpoint(
+        "POST", "/articles/{article_id}/override-approve", ARTICLE, requires_actor=True
+    ),
+}
+
+#: The command that starts the work a state is waiting for.
+#:
+#: A state ending in ``-ing`` was entered by the approval before it, so no
+#: *action* remains to describe what happens next — but a job still has to be
+#: queued. Without this, every client would need its own map from state to
+#: endpoint, which is the same duplication ``ACTION_ENDPOINTS`` exists to avoid.
+STATE_COMMANDS: Mapping[WorkflowState, Endpoint] = {
+    WorkflowState.DRAFT_GENERATING: Endpoint("POST", "/articles/{article_id}/draft", ARTICLE),
+    WorkflowState.SUBSTANTIVE_REVIEWING: Endpoint(
+        "POST", "/articles/{article_id}/review", ARTICLE
+    ),
+    WorkflowState.REVISION_PLAN_REQUIRED: Endpoint(
+        "POST", "/articles/{article_id}/revision-plan", ARTICLE
+    ),
+    WorkflowState.SUBSTANTIVE_REWRITING: Endpoint(
+        "POST", "/articles/{article_id}/rewrite", ARTICLE
+    ),
+    WorkflowState.VOICE_ALIGNING: Endpoint("POST", "/articles/{article_id}/voice-align", ARTICLE),
+    WorkflowState.SCORING: Endpoint("POST", "/articles/{article_id}/score", ARTICLE),
+    WorkflowState.PASSED: Endpoint("POST", "/articles/{article_id}/validate", ARTICLE),
+}
+
+
+def resolve(
+    endpoint: Endpoint | None, *, project_id: str | None, article_id: str | None
+) -> str | None:
+    """The URL that performs an action here, or ``None`` where it cannot be built."""
+    if endpoint is None:
+        return None
+    if endpoint.scope == PROJECT and project_id:
+        return endpoint.template.format(project_id=project_id)
+    if endpoint.scope == ARTICLE and article_id:
+        return endpoint.template.format(article_id=article_id)
+    return None
 
 
 def available_actions(state: WorkflowState) -> tuple[str, ...]:
@@ -42,4 +147,13 @@ def available_actions(state: WorkflowState) -> tuple[str, ...]:
     return tuple(sorted(names | set(EXECUTION_ACTIONS)))
 
 
-__all__ = ["EXECUTION_ACTIONS", "available_actions"]
+__all__ = [
+    "ACTION_ENDPOINTS",
+    "ARTICLE",
+    "EXECUTION_ACTIONS",
+    "PROJECT",
+    "STATE_COMMANDS",
+    "Endpoint",
+    "available_actions",
+    "resolve",
+]

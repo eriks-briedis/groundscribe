@@ -78,6 +78,21 @@ class DiffKind(StrEnum):
 # ----------------------------------------------------------------------
 
 
+class ActionLink(BaseModel):
+    """One offered action, and how a client performs it.
+
+    ``path`` is ``None`` where no endpoint takes the action — the machine's own
+    edges, and article actions seen from a project screen where no article is in
+    view. Reported rather than filtered out, so the interface can show the true
+    set of transitions and offer buttons only for what a person can actually do.
+    """
+
+    action: str
+    method: str | None = None
+    path: str | None = None
+    requires_actor: bool = False
+
+
 class UsageSummary(BaseModel):
     """What a set of model calls consumed.
 
@@ -201,6 +216,9 @@ class QuestionView(BaseModel):
     surfaced: bool = False
     resolved: bool = False
     answer: AnswerView | None = None
+    #: Where an answer to *this* question is posted. Answering is addressed per
+    #: question, so the link belongs to the question rather than to the queue.
+    answer_path: str | None = None
 
 
 class JobView(BaseModel):
@@ -239,6 +257,8 @@ class ProjectDashboard(BaseModel):
     run_id: str
     state: WorkflowState
     available_actions: list[str] = Field(default_factory=list)
+    action_links: list[ActionLink] = Field(default_factory=list)
+    pending_command: ActionLink | None = None
     constraints: ConstraintsView
     source: SourceCompleteness
     articles: list[ArticleCard] = Field(default_factory=list)
@@ -477,6 +497,8 @@ class ArticleWorkspace(BaseModel):
     run_id: str
     state: WorkflowState
     available_actions: list[str] = Field(default_factory=list)
+    action_links: list[ActionLink] = Field(default_factory=list)
+    pending_command: ActionLink | None = None
     brief: dict[str, Any] | None = None
     current_version: VersionView | None = None
     previous_version: VersionView | None = None
@@ -683,6 +705,7 @@ class ComparisonRow(BaseModel):
 
 
 __all__ = [
+    "ActionLink",
     "ActiveInstructionView",
     "AnswerView",
     "ApprovalView",

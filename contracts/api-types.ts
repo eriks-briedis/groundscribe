@@ -913,6 +913,28 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActionLink
+         * @description One offered action, and how a client performs it.
+         *
+         *     ``path`` is ``None`` where no endpoint takes the action — the machine's own
+         *     edges, and article actions seen from a project screen where no article is in
+         *     view. Reported rather than filtered out, so the interface can show the true
+         *     set of transitions and offer buttons only for what a person can actually do.
+         */
+        ActionLink: {
+            /** Action */
+            action: string;
+            /** Method */
+            method?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Requires Actor
+             * @default false
+             */
+            requires_actor: boolean;
+        };
+        /**
          * ActiveInstructionOut
          * @description One instruction in force, and where it came from.
          *
@@ -1148,6 +1170,8 @@ export interface components {
          * @description plan/11 → *Article workspace*, and the approval view built on it.
          */
         ArticleWorkspace: {
+            /** Action Links */
+            action_links?: components["schemas"]["ActionLink"][];
             approval: components["schemas"]["ApprovalView"];
             article: components["schemas"]["ArticleSummary"];
             /** Available Actions */
@@ -1161,6 +1185,7 @@ export interface components {
             /** Findings */
             findings?: components["schemas"]["FindingView"][];
             lineage: components["schemas"]["LineageGraph"];
+            pending_command?: components["schemas"]["ActionLink"] | null;
             previous_version?: components["schemas"]["VersionView"] | null;
             producing_execution?: components["schemas"]["ExecutionRef"] | null;
             /** Revision Plan */
@@ -2121,6 +2146,8 @@ export interface components {
          * @description plan/11 → *Project dashboard*, assembled from rows and nothing else.
          */
         ProjectDashboard: {
+            /** Action Links */
+            action_links?: components["schemas"]["ActionLink"][];
             /** Active Jobs */
             active_jobs?: components["schemas"]["JobView"][];
             /** Articles */
@@ -2128,6 +2155,7 @@ export interface components {
             /** Available Actions */
             available_actions?: string[];
             constraints: components["schemas"]["ConstraintsView"];
+            pending_command?: components["schemas"]["ActionLink"] | null;
             project: components["schemas"]["ProjectSummary"];
             /** Questions */
             questions?: components["schemas"]["QuestionView"][];
@@ -2167,6 +2195,8 @@ export interface components {
          */
         QuestionView: {
             answer?: components["schemas"]["AnswerView"] | null;
+            /** Answer Path */
+            answer_path?: string | null;
             /**
              * Description
              * @default
