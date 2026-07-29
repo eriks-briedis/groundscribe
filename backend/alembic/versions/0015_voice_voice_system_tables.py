@@ -62,6 +62,7 @@ def upgrade() -> None:
         sa.Column("version", sa.String(), nullable=False),
         sa.Column("snapshot_id", sa.String(), nullable=True),
         sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("created_at", groundscribe.db.UTCDateTime(), nullable=False),
         sa.Column(
             "branch_status",
             sa.Enum("active", "superseded", "abandoned", name="branchstatus", native_enum=False),

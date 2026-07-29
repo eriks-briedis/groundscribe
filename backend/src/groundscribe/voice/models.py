@@ -69,6 +69,10 @@ class VoiceProfileVersion(LineageMixin, EntityMixin, Base):
     # versions are strings an author chooses and reverting to an earlier one is a
     # legitimate act that would otherwise be unrepresentable.
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # When the author saved it. Listing versions by id would order them by a
+    # random uuid, which reads as an arbitrary shuffle of the author's own
+    # history — every other record here is ordered by when it happened.
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
     project: Mapped[Project | None] = relationship()
     article: Mapped[Article | None] = relationship()

@@ -92,6 +92,7 @@ class VoiceStore:
             version=document.version,
             snapshot_id=snapshot.id,
             active=True,
+            created_at=self._recorder.clock(),
             parent_id=previous.id if previous is not None else None,
             created_by_execution_id=execution_id,
         )
@@ -143,13 +144,17 @@ class VoiceStore:
         )
 
     def versions(self, *, user_id: str) -> tuple[VoiceProfileVersion, ...]:
-        """Every version this author has saved, newest scope-wise last."""
+        """Every version this author has saved, oldest first.
+
+        Ordered by when it was saved. Ordering by id would shuffle the author's
+        own history by uuid, and the list is read as a history.
+        """
         return tuple(
             self._session.scalars(
                 select(VoiceProfileVersion)
                 .join(VoiceProfile, VoiceProfile.id == VoiceProfileVersion.profile_id)
                 .where(VoiceProfile.user_id == user_id)
-                .order_by(VoiceProfileVersion.scope, VoiceProfileVersion.id)
+                .order_by(VoiceProfileVersion.created_at, VoiceProfileVersion.id)
             )
         )
 
