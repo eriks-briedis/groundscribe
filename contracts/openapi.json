@@ -35,6 +35,45 @@
         "title": "ActiveInstructionOut",
         "type": "object"
       },
+      "ActiveInstructionView": {
+        "description": "One voice instruction in force, and where it came from.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "instruction": {
+            "default": "",
+            "title": "Instruction",
+            "type": "string"
+          },
+          "instruction_id": {
+            "title": "Instruction Id",
+            "type": "string"
+          },
+          "overrides": {
+            "default": "",
+            "title": "Overrides",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "strength": {
+            "title": "Strength",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction_id",
+          "category",
+          "strength",
+          "source"
+        ],
+        "title": "ActiveInstructionView",
+        "type": "object"
+      },
       "ActorAction": {
         "description": "A human action. The actor is mandatory: an anonymous decision is unreviewable.",
         "properties": {
@@ -97,6 +136,89 @@
         "title": "AnswerResponse",
         "type": "string"
       },
+      "AnswerView": {
+        "properties": {
+          "answered_by": {
+            "default": "",
+            "title": "Answered By",
+            "type": "string"
+          },
+          "diff_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Snapshot Id"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "response_type": {
+            "title": "Response Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "why_it_matters": {
+            "default": "",
+            "title": "Why It Matters",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "question",
+          "response_type"
+        ],
+        "title": "AnswerView",
+        "type": "object"
+      },
+      "ApprovalView": {
+        "description": "Everything plan/11 requires a person to see before approving.\n\nGathered onto the workspace rather than served from its own endpoint: the\napproval screen is the article screen with nothing hidden, and a second\nendpoint would let the two disagree about which version is being approved.",
+        "properties": {
+          "interventions": {
+            "items": {
+              "$ref": "#/components/schemas/InterventionView"
+            },
+            "title": "Interventions",
+            "type": "array"
+          },
+          "model_versions": {
+            "items": {
+              "$ref": "#/components/schemas/ModelVersionView"
+            },
+            "title": "Model Versions",
+            "type": "array"
+          },
+          "remaining_concerns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining Concerns",
+            "type": "array"
+          },
+          "rewrite_rounds": {
+            "default": 0,
+            "title": "Rewrite Rounds",
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSummary"
+          }
+        },
+        "required": [
+          "usage"
+        ],
+        "title": "ApprovalView",
+        "type": "object"
+      },
       "ApproveSuggestion": {
         "description": "Making an inferred rule permanent, and naming the version it becomes.",
         "properties": {
@@ -116,6 +238,166 @@
         "title": "ApproveSuggestion",
         "type": "object"
       },
+      "ArchitectureBoard": {
+        "description": "plan/11 \u2192 *Architecture board*, including the versions to compare.",
+        "properties": {
+          "current_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Version Id"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/ArchitectureVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "title": "ArchitectureBoard",
+        "type": "object"
+      },
+      "ArchitectureVersionView": {
+        "properties": {
+          "concepts": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptView"
+            },
+            "title": "Concepts",
+            "type": "array"
+          },
+          "created_by_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Execution Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "locked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked By"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary"
+        ],
+        "title": "ArchitectureVersionView",
+        "type": "object"
+      },
+      "ArticleCard": {
+        "description": "One article as the dashboard lists it.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_score": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open_findings": {
+            "default": 0,
+            "title": "Open Findings",
+            "type": "integer"
+          },
+          "rewrite_rounds": {
+            "default": 0,
+            "title": "Rewrite Rounds",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "validated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validated"
+          },
+          "versions": {
+            "default": 0,
+            "title": "Versions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status"
+        ],
+        "title": "ArticleCard",
+        "type": "object"
+      },
       "ArticleDepth": {
         "description": "How deep the finished article goes, declared per project.\n\nA project constraint rather than a stage decision: it bounds scope for every\nstage at once (extraction's token budget, the architecture's article count,\nthe brief's length), and letting each stage infer it would let them disagree.",
         "enum": [
@@ -125,6 +407,240 @@
         ],
         "title": "ArticleDepth",
         "type": "string"
+      },
+      "ArticleSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "title",
+          "status"
+        ],
+        "title": "ArticleSummary",
+        "type": "object"
+      },
+      "ArticleWorkspace": {
+        "description": "plan/11 \u2192 *Article workspace*, and the approval view built on it.",
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/ApprovalView"
+          },
+          "article": {
+            "$ref": "#/components/schemas/ArticleSummary"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "brief": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brief"
+          },
+          "current_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiffView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/LineageGraph"
+          },
+          "previous_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "producing_execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Plan"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreView"
+            },
+            "title": "Scores",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkflowState"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice": {
+            "$ref": "#/components/schemas/VoiceView"
+          }
+        },
+        "required": [
+          "article",
+          "run_id",
+          "state",
+          "voice",
+          "lineage",
+          "approval"
+        ],
+        "title": "ArticleWorkspace",
+        "type": "object"
+      },
+      "ArtifactView": {
+        "description": "A snapshot an execution consumed or produced, with what it holds.",
+        "properties": {
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content"
+          },
+          "content_hash": {
+            "default": "",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "ordinal": {
+            "default": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "role": {
+            "default": "",
+            "title": "Role",
+            "type": "string"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "artifact_type",
+          "direction"
+        ],
+        "title": "ArtifactView",
+        "type": "object"
+      },
+      "ClaimView": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "segment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Segment Ids",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "classification"
+        ],
+        "title": "ClaimView",
+        "type": "object"
       },
       "CommandResponse": {
         "description": "The answer to every command: position, affordances, and any queued work.",
@@ -172,6 +688,220 @@
         "title": "CommandResponse",
         "type": "object"
       },
+      "ComparisonRow": {
+        "description": "One field of two executions, side by side.",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "left": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left"
+          },
+          "right": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right"
+          },
+          "same": {
+            "title": "Same",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field",
+          "same"
+        ],
+        "title": "ComparisonRow",
+        "type": "object"
+      },
+      "ConceptView": {
+        "properties": {
+          "angle": {
+            "default": "",
+            "title": "Angle",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ordinal": {
+            "default": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "thesis": {
+            "default": "",
+            "title": "Thesis",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "ConceptView",
+        "type": "object"
+      },
+      "ConstraintsView": {
+        "description": "The bounds the project publishes under, including who may see the source.",
+        "properties": {
+          "allowed_providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Providers",
+            "type": "array"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "confidential_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Confidential Names",
+            "type": "array"
+          },
+          "depth": {
+            "title": "Depth",
+            "type": "string"
+          },
+          "first_person_allowed": {
+            "default": true,
+            "title": "First Person Allowed",
+            "type": "boolean"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "target_length_words": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Length Words"
+          },
+          "trace_retention_consent": {
+            "default": false,
+            "title": "Trace Retention Consent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "audience",
+          "platform",
+          "depth"
+        ],
+        "title": "ConstraintsView",
+        "type": "object"
+      },
+      "ContextItemView": {
+        "properties": {
+          "disposition": {
+            "title": "Disposition",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "ordinal",
+          "reference",
+          "disposition"
+        ],
+        "title": "ContextItemView",
+        "type": "object"
+      },
+      "ContextSelectionView": {
+        "description": "What was offered to the model, and what was left out.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContextItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "strategy_version": {
+            "title": "Strategy Version",
+            "type": "string"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget"
+          }
+        },
+        "required": [
+          "id",
+          "strategy",
+          "strategy_version"
+        ],
+        "title": "ContextSelectionView",
+        "type": "object"
+      },
       "CreateExperiment": {
         "properties": {
           "name": {
@@ -211,6 +941,184 @@
           "constraints"
         ],
         "title": "CreateProject",
+        "type": "object"
+      },
+      "DecisionView": {
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by": {
+            "title": "Decided By",
+            "type": "string"
+          },
+          "decided_by_type": {
+            "title": "Decided By Type",
+            "type": "string"
+          },
+          "decision_type": {
+            "title": "Decision Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decision_type",
+          "decided_by",
+          "decided_by_type",
+          "outcome",
+          "decided_at"
+        ],
+        "title": "DecisionView",
+        "type": "object"
+      },
+      "DiffKind": {
+        "description": "What one line of a version diff is.",
+        "enum": [
+          "equal",
+          "added",
+          "removed"
+        ],
+        "title": "DiffKind",
+        "type": "string"
+      },
+      "DiffLine": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DiffKind"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "DiffLine",
+        "type": "object"
+      },
+      "DiffView": {
+        "description": "A line-level diff between two versions, computed from the stored bodies.\n\nComputed here rather than in the browser so the two sides of a comparison are\nthe artefacts as stored, not as some component last rendered them.",
+        "properties": {
+          "added": {
+            "default": 0,
+            "title": "Added",
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/DiffLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "removed": {
+            "default": 0,
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "title": "DiffView",
+        "type": "object"
+      },
+      "DocumentView": {
+        "properties": {
+          "confidential": {
+            "default": false,
+            "title": "Confidential",
+            "type": "boolean"
+          },
+          "content_hash": {
+            "default": "",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_by_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Execution Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentView"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source_format",
+          "media_type"
+        ],
+        "title": "DocumentView",
         "type": "object"
       },
       "EditorialConstraints": {
@@ -306,11 +1214,161 @@
         "title": "EffectiveVoice",
         "type": "object"
       },
-      "ExecutionComparison": {
-        "description": "Two executions, side by side. Phase 12 says what the difference means.",
+      "ErrorView": {
         "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "ErrorView",
+        "type": "object"
+      },
+      "EvaluationView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evaluator_id": {
+            "title": "Evaluator Id",
+            "type": "string"
+          },
+          "evaluator_version": {
+            "title": "Evaluator Version",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "string"
+          },
+          "scores": {
+            "additionalProperties": true,
+            "title": "Scores",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "evaluator_id",
+          "evaluator_version",
+          "rubric_version",
+          "passed",
+          "created_at"
+        ],
+        "title": "EvaluationView",
+        "type": "object"
+      },
+      "EventView": {
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "causation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causation Id"
+          },
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "timestamp",
+          "actor_type",
+          "actor_id",
+          "correlation_id",
+          "sequence"
+        ],
+        "title": "EventView",
+        "type": "object"
+      },
+      "ExecutionComparison": {
+        "description": "Two executions side by side (plan/11 \u2192 *Run comparison*).\n\nThe summaries are what phase 09 returned; ``differences`` and the distance\nare what a comparison screen needs on top of them \u2014 the fields that differ,\nnamed one per row, and how far the two outputs sit apart. Only what both\nsides recorded is compared: human preference is phase 12's, and a column for\nit here would be a promise this phase cannot keep.",
+        "properties": {
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonRow"
+            },
+            "title": "Differences",
+            "type": "array"
+          },
           "left": {
             "$ref": "#/components/schemas/ExecutionSummary"
+          },
+          "output_edit_distance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Edit Distance"
           },
           "right": {
             "$ref": "#/components/schemas/ExecutionSummary"
@@ -321,6 +1379,79 @@
           "right"
         ],
         "title": "ExecutionComparison",
+        "type": "object"
+      },
+      "ExecutionRef": {
+        "description": "The execution behind an artefact, named so a screen can link to it.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "impl_version": {
+            "title": "Impl Version",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "impl_version",
+          "ordinal",
+          "status",
+          "started_at"
+        ],
+        "title": "ExecutionRef",
         "type": "object"
       },
       "ExecutionStatus": {
@@ -475,6 +1606,52 @@
         "title": "ExtractSourceModel",
         "type": "object"
       },
+      "FailureView": {
+        "properties": {
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "stage",
+          "occurred_at"
+        ],
+        "title": "FailureView",
+        "type": "object"
+      },
       "FindingStatus": {
         "description": "What the author decided about one review finding (phase 07 \u00a78).\n\nFive states because a criticism has five fates, and collapsing any two of them\nloses something the next round needs. ``REJECTED`` is the author disagreeing;\n``SUPPRESSED`` is the *system* holding back a finding the author already\ndismissed, raised again with nothing new behind it. Neither deletes anything:\nplan/07 requires resolved criticism to stay visible, so a dismissed finding is\nkept with the reason it was dismissed for.",
         "enum": [
@@ -486,6 +1663,109 @@
         ],
         "title": "FindingStatus",
         "type": "string"
+      },
+      "FindingView": {
+        "description": "One review finding, with its decision and its history.",
+        "properties": {
+          "blocks_publication": {
+            "default": false,
+            "title": "Blocks Publication",
+            "type": "boolean"
+          },
+          "brief_ref": {
+            "default": "",
+            "title": "Brief Ref",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "decided_by": {
+            "default": "",
+            "title": "Decided By",
+            "type": "string"
+          },
+          "decision_reason": {
+            "default": "",
+            "title": "Decision Reason",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "evidence": {
+            "default": "",
+            "title": "Evidence",
+            "type": "string"
+          },
+          "fingerprint": {
+            "default": "",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/Lifecycle",
+            "default": "new"
+          },
+          "location": {
+            "default": "",
+            "title": "Location",
+            "type": "string"
+          },
+          "passage": {
+            "default": "",
+            "title": "Passage",
+            "type": "string"
+          },
+          "recommended_correction": {
+            "default": "",
+            "title": "Recommended Correction",
+            "type": "string"
+          },
+          "ref": {
+            "default": "",
+            "title": "Ref",
+            "type": "string"
+          },
+          "reviewer_confidence": {
+            "default": 0.0,
+            "title": "Reviewer Confidence",
+            "type": "number"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_ref": {
+            "default": "",
+            "title": "Source Ref",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_route": {
+            "default": "",
+            "title": "Suggested Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "description",
+          "status"
+        ],
+        "title": "FindingView",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -549,6 +1829,41 @@
         "title": "InstructionStrength",
         "type": "string"
       },
+      "InterventionView": {
+        "description": "A point where a person stepped in, and what they did.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "intervention_type": {
+            "title": "Intervention Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "intervention_type",
+          "user_id",
+          "occurred_at"
+        ],
+        "title": "InterventionView",
+        "type": "object"
+      },
       "InvocationOutcome": {
         "description": "How a single model invocation ended.\n\n``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can\nbe useful yet unparseable, or parseable yet non-conforming; both are\npreserved alongside their repaired successor rather than discarded.",
         "enum": [
@@ -563,6 +1878,134 @@
         ],
         "title": "InvocationOutcome",
         "type": "string"
+      },
+      "InvocationView": {
+        "description": "One model call, with every payload phase 03 kept for it.",
+        "properties": {
+          "attempt_ordinal": {
+            "default": 1,
+            "title": "Attempt Ordinal",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "effective_request": {
+            "title": "Effective Request"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "parent_invocation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Invocation Id"
+          },
+          "parsed_response": {
+            "title": "Parsed Response"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "raw_response": {
+            "title": "Raw Response"
+          },
+          "retry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Type"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          },
+          "validated_response": {
+            "title": "Validated Response"
+          }
+        },
+        "required": [
+          "id",
+          "outcome",
+          "provider",
+          "model",
+          "template_id",
+          "template_version",
+          "started_at"
+        ],
+        "title": "InvocationView",
+        "type": "object"
       },
       "Job": {
         "description": "One unit of queued work, as stored and as reported.",
@@ -748,6 +2191,134 @@
         "title": "JobStatus",
         "type": "string"
       },
+      "JobView": {
+        "properties": {
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "job_type",
+          "status",
+          "created_at"
+        ],
+        "title": "JobView",
+        "type": "object"
+      },
+      "Lifecycle": {
+        "description": "What became of one review finding across rounds (plan/11 \u2192 *Review history*).",
+        "enum": [
+          "new",
+          "repeated",
+          "resolved"
+        ],
+        "title": "Lifecycle",
+        "type": "string"
+      },
+      "LineageEdge": {
+        "description": "One causal link, named ``from``/``to`` because a graph is read that way.",
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "kind": {
+            "default": "parent",
+            "title": "Kind",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "LineageEdge",
+        "type": "object"
+      },
+      "LineageGraph": {
+        "description": "plan/11 \u2192 *Lineage graph \u2014 branching causal relationships between artefacts*.",
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/LineageEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/LineageNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "title": "LineageGraph",
+        "type": "object"
+      },
+      "LineageNode": {
+        "properties": {
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "ordinal": {
+            "default": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "LineageNode",
+        "type": "object"
+      },
       "ModelInvocationOut": {
         "description": "One model call, including the attempts that failed.\n\nThe failed ones are published, not filtered: a client showing only accepted\ncalls would under-report exactly the runs that cost the most.",
         "properties": {
@@ -852,6 +2423,215 @@
         "title": "ModelInvocationOut",
         "type": "object"
       },
+      "ModelVersionView": {
+        "description": "Which model answered under which prompt version, per stage.\n\nAn approval that cannot name the prompt behind the prose is not an informed\none (plan/11 \u2192 the approval view lists *model/prompt versions*).",
+        "properties": {
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "provider",
+          "model",
+          "template_id",
+          "template_version"
+        ],
+        "title": "ModelVersionView",
+        "type": "object"
+      },
+      "ProjectDashboard": {
+        "description": "plan/11 \u2192 *Project dashboard*, assembled from rows and nothing else.",
+        "properties": {
+          "active_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobView"
+            },
+            "title": "Active Jobs",
+            "type": "array"
+          },
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleCard"
+            },
+            "title": "Articles",
+            "type": "array"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/ConstraintsView"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectSummary"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionView"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "recent_failures": {
+            "items": {
+              "$ref": "#/components/schemas/FailureView"
+            },
+            "title": "Recent Failures",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceCompleteness"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkflowState"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSummary"
+          }
+        },
+        "required": [
+          "project",
+          "run_id",
+          "state",
+          "constraints",
+          "source",
+          "usage"
+        ],
+        "title": "ProjectDashboard",
+        "type": "object"
+      },
+      "ProjectSummary": {
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "author_id"
+        ],
+        "title": "ProjectSummary",
+        "type": "object"
+      },
+      "QuestionQueue": {
+        "description": "plan/11 \u2192 *Question queue*.",
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionView"
+            },
+            "title": "Questions",
+            "type": "array"
+          }
+        },
+        "title": "QuestionQueue",
+        "type": "object"
+      },
+      "QuestionView": {
+        "description": "One thing the source does not say, and what became of asking about it.",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "group": {
+            "default": "",
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ordinal": {
+            "default": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "resolved": {
+            "default": false,
+            "title": "Resolved",
+            "type": "boolean"
+          },
+          "surfaced": {
+            "default": false,
+            "title": "Surfaced",
+            "type": "boolean"
+          },
+          "why_it_matters": {
+            "default": "",
+            "title": "Why It Matters",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "priority"
+        ],
+        "title": "QuestionView",
+        "type": "object"
+      },
       "RejectSuggestion": {
         "description": "Declining an inferred rule, with the reason kept.",
         "properties": {
@@ -871,6 +2651,216 @@
         "title": "RejectSuggestion",
         "type": "object"
       },
+      "ReviewHistory": {
+        "description": "plan/11 \u2192 *Review history*: score progression and what happened to each issue.",
+        "properties": {
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreView"
+            },
+            "title": "Scores",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "ReviewHistory",
+        "type": "object"
+      },
+      "ReviewRound": {
+        "properties": {
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "review_id": {
+            "title": "Review Id",
+            "type": "string"
+          },
+          "round": {
+            "title": "Round",
+            "type": "integer"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          },
+          "version_ordinal": {
+            "title": "Version Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "review_id",
+          "round",
+          "verdict",
+          "version_id",
+          "version_ordinal"
+        ],
+        "title": "ReviewRound",
+        "type": "object"
+      },
+      "ScoreView": {
+        "description": "One scoring pass, as the review-history table shows it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "evaluator_version": {
+            "title": "Evaluator Version",
+            "type": "string"
+          },
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "failures": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "overall": {
+            "title": "Overall",
+            "type": "number"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "overall",
+          "passed",
+          "rubric_version",
+          "evaluator_version",
+          "created_at"
+        ],
+        "title": "ScoreView",
+        "type": "object"
+      },
+      "SegmentView": {
+        "description": "One addressable span of the source \u2014 what a claim cites.",
+        "properties": {
+          "char_end": {
+            "title": "Char End",
+            "type": "integer"
+          },
+          "char_start": {
+            "title": "Char Start",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "kind",
+          "text",
+          "char_start",
+          "char_end"
+        ],
+        "title": "SegmentView",
+        "type": "object"
+      },
+      "SourceCompleteness": {
+        "description": "How much of the source has been turned into structure, counted not guessed.",
+        "properties": {
+          "answered_questions": {
+            "default": 0,
+            "title": "Answered Questions",
+            "type": "integer"
+          },
+          "claims": {
+            "default": 0,
+            "title": "Claims",
+            "type": "integer"
+          },
+          "confidential_documents": {
+            "default": 0,
+            "title": "Confidential Documents",
+            "type": "integer"
+          },
+          "documents": {
+            "default": 0,
+            "title": "Documents",
+            "type": "integer"
+          },
+          "segments": {
+            "default": 0,
+            "title": "Segments",
+            "type": "integer"
+          },
+          "unresolved_questions": {
+            "default": 0,
+            "title": "Unresolved Questions",
+            "type": "integer"
+          }
+        },
+        "title": "SourceCompleteness",
+        "type": "object"
+      },
       "SourceFormat": {
         "description": "How a source document arrived, which decides how it is segmented.\n\nFrom *Editorial workflow \u00a71 Source ingestion*: Markdown, plain text and pasted\nnotes are the three supported inputs. The distinction is kept after parsing\nbecause it explains the segmentation: a heading in Markdown is a structural\nfact, whereas the same line in pasted notes is just a line.",
         "enum": [
@@ -880,6 +2870,296 @@
         ],
         "title": "SourceFormat",
         "type": "string"
+      },
+      "SourceProvenance": {
+        "description": "Where the structured source came from, so a person can open it.",
+        "properties": {
+          "extracted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted At"
+          },
+          "source_model_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model Execution Id"
+          },
+          "source_model_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model Snapshot Id"
+          }
+        },
+        "title": "SourceProvenance",
+        "type": "object"
+      },
+      "SourceWorkspace": {
+        "description": "plan/11 \u2192 *Source workspace*: sources, structure, and who may see them.",
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimView"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentView"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/SourceProvenance"
+          },
+          "provider_visibility": {
+            "$ref": "#/components/schemas/ConstraintsView"
+          },
+          "source_model": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model"
+          },
+          "unknowns": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionView"
+            },
+            "title": "Unknowns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider_visibility",
+          "provenance"
+        ],
+        "title": "SourceWorkspace",
+        "type": "object"
+      },
+      "StageInspection": {
+        "description": "plan/11 \u2192 *Stage inspector*: every layer of one execution, in one document.",
+        "properties": {
+          "context_selections": {
+            "items": {
+              "$ref": "#/components/schemas/ContextSelectionView"
+            },
+            "title": "Context Selections",
+            "type": "array"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionView"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationView"
+            },
+            "title": "Evaluations",
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "interventions": {
+            "items": {
+              "$ref": "#/components/schemas/InterventionView"
+            },
+            "title": "Interventions",
+            "type": "array"
+          },
+          "invocations": {
+            "items": {
+              "$ref": "#/components/schemas/InvocationView"
+            },
+            "title": "Invocations",
+            "type": "array"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ExecutionRef"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallView"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSummary"
+          }
+        },
+        "required": [
+          "summary",
+          "usage"
+        ],
+        "title": "StageInspection",
+        "type": "object"
+      },
+      "ToolCallView": {
+        "properties": {
+          "approval_required": {
+            "default": false,
+            "title": "Approval Required",
+            "type": "boolean"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "initiator": {
+            "title": "Initiator",
+            "type": "string"
+          },
+          "normalised_args": {
+            "additionalProperties": true,
+            "title": "Normalised Args",
+            "type": "object"
+          },
+          "normalised_result": {
+            "additionalProperties": true,
+            "title": "Normalised Result",
+            "type": "object"
+          },
+          "raw_args": {
+            "additionalProperties": true,
+            "title": "Raw Args",
+            "type": "object"
+          },
+          "raw_result": {
+            "additionalProperties": true,
+            "title": "Raw Result",
+            "type": "object"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "tool_version": {
+            "title": "Tool Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool_name",
+          "tool_version",
+          "initiator",
+          "status",
+          "started_at"
+        ],
+        "title": "ToolCallView",
+        "type": "object"
       },
       "TraceEventOut": {
         "description": "One event in a run's timeline.",
@@ -942,6 +3222,137 @@
         "title": "TraceEventOut",
         "type": "object"
       },
+      "TraceExecution": {
+        "description": "One execution as the timeline lists it, with why a filter matched it.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "events": {
+            "default": 0,
+            "title": "Events",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "impl_version": {
+            "default": "",
+            "title": "Impl Version",
+            "type": "string"
+          },
+          "invocations": {
+            "default": 0,
+            "title": "Invocations",
+            "type": "integer"
+          },
+          "matched_filters": {
+            "items": {
+              "$ref": "#/components/schemas/TraceFilter"
+            },
+            "title": "Matched Filters",
+            "type": "array"
+          },
+          "ordinal": {
+            "default": 0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSummary"
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "status",
+          "started_at",
+          "usage"
+        ],
+        "title": "TraceExecution",
+        "type": "object"
+      },
+      "TraceFilter": {
+        "description": "The trace filters plan/11 names, as a closed vocabulary.\n\nClosed because a filter the API does not recognise has to be refused rather\nthan ignored: a person who asked to see only failed executions and was shown\neverything would draw conclusions from a list they did not request.",
+        "enum": [
+          "failed",
+          "schema_repair",
+          "fallback_model",
+          "blocking_finding",
+          "user_override",
+          "high_cost",
+          "low_confidence_score",
+          "confidential_warning",
+          "repeated_issue"
+        ],
+        "title": "TraceFilter",
+        "type": "string"
+      },
+      "TraceView": {
+        "description": "plan/11 \u2192 *Execution timeline* and *Trace filters*.",
+        "properties": {
+          "executions": {
+            "items": {
+              "$ref": "#/components/schemas/TraceExecution"
+            },
+            "title": "Executions",
+            "type": "array"
+          },
+          "filters_applied": {
+            "items": {
+              "$ref": "#/components/schemas/TraceFilter"
+            },
+            "title": "Filters Applied",
+            "type": "array"
+          }
+        },
+        "title": "TraceView",
+        "type": "object"
+      },
       "UpdateArchitecture": {
         "description": "An author's edits to a proposed architecture.",
         "properties": {
@@ -975,6 +3386,39 @@
           "requested_by"
         ],
         "title": "UpdateArchitecture",
+        "type": "object"
+      },
+      "UsageSummary": {
+        "description": "What a set of model calls consumed.\n\n``cost_usd`` stays ``None`` when no call reported one, because zero is the\nclaim that the work was free (phase 03 draws the same distinction, and a\ntotal that flattened it would be the first place it was lost).",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model_calls": {
+            "default": 0,
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "UsageSummary",
         "type": "object"
       },
       "ValidationError": {
@@ -1015,6 +3459,114 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationView": {
+        "properties": {
+          "checks_run": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks Run",
+            "type": "array"
+          },
+          "corrections": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "validator_version": {
+            "default": "",
+            "title": "Validator Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passed"
+        ],
+        "title": "ValidationView",
+        "type": "object"
+      },
+      "VersionView": {
+        "description": "One stored version of the article, with the prose it holds.",
+        "properties": {
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "created_by_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Execution Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "thesis": {
+            "default": "",
+            "title": "Thesis",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal"
+        ],
+        "title": "VersionView",
         "type": "object"
       },
       "VoiceCategory": {
@@ -1240,6 +3792,33 @@
         "title": "VoiceSuggestionOut",
         "type": "object"
       },
+      "VoiceView": {
+        "properties": {
+          "active": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveInstructionView"
+            },
+            "title": "Active",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "suppressed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suppressed",
+            "type": "array"
+          }
+        },
+        "title": "VoiceView",
+        "type": "object"
+      },
       "WorkflowState": {
         "description": "Where a pipeline run currently sits.\n\nThe order mirrors the editorial pipeline: source \u2192 architecture \u2192 brief \u2192\ndraft \u2192 review \u2192 voice \u2192 score \u2192 validate \u2192 approve, with the three endings\nlast. Names ending in ``_REQUIRED`` are the human-pause states \u2014 the engine\nparks there until a person acts (see\n:func:`~groundscribe.workflow.transitions.human_pause_states`).",
         "enum": [
@@ -1459,6 +4038,46 @@
         "summary": "Draft"
       }
     },
+    "/articles/{article_id}/lineage": {
+      "get": {
+        "description": "How each version came from the one before it.",
+        "operationId": "read_lineage_articles__article_id__lineage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineageGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Lineage"
+      }
+    },
     "/articles/{article_id}/override-approve": {
       "post": {
         "description": "Accept an article the score refused, on a person's explicit say-so.",
@@ -1547,6 +4166,46 @@
           }
         },
         "summary": "Review"
+      }
+    },
+    "/articles/{article_id}/reviews": {
+      "get": {
+        "description": "The rounds, the scores they earned, and what each finding did.",
+        "operationId": "read_review_history_articles__article_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Review History"
       }
     },
     "/articles/{article_id}/revision-plan": {
@@ -1799,6 +4458,46 @@
         "summary": "Voice Align"
       }
     },
+    "/articles/{article_id}/workspace": {
+      "get": {
+        "description": "Everything needed to judge the current version, approval included.",
+        "operationId": "read_article_workspace_articles__article_id__workspace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArticleWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Article Workspace"
+      }
+    },
     "/executions/compare": {
       "get": {
         "description": "Two executions side by side. Declared before ``/executions/{id}`` so the\nliteral path is matched first rather than read as an execution called\n\"compare\".",
@@ -1980,6 +4679,46 @@
           }
         },
         "summary": "Fork Execution"
+      }
+    },
+    "/executions/{execution_id}/inspect": {
+      "get": {
+        "description": "One execution, with every layer phase 03 recorded for it.",
+        "operationId": "inspect_execution_executions__execution_id__inspect_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageInspection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Execution"
       }
     },
     "/executions/{execution_id}/invocations": {
@@ -2284,6 +5023,46 @@
         "summary": "Read Project"
       }
     },
+    "/projects/{project_id}/architecture": {
+      "get": {
+        "description": "The proposed shape of the work, every version of it.",
+        "operationId": "read_architecture_projects__project_id__architecture_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchitectureBoard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Architecture"
+      }
+    },
     "/projects/{project_id}/architecture/propose": {
       "post": {
         "description": "Queue a proposal of the article or series the source supports.",
@@ -2492,6 +5271,86 @@
         "summary": "Cancel"
       }
     },
+    "/projects/{project_id}/dashboard": {
+      "get": {
+        "description": "Where the project stands: state, source, articles, jobs, failures, cost.",
+        "operationId": "read_dashboard_projects__project_id__dashboard_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Dashboard"
+      }
+    },
+    "/projects/{project_id}/questions": {
+      "get": {
+        "description": "Every question the source raised, answered ones included.",
+        "operationId": "read_questions_projects__project_id__questions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionQueue"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Questions"
+      }
+    },
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {
       "post": {
         "description": "Record an answer and rebuild the source model from it.",
@@ -2601,6 +5460,46 @@
         "summary": "Extract Source Model"
       }
     },
+    "/projects/{project_id}/source-workspace": {
+      "get": {
+        "description": "The source, what was extracted from it, and who may see it.",
+        "operationId": "read_source_workspace_projects__project_id__source_workspace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Source Workspace"
+      }
+    },
     "/projects/{project_id}/sources": {
       "post": {
         "description": "Store one piece of source material. No model is involved, so no job.",
@@ -2649,6 +5548,65 @@
           }
         },
         "summary": "Import Source"
+      }
+    },
+    "/projects/{project_id}/trace": {
+      "get": {
+        "description": "The run's executions, narrowed to what a filter names.\n\n``filter`` shadows the builtin, and keeps the name because it is the query\nstring a person types; the alias is the API's vocabulary, not Python's.",
+        "operationId": "read_trace_projects__project_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/TraceFilter"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Trace"
       }
     },
     "/projects/{project_id}/voice": {
