@@ -23,8 +23,9 @@ would be cited as evidence.
 
     docker run -d -p 55432:5432 -e POSTGRES_PASSWORD=groundscribe \\
         -e POSTGRES_USER=groundscribe -e POSTGRES_DB=groundscribe postgres:16-alpine
-    GROUNDSCRIBE_TEST_POSTGRES_URL=postgresql+psycopg://groundscribe:groundscribe@localhost:55432/groundscribe \\
-        uv run pytest tests/test_postgres_parity.py
+    export GROUNDSCRIBE_TEST_POSTGRES_URL=\\
+        postgresql+psycopg://groundscribe:groundscribe@localhost:55432/groundscribe
+    uv run pytest tests/test_postgres_parity.py
 
 The whole suite can be pointed at Postgres the same way, through
 ``GROUNDSCRIBE_TEST_DATABASE_URL`` — see ``backend/tests/db_fixtures.py``. This
