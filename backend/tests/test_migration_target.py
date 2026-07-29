@@ -46,7 +46,7 @@ def resolver() -> Any:
     head = head.replace(
         "if config.config_file_name is not None:\n    fileConfig(config.config_file_name)", ""
     )
-    exec(compile(head, str(ENV_PY), "exec"), namespace)  # noqa: S102
+    exec(compile(head, str(ENV_PY), "exec"), namespace)
     return namespace["_resolve_url"]
 
 
