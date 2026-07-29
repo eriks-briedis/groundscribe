@@ -126,10 +126,36 @@ of what it promises, so a stage that needs one fails loudly naming it.
 ### The API contract
 
 `contracts/openapi.json` is generated from the app and committed, so a contract
-change is reviewed alongside the route that caused it and phase 11's generated
+change is reviewed alongside the route that caused it and the web app's generated
 client has something stable to build from. Regenerate it after adding or changing
 an endpoint — a test fails if it drifts:
 
 ```bash
 uv run writer contracts export
+cd frontend && npm run contract   # and the TypeScript types from it
 ```
+
+### The web application
+
+A local-first React app over the same API, in `frontend/`. It renders artefacts —
+the source model, the brief, the version, the findings, the score sheet, the
+trace — and submits commands; it holds no workflow rules of its own, which a
+guard test enforces by reading the source for state names, action names and
+command URLs.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, proxying /api to the backend on :8000
+npm test           # component + contract tests
+npm run typecheck  # tsc --strict, the frontend's equivalent of mypy --strict
+```
+
+Run the API and a worker alongside it (above); the app reads through `/api` and
+follows a running job over SSE.
+
+Two screens' worth of vocabulary comes from the backend rather than the client:
+each offered action arrives with the endpoint that performs it, and the trace
+filters arrive with the response that uses them. That is deliberate — it is what
+lets the frontend render exactly what the backend offers without keeping a
+second, drifting copy of the API.

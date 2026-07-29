@@ -3419,7 +3419,7 @@
         "type": "string"
       },
       "TraceView": {
-        "description": "plan/11 \u2192 *Execution timeline* and *Trace filters*.",
+        "description": "plan/11 \u2192 *Execution timeline* and *Trace filters*.\n\n``filters_available`` is the vocabulary itself, served with every response.\nA client that kept its own list would render controls for filters the\nbackend had renamed or removed, and nothing would notice until someone\nticked one.",
         "properties": {
           "executions": {
             "items": {
@@ -3433,6 +3433,13 @@
               "$ref": "#/components/schemas/TraceFilter"
             },
             "title": "Filters Applied",
+            "type": "array"
+          },
+          "filters_available": {
+            "items": {
+              "$ref": "#/components/schemas/TraceFilter"
+            },
+            "title": "Filters Available",
             "type": "array"
           }
         },

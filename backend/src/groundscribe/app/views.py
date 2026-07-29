@@ -560,10 +560,17 @@ class TraceExecution(BaseModel):
 
 
 class TraceView(BaseModel):
-    """plan/11 → *Execution timeline* and *Trace filters*."""
+    """plan/11 → *Execution timeline* and *Trace filters*.
+
+    ``filters_available`` is the vocabulary itself, served with every response.
+    A client that kept its own list would render controls for filters the
+    backend had renamed or removed, and nothing would notice until someone
+    ticked one.
+    """
 
     executions: list[TraceExecution] = Field(default_factory=list)
     filters_applied: list[TraceFilter] = Field(default_factory=list)
+    filters_available: list[TraceFilter] = Field(default_factory=lambda: list(TraceFilter))
 
 
 class ArtifactView(BaseModel):

@@ -478,6 +478,33 @@ async def test_a_trace_filter_returns_only_what_it_names(
     assert all("failed" in execution["matched_filters"] for execution in filtered["executions"])
 
 
+async def test_the_trace_names_the_filters_it_understands(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → *Trace filters*, listed by the side that implements them.
+
+    The frontend renders one control per filter, and the only way for it to do
+    that without keeping its own copy of the vocabulary — which would go stale
+    the moment a filter is added — is for the response to say what the filters
+    are.
+    """
+    await walk.open_project()
+
+    trace = read(client, f"/projects/{walk.project_id}/trace")
+
+    assert trace["filters_available"] == [
+        "failed",
+        "schema_repair",
+        "fallback_model",
+        "blocking_finding",
+        "user_override",
+        "high_cost",
+        "low_confidence_score",
+        "confidential_warning",
+        "repeated_issue",
+    ]
+
+
 async def test_an_unknown_trace_filter_is_refused_rather_than_ignored(
     walk: Walkthrough, client: TestClient
 ) -> None:

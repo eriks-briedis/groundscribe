@@ -2560,12 +2560,19 @@ export interface components {
         /**
          * TraceView
          * @description plan/11 → *Execution timeline* and *Trace filters*.
+         *
+         *     ``filters_available`` is the vocabulary itself, served with every response.
+         *     A client that kept its own list would render controls for filters the
+         *     backend had renamed or removed, and nothing would notice until someone
+         *     ticked one.
          */
         TraceView: {
             /** Executions */
             executions?: components["schemas"]["TraceExecution"][];
             /** Filters Applied */
             filters_applied?: components["schemas"]["TraceFilter"][];
+            /** Filters Available */
+            filters_available?: components["schemas"]["TraceFilter"][];
         };
         /**
          * UpdateArchitecture
