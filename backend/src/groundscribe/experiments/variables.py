@@ -26,6 +26,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from groundscribe.llm.routing import RouteOverride
+from groundscribe.stages.context import ContextStrategy
 
 
 class ForkVariable(StrEnum):
@@ -63,9 +64,32 @@ class ForkVariables(BaseModel):
     revision_plan: str | None = None
 
     @model_validator(mode="after")
-    def _at_least_nothing_is_fine(self) -> ForkVariables:
-        """Empty is allowed: it is a replay, and the caller is told so."""
+    def _named_strategies_exist(self) -> ForkVariables:
+        """A context strategy nothing implements is refused here, not ignored later.
+
+        The closed vocabulary one level down. ``context_strategy`` carries the
+        *name* of a selection strategy, and a run that quietly fell back to the
+        default on an unrecognised name would report that retrieval made no
+        difference — the same silent-drop failure this class exists to prevent
+        for the variables themselves.
+
+        Empty is still allowed: a fork with nothing changed is a replay, and the
+        caller is told so rather than refused.
+        """
+        if self.context_strategy is None:
+            return self
+        known = {strategy.value for strategy in ContextStrategy}
+        if self.context_strategy not in known:
+            raise ValueError(
+                f"unknown context strategy {self.context_strategy!r}; "
+                f"expected one of {', '.join(sorted(known))}"
+            )
         return self
+
+    @property
+    def strategy(self) -> ContextStrategy | None:
+        """The named strategy, already validated to exist."""
+        return ContextStrategy(self.context_strategy) if self.context_strategy else None
 
     @property
     def empty(self) -> bool:

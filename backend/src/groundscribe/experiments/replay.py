@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from groundscribe.experiments.variables import ForkVariables
+from groundscribe.experiments.variables import ForkVariable, ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
 from groundscribe.provenance import models
@@ -58,6 +58,45 @@ STAGE_JOBS: dict[str, JobType] = {
     REWRITE_STAGE: JobType.REWRITE_ARTICLE,
     VOICE_STAGE: JobType.ALIGN_VOICE,
     SCORE_STAGE: JobType.SCORE_ARTICLE,
+}
+
+#: The variables every stage can honour, because every stage renders a versioned
+#: prompt through a resolved route.
+ROUTING_VARIABLES: frozenset[ForkVariable] = frozenset(
+    {
+        ForkVariable.PROMPT_VERSION,
+        ForkVariable.MODEL,
+        ForkVariable.PROVIDER,
+        ForkVariable.TEMPERATURE,
+    }
+)
+
+#: Which stage can change which variable, beyond the routing four.
+#:
+#: Declared rather than discovered, so a fork carrying a variable its stage has
+#: never heard of is refused at the request. The alternative is worse than an
+#: error: an experiment reporting that a rubric made no difference to a stage
+#: that has never had one (see :mod:`groundscribe.experiments.variables`).
+STAGE_VARIABLES: dict[str, frozenset[ForkVariable]] = {
+    EXTRACTION_STAGE: ROUTING_VARIABLES | {ForkVariable.CONTEXT_STRATEGY},
+    ARCHITECTURE_STAGE: ROUTING_VARIABLES | {ForkVariable.SOURCE_MODEL},
+    BRIEF_STAGE: ROUTING_VARIABLES | {ForkVariable.SOURCE_MODEL},
+    DRAFT_STAGE: ROUTING_VARIABLES | {ForkVariable.SOURCE_MODEL, ForkVariable.VOICE_PROFILE},
+    REVIEW_STAGE: ROUTING_VARIABLES | {ForkVariable.SOURCE_MODEL},
+    PLAN_STAGE: ROUTING_VARIABLES,
+    REWRITE_STAGE: ROUTING_VARIABLES
+    | {
+        ForkVariable.SOURCE_MODEL,
+        ForkVariable.VOICE_PROFILE,
+        ForkVariable.REVISION_PLAN,
+    },
+    VOICE_STAGE: ROUTING_VARIABLES | {ForkVariable.VOICE_PROFILE},
+    SCORE_STAGE: ROUTING_VARIABLES
+    | {
+        ForkVariable.SOURCE_MODEL,
+        ForkVariable.VOICE_PROFILE,
+        ForkVariable.RUBRIC_VERSION,
+    },
 }
 
 #: Where a re-run's instructions sit inside the job payload.
@@ -98,6 +137,18 @@ def plan_rerun(
     if job_type is None:
         raise NotRerunnable(f"{execution.stage} is not run by a job — nothing was queued to repeat")
 
+    unusable = sorted(
+        name
+        for name in rerun.variables.changes
+        if ForkVariable(name) not in STAGE_VARIABLES.get(execution.stage, frozenset())
+    )
+    if unusable:
+        raise NotRerunnable(
+            f"{execution.stage} cannot change {', '.join(unusable)}; a fork that carried a "
+            "variable the stage never reads would run, succeed, and report that the change "
+            "made no difference"
+        )
+
     original = session.scalars(
         select(Job).where(Job.stage_execution_id == execution.id).order_by(Job.created_at.desc())
     ).first()
@@ -117,4 +168,13 @@ def rerun_of(payload: dict[str, Any]) -> Rerun | None:
     return Rerun.model_validate(recorded) if recorded else None
 
 
-__all__ = ["RERUN_KEY", "STAGE_JOBS", "NotRerunnable", "Rerun", "plan_rerun", "rerun_of"]
+__all__ = [
+    "RERUN_KEY",
+    "ROUTING_VARIABLES",
+    "STAGE_JOBS",
+    "STAGE_VARIABLES",
+    "NotRerunnable",
+    "Rerun",
+    "plan_rerun",
+    "rerun_of",
+]
