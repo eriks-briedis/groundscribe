@@ -9,7 +9,8 @@ growing a second, quietly different setup.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import os
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 import pytest
@@ -24,15 +25,39 @@ import groundscribe.jobs.models
 import groundscribe.provenance.models
 import groundscribe.voice.models
 import groundscribe.workflow.position  # noqa: F401
-from groundscribe.db import Base, create_engine
+from groundscribe.db import DEFAULT_URL, Base, create_engine
 from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
+
+#: Points the whole suite at another database (plan/14 → SQLite↔Postgres parity).
+#:
+#: In-memory SQLite stays the default because it is what a local-first tool ships
+#: on and it needs nothing installed. But a suite that *can only* run on one
+#: database cannot notice that it depends on it, so the switch exists — and
+#: ``tests/test_postgres_parity.py`` asserts that it does, rather than leaving it
+#: to a README claim nobody executes.
+DATABASE_URL_ENV = "GROUNDSCRIBE_TEST_DATABASE_URL"
+
+
+def configured_url(environ: Mapping[str, str] | None = None) -> str:
+    """The database this run should use: the environment's, or in-memory SQLite."""
+    source = environ if environ is not None else os.environ
+    return source.get(DATABASE_URL_ENV, "").strip() or DEFAULT_URL
 
 
 @pytest.fixture(scope="session")
 def engine() -> Iterator[Engine]:
-    """A single in-memory SQLite engine with the full mapped schema created once."""
-    eng = create_engine()
+    """One engine with the full mapped schema, created once.
+
+    In-memory SQLite unless :data:`DATABASE_URL_ENV` names something else. The
+    schema is dropped first when it does: a server-backed database persists
+    between runs, and a previous run's tables are a different starting state
+    from the empty one every test in this suite assumes.
+    """
+    url = configured_url()
+    eng = create_engine(url)
+    if url != DEFAULT_URL:
+        Base.metadata.drop_all(eng)
     Base.metadata.create_all(eng)
     try:
         yield eng
@@ -67,4 +92,11 @@ def snapshot_store(db_session: Session, blob_store: BlobStore) -> SnapshotStore:
     return SnapshotStore(db_session, blob_store)
 
 
-__all__ = ["blob_store", "db_session", "engine", "snapshot_store"]
+__all__ = [
+    "DATABASE_URL_ENV",
+    "blob_store",
+    "configured_url",
+    "db_session",
+    "engine",
+    "snapshot_store",
+]

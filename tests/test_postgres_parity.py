@@ -48,9 +48,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from groundscribe.api.app import create_app
-from groundscribe.db import Base, create_engine, session_factory
+from groundscribe.db import Base, create_engine
 from groundscribe.domain import models as domain_models
 from groundscribe.provenance import models as provenance_models
+from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
 from read_helpers import Walkthrough
@@ -217,7 +218,7 @@ def test_an_enum_is_stored_as_its_value_on_postgres(pg_session: Session) -> None
         provenance_models.PipelineRun(
             id="parity-enum",
             project_id=project_id,
-            status=provenance_models.ExecutionStatus.SUCCEEDED,
+            status=ExecutionStatus.SUCCEEDED,
             correlation_id="parity",
             started_at=datetime(2026, 7, 29, 12, 30, tzinfo=UTC),
         )
@@ -251,10 +252,3 @@ def _seed_project(session: Session) -> str:
     session.add(domain_models.Project(id="parity-project", user_id="parity-user", title="Parity"))
     session.flush()
     return "parity-project"
-
-
-def _engine_for(url: str) -> Engine:
-    """Named for readability at the call sites above."""
-    engine = create_engine(url)
-    session_factory(engine)
-    return engine
