@@ -36,6 +36,13 @@ export const dashboard: Dashboard = {
   run_id: 'r1',
   state: 'human_approval_required',
   available_actions: ['approve_final', 'cancel', 'fork_execution', 'reject_final'],
+  action_links: [
+    { action: 'approve_final', method: null, path: null, requires_actor: false },
+    { action: 'cancel', method: 'POST', path: `/projects/${PROJECT_ID}/cancel`, requires_actor: true },
+    { action: 'fork_execution', method: null, path: null, requires_actor: false },
+    { action: 'reject_final', method: null, path: null, requires_actor: false },
+  ],
+  pending_command: null,
   constraints: {
     audience: 'senior backend engineers',
     platform: 'personal blog',
@@ -87,6 +94,7 @@ export const dashboard: Dashboard = {
       surfaced: true,
       resolved: false,
       answer: null,
+      answer_path: `/projects/${PROJECT_ID}/source-gaps/g1/answer`,
     },
   ],
   active_jobs: [
@@ -141,6 +149,7 @@ export const sourceWorkspace: SourceWorkspace = {
       surfaced: true,
       resolved: false,
       answer: null,
+      answer_path: `/projects/${PROJECT_ID}/source-gaps/g1/answer`,
     },
   ],
   source_model: { summary: 'A read-through cache in front of the fragment renderer.' },
@@ -165,6 +174,7 @@ export const questionQueue: QuestionQueue = {
       surfaced: true,
       resolved: false,
       answer: null,
+      answer_path: `/projects/${PROJECT_ID}/source-gaps/g1/answer`,
     },
     {
       id: 'g2',
@@ -184,6 +194,7 @@ export const questionQueue: QuestionQueue = {
         answered_by: 'ada',
         diff_snapshot_id: 'snap-3',
       },
+      answer_path: `/projects/${PROJECT_ID}/source-gaps/g2/answer`,
     },
   ],
 };
@@ -223,6 +234,18 @@ export const articleWorkspace: ArticleWorkspace = {
   run_id: 'r1',
   state: 'human_approval_required',
   available_actions: ['approve_final', 'cancel', 'fork_execution', 'reject_final'],
+  action_links: [
+    {
+      action: 'approve_final',
+      method: 'POST',
+      path: `/articles/${ARTICLE_ID}/approve`,
+      requires_actor: true,
+    },
+    { action: 'cancel', method: 'POST', path: `/projects/${PROJECT_ID}/cancel`, requires_actor: true },
+    { action: 'fork_execution', method: null, path: null, requires_actor: false },
+    { action: 'reject_final', method: null, path: null, requires_actor: false },
+  ],
+  pending_command: null,
   brief: { thesis: 'Caching bought the latency, invalidation cost it back.', target_length_words: 400 },
   current_version: {
     id: 'v3',

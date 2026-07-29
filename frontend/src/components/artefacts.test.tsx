@@ -21,7 +21,7 @@ import { articleWorkspace, reviewHistory } from '@/test/fixtures';
 
 describe('the diff viewer', () => {
   it('renders the lines the backend marked, in the order it marked them', () => {
-    render(<DiffViewer diff={articleWorkspace.diff ?? { lines: [] }} />);
+    render(<DiffViewer diff={articleWorkspace.diff ?? null} />);
 
     const lines = screen.getAllByRole('listitem');
     expect(lines.map((line) => line.dataset.kind)).toEqual(['equal', 'removed', 'added']);
@@ -30,7 +30,7 @@ describe('the diff viewer', () => {
   });
 
   it('summarises the size of the change without recounting it', () => {
-    render(<DiffViewer diff={articleWorkspace.diff ?? { lines: [] }} />);
+    render(<DiffViewer diff={articleWorkspace.diff ?? null} />);
 
     expect(screen.getByTestId('diff-summary')).toHaveTextContent('+1');
     expect(screen.getByTestId('diff-summary')).toHaveTextContent('−1');
