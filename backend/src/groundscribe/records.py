@@ -52,9 +52,16 @@ EDITORIAL_TABLES: frozenset[str] = frozenset(
 
 #: Execution records: how an artefact came to exist (phase 03).
 #:
-#: ``experiment_runs`` and ``jobs`` are shells here — filled in phases 12 and 09
-#: — but they are execution records by nature and are classified now so the
-#: partition stays complete.
+#: ``experiment_runs`` is a shell here — filled in phase 12 — but it is an
+#: execution record by nature and is classified now so the partition stays
+#: complete.
+#:
+#: ``workflow_positions`` (phase 09) is the odd one and is classified here
+#: deliberately. It is not an artefact and not a score; it is *where a run has
+#: got to*, which is a fact about the execution. Unlike its neighbours it is
+#: mutable — a position moves — but the alternative, a fourth category holding
+#: one table, would draw a line through the partition to describe a lifetime
+#: rather than a kind of record.
 EXECUTION_TABLES: frozenset[str] = frozenset(
     {
         "pipeline_runs",
@@ -70,6 +77,7 @@ EXECUTION_TABLES: frozenset[str] = frozenset(
         "trace_events",
         "experiment_runs",
         "jobs",
+        "workflow_positions",
     }
 )
 

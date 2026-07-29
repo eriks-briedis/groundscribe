@@ -18,9 +18,7 @@ something the original engine would have refused.
 from __future__ import annotations
 
 import pytest
-from provenance_helpers import make_recorder, seed_project
 from sqlalchemy.orm import Session
-from workflow_helpers import sample_policy
 
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.domain.models import ArtifactSnapshot
@@ -32,6 +30,8 @@ from groundscribe.workflow.errors import ExportMismatchError, SilentMutationErro
 from groundscribe.workflow.policy import LimitKind
 from groundscribe.workflow.position import PositionStore, WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
+from provenance_helpers import make_recorder, seed_project
+from workflow_helpers import sample_policy
 
 A = WorkflowAction
 S = WorkflowState
@@ -221,7 +221,13 @@ def test_a_resumed_engine_still_knows_which_version_passed_validation(
     resumed = resumable.hand_over()
 
     assert resumed.validated_version is validated
-    other = resumable.snapshot(ArtifactType.ARTICLE_VERSION, b"a different article")
+    # Forked from the validated version, so it clears the lineage guard and the
+    # export guard is what stops it — which is the guard under test here. That
+    # it clears lineage at all is the second half of the point: the resumed
+    # engine also restored *which* version the run is currently working from.
+    other = resumable.snapshot(
+        ArtifactType.ARTICLE_VERSION, b"a different article", parent=validated
+    )
     with pytest.raises(ExportMismatchError):
         resumed.apply(
             A.APPROVE_FINAL, actor_id=AUTHOR, actor_type=ActorType.USER, artifacts=(other,)
