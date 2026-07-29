@@ -73,6 +73,11 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("get", "/articles/{article_id}/reviews"),
     ("get", "/articles/{article_id}/lineage"),
     ("get", "/executions/{execution_id}/inspect"),
+    # plan/14 → *all observability metrics exposed*. Two routes, because "every
+    # project" is a question a monitoring check asks on a schedule and making it
+    # a special case of a project id would mean inventing a sentinel id for it.
+    ("get", "/metrics"),
+    ("get", "/projects/{project_id}/metrics"),
     # A slice of plan/13 → the front door, so the app can be exposed at all.
     ("post", "/auth/login"),
     ("post", "/auth/logout"),
