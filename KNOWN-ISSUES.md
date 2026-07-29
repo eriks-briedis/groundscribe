@@ -120,6 +120,56 @@ experiment arm, measured against the article the author approved
 
 ---
 
+## 5. A source segment's offsets and the stored document can disagree
+
+**Status:** open. **Found:** phase 13, auditing the store for a leaked secret.
+**Severity:** low, and only for source material that actually contains a
+secret.
+
+`SourceSegment.char_start` / `char_end` index the document *as pasted*, and
+`content_hash` is the hash of the segment's own unredacted text. The document
+snapshot beside them goes through the recorder, so it is stored **redacted**
+(`ProvenanceRecorder.record_text_output`). When redaction changes the length of
+anything — replacing `sk-live-…` with `[REDACTED:api_key]` does — slicing the
+stored document by a later segment's offsets no longer yields that segment.
+
+Reproduced by ingesting a three-block document whose middle block contains
+`api_key=sk-live-…`, then slicing the stored snapshot by each segment's own
+offsets:
+
+```
+seg 0: match=True   'We shipped a read-through cache in March.'
+seg 1: match=False  'The deploy used api_key=[REDACTED:api_key] here.\n\np99 latency '
+seg 2: match=False  'll from 810ms to 120ms.\n'
+```
+
+The placeholder is shorter than the key it replaced, so every segment after it
+slides by the difference. A document with no secret in it is unaffected, which
+is why this has gone unnoticed: it needs redaction to have actually fired.
+
+The rows themselves are consistent, and every citation the pipeline makes is
+checked against the segment rows rather than by slicing the snapshot, so nothing
+in the system currently reads the two together. It is the *verifiability* claim
+that is weakened: phase 06 says a citation is checkable by slicing the offsets
+out of the stored bytes and comparing, and for a document containing a secret
+that check now fails on material that is perfectly correct.
+
+**Why it is not fixed:** the two defensible fixes point in opposite directions
+and the choice is a product decision, not a patch.
+
+- *Record offsets into the redacted document.* Keeps the slice-and-compare check
+  true; means the offsets no longer describe what the author pasted, so a person
+  looking at their own file finds them wrong.
+- *Store the source snapshot unredacted*, treating it as the author's material
+  like the segment rows already are. Keeps offsets honest and moves a secret into
+  the content-addressed store, which is the thing exports and backups carry.
+
+**Where:** `backend/src/groundscribe/stages/ingestion.py` (`_store_segments`),
+`backend/src/groundscribe/provenance/recorder.py` (`record_text_output`),
+`backend/tests/test_secret_audit.py`.
+
+---
+
 ## Not issues, recorded so they are not rediscovered as bugs
 
 - **`writer worker run` drains the queue once and exits.** Deliberate (a crash
@@ -129,9 +179,19 @@ experiment arm, measured against the article the author approved
 - **No Markdown *editor*, only a preview.** No endpoint accepts a manually edited
   version, so the editor would be a text box with nowhere to save to. It arrives
   with the endpoint.
-- **The approval view's *manual edit*, *targeted revision* and *export* actions
-  are absent.** Same reason: no backend command exists for them yet; export is
-  phase 13's.
+- **The approval view's *manual edit* and *targeted revision* actions are
+  absent.** Same reason: no backend command exists for them yet. *Export* now
+  does — `GET /versions/{id}/export` and `writer article render` — so the button
+  is a phase-11 screen away rather than a missing capability.
+- **Compression of stored payloads is not implemented.** The store already
+  deduplicates by content address and the payloads are small JSON documents, so
+  a compression layer would change the on-disk format for a saving nobody has
+  measured. `writer privacy report` is what would produce that measurement;
+  revisit when it says something (`backend/src/groundscribe/privacy/storage.py`).
+- **Deleting a project's traces leaves shared blobs alone.** Two projects that
+  sent the same request share one content-addressed blob, so deletion clears the
+  references and deletes only the snapshots nothing else resolves to. The count
+  of survivors is returned rather than hidden (`TraceDeletion.shared_payloads`).
 - **Accessing the dev server by hostname needs `server.allowedHosts`.** Vite's
   DNS-rebinding guard, not a defect. IP addresses always work.
 - **The `confidential_warning` trace filter reads stored payloads.** It is the

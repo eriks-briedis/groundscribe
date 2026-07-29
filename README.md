@@ -163,8 +163,71 @@ refused without it, including paths that do not exist.
 It is a lock on the front door and not much more: no accounts, no TLS, no rate
 limiting, and every human action is still attributed to the same author — whoever
 holds the password *is* that author as far as the system can tell. The password
-travels in clear text over plain HTTP, so the network is the real boundary. The
-rest is plan/13.
+travels in clear text over plain HTTP, so the network is the real boundary.
+
+### Confidentiality, retention and export
+
+Every span of source material carries two facts: a classification a person sets —
+**publishable**, **internal** or **confidential** — and any extra boundaries they
+name on top of it. A classification *implies* exclusions and an explicit flag may
+only add, so there is deliberately no way to say "confidential, but do send it".
+
+| | sent to a model | printed in the article | kept in an exported trace |
+|---|---|---|---|
+| publishable | ✅ | ✅ | ✅ |
+| internal | ✅ | ❌ | ✅ |
+| confidential | ❌ | ❌ | ❌ |
+
+Two things set them. Importing a document as confidential makes its segments
+*internal*, plus an exclusion from exported traces — marking a whole postmortem
+sensitive is a request not to publish it, not a request for an article that can
+never be written. An inline `[[CONFIDENTIAL]] … [[/CONFIDENTIAL]]` marker is the
+strong one, and it means what it already meant everywhere else in the system:
+this must not leave the machine.
+
+They are enforced in three places, none of which trusts the others. Context
+selection withholds excluded material *before* it competes for the token budget,
+recording it as excluded with a reason that names confidentiality rather than the
+budget. Final validation fails an article that reprints flagged material
+verbatim. The `approve_final` transition refuses it again, so no route to
+publication can skip the check.
+
+How much of a trace is kept is the project's declared choice, stored beside its
+other constraints so an old run can still say what it was recorded under:
+
+| mode | keeps |
+|---|---|
+| `full` | every payload, indefinitely |
+| `redacted_full` | the same, minus the project's own restricted source material |
+| `temporary_raw_retention` | the same, with raw provider payloads expiring after 7 days |
+| `no_raw_provider_payloads` | the prompt and the structured output, never the raw response |
+| `metadata_and_structured_only` | structured output only |
+| `minimal_operational_logging` | no payloads at all |
+
+No mode drops the record that a call happened — a trace that forgot one would not
+be a smaller trace, it would be a wrong one — and `full` is not "unredacted":
+redaction before persistence is a product principle, not a setting.
+
+```bash
+uv run writer article render <version> --format markdown|plain_text|html|clipboard
+uv run writer privacy visibility <project>    # who sees this, and what is kept
+uv run writer privacy traces <project> --sanitise --report
+uv run writer privacy report [<project>]      # what the trace costs on disk
+uv run writer privacy forget <project>        # drop the payloads, keep the record
+```
+
+A full trace export of a project holding confidential material is **refused**
+until the caller says it means to (`--i-know-this-may-contain-confidential-material`,
+spelled out because an option called `--force` gets typed by reflex). A sanitised
+export needs no such flag, which is what keeps the acknowledgement from becoming
+a box people tick.
+
+Setting `GROUNDSCRIBE_ENCRYPT_TRACES` encrypts stored artefact content at rest,
+with the key in `GROUNDSCRIBE_TRACE_KEY` or under `GROUNDSCRIBE_KEY_ROOT` —
+beside the blob root, never inside it. It is off by default because switching it
+on over blobs already on disk would make every one of them unreadable. Addresses
+stay on the plaintext, so deduplication and every recorded content hash still
+work.
 
 Defects found and consciously left open are in
 [KNOWN-ISSUES.md](KNOWN-ISSUES.md), with what reproduces each one.
