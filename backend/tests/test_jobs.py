@@ -19,16 +19,19 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from job_helpers import ManualClock, make_queue, seed_run
-from provenance_helpers import make_recorder
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from groundscribe.jobs.enums import JobStatus, JobType
+from groundscribe.jobs.models import Job
 from groundscribe.jobs.queue import JobQueue
+from groundscribe.jobs.schemas import Job as JobSchema
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.engine import WORKFLOW_STAGE
+from job_helpers import ManualClock, make_queue, seed_run
+from provenance_helpers import make_recorder
 
 LEASE = timedelta(seconds=30)
 
@@ -56,7 +59,7 @@ def enqueue(
     payload: Mapping[str, Any] | None = None,
     dedupe_key: str | None = None,
     max_attempts: int = 1,
-) -> models.Job:
+) -> Job:
     """Enqueue with the defaults these tests are not about."""
     return queue.enqueue(
         job_type=job_type,
@@ -65,6 +68,31 @@ def enqueue(
         dedupe_key=dedupe_key,
         max_attempts=max_attempts,
     )
+
+
+# ----------------------------------------------------------------------
+# Schema / row parity
+# ----------------------------------------------------------------------
+
+
+def test_a_job_row_round_trips_to_its_schema(
+    queue: JobQueue, run: models.PipelineRun, db_session: Session
+) -> None:
+    """The job the API returns is the job the queue stored, field for field.
+
+    The phase-02 and phase-03 parity rule applies here too: the wire shape
+    validates straight from the row, so a column the schema forgot is a test
+    failure rather than a field that silently stops being reported.
+    """
+    job = enqueue(queue, run, payload={"token_budget": 4000})
+
+    reloaded = JobSchema.model_validate(db_session.get(Job, job.id))
+
+    assert reloaded == JobSchema.model_validate(job)
+    assert reloaded.schema_version == 1
+    assert set(JobSchema.model_fields) == {
+        column.key for column in inspect(Job).mapper.column_attrs
+    }
 
 
 # ----------------------------------------------------------------------
