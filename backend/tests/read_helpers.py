@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
 from groundscribe.domain import models as domain_models
+from groundscribe.domain.enums import ArtifactType
 from groundscribe.jobs.enums import JobStatus
 from groundscribe.provenance import models as provenance_models
+from groundscribe.provenance.enums import ArtifactDirection
 from groundscribe.provenance.schemas import TokenUsage
 from service_helpers import AUTHOR, Harness
 from stage_helpers import DEFAULT_CONSTRAINTS
@@ -142,7 +144,7 @@ class Walkthrough:
 
     async def architecture(self, *, approve: bool = True) -> dict[str, Any]:
         """Propose the shape of the article, and approve it unless told not to."""
-        self.script("propose_content_architecture", golden_json("architecture.json"))
+        self.script("propose_content_architecture", self.architecture_payload())
         proposed = await self.command("POST", f"/projects/{self.project_id}/architecture/propose")
         if not approve:
             return proposed
@@ -195,16 +197,14 @@ class Walkthrough:
 
     async def revise(self) -> dict[str, Any]:
         """Plan the revision, approve it, and rewrite under it."""
-        self.script(
-            "create_revision_plan", golden_json("revision_plan.json", suite="draft_to_voice")
-        )
+        self.script("create_revision_plan", self.revision_plan_payload())
         await self.command("POST", f"/articles/{self.article_id}/revision-plan")
         await self.command(
             "POST",
             f"/articles/{self.article_id}/revision-plan/approve",
             json={"actor_id": AUTHOR},
         )
-        self.script("rewrite_substantively", golden_rewrite())
+        self.script("rewrite_substantively", self.rewrite_payload())
         return await self.command("POST", f"/articles/{self.article_id}/rewrite")
 
     async def align_voice(self) -> dict[str, Any]:
@@ -221,21 +221,7 @@ class Walkthrough:
         with its two rubric-required deductions removed and the dimension they
         cost raised to match. Nothing else about it changes.
         """
-        payload = golden_json("score.json", suite="draft_to_voice")
-        if passing:
-            payload = payload | {
-                "dimensions": payload["dimensions"]
-                | {
-                    "factual_fidelity": {"score": 92.0, "rationale": "Every figure carries its."},
-                    "scope_discipline": {"score": 88.0, "rationale": "The aside stays an aside."},
-                },
-                "deductions": [
-                    deduction
-                    for deduction in payload["deductions"]
-                    if not deduction["rubric_required"]
-                ],
-            }
-        self.script("score_article", payload)
+        self.script("score_article", self.score_payload(passing=passing))
         return await self.command("POST", f"/articles/{self.article_id}/score")
 
     async def validate(self) -> dict[str, Any]:
@@ -261,6 +247,97 @@ class Walkthrough:
     # ------------------------------------------------------------------
     # Reading ids a real client would have been handed
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # The payloads the walk scripts
+    #
+    # Named rather than inlined because phase 12 re-runs individual stages: a
+    # fork has to script the same answer the walk did, and a copy of the fixture
+    # in the test would drift from the one the walk uses.
+    # ------------------------------------------------------------------
+
+    def architecture_payload(self) -> dict[str, Any]:
+        return golden_json("architecture.json")
+
+    def revision_plan_payload(self) -> dict[str, Any]:
+        return golden_json("revision_plan.json", suite="draft_to_voice")
+
+    def rewrite_payload(self) -> dict[str, Any]:
+        return golden_rewrite()
+
+    def score_payload(self, *, passing: bool = True) -> dict[str, Any]:
+        payload = golden_json("score.json", suite="draft_to_voice")
+        if not passing:
+            return payload
+        return payload | {
+            "dimensions": payload["dimensions"]
+            | {
+                "factual_fidelity": {"score": 92.0, "rationale": "Every figure carries its."},
+                "scope_discipline": {"score": 88.0, "rationale": "The aside stays an aside."},
+            },
+            "deductions": [
+                deduction for deduction in payload["deductions"] if not deduction["rubric_required"]
+            ],
+        }
+
+    def save_voice_profile(self, *, version: str) -> str:
+        """Store one global profile version for this author, and name it.
+
+        Deliberately unremarkable prose: the tests that use it are about *which*
+        profile reached the stage, not about what the profile says.
+        """
+        response = self.client.post(
+            "/voice/profiles",
+            params={"user_id": AUTHOR},
+            json={
+                "name": "ada",
+                "version": version,
+                "scope": "global",
+                "description": "A candidate voice, saved for an experiment to point at.",
+                "instructions": [
+                    {
+                        "id": "plain-openings",
+                        "category": "sentence_construction",
+                        "strength": "preference",
+                        "text": "Open with the concrete fact rather than the framing.",
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 201, response.text
+        return str(response.json()["id"])
+
+    # ------------------------------------------------------------------
+    # Reading ids a real client would have been handed
+    # ------------------------------------------------------------------
+
+    def snapshots(self, artifact_type: ArtifactType) -> list[str]:
+        """Every snapshot of one kind this run produced, oldest first."""
+        return [
+            snapshot.id
+            for snapshot in self.session.scalars(
+                select(domain_models.ArtifactSnapshot)
+                .join(
+                    provenance_models.ExecutionArtifact,
+                    provenance_models.ExecutionArtifact.snapshot_id
+                    == domain_models.ArtifactSnapshot.id,
+                )
+                .join(
+                    provenance_models.StageExecution,
+                    provenance_models.StageExecution.id
+                    == provenance_models.ExecutionArtifact.stage_execution_id,
+                )
+                .where(
+                    domain_models.ArtifactSnapshot.artifact_type == artifact_type,
+                    provenance_models.ExecutionArtifact.direction == ArtifactDirection.OUTPUT,
+                )
+                .order_by(
+                    provenance_models.StageExecution.started_at,
+                    provenance_models.StageExecution.id,
+                    provenance_models.ExecutionArtifact.ordinal,
+                )
+            )
+        ]
 
     def source_model(self) -> dict[str, Any]:
         """The golden source model, with its labels resolved to real segment ids."""
