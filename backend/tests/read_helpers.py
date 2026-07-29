@@ -390,6 +390,15 @@ class Walkthrough:
         ).first()
         return version.snapshot if version is not None else None
 
+    def approved_input(self) -> str:
+        """The article version the voice pass read — what a replay of it reads.
+
+        Named because phase 12 forks that stage repeatedly, and a caller that
+        worked it out itself would be a second opinion on which version the
+        stage consumed.
+        """
+        return self.input_snapshot(self.executions("align_voice")[0], "article_version")
+
     def input_snapshot(self, execution_id: str, role: str) -> str:
         """The snapshot one execution recorded consuming in a named role."""
         artefact = next(
