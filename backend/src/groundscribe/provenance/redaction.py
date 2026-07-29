@@ -179,6 +179,17 @@ class Redactor:
         # substring of it avoids leaving a fragment of the longer value behind.
         self._secrets = sorted((s for s in secrets if s), key=len, reverse=True)
 
+    def extended_with(self, secrets: Iterable[str]) -> Redactor:
+        """A new redactor that also removes ``secrets``.
+
+        A new one rather than a mutation: a redactor is shared, and a caller that
+        widened one in place would widen it for every other holder. Phase 13's
+        ``redacted_full`` retention mode uses this to fold a project's restricted
+        source material into the same pass that removes credentials, so there
+        stays one answer to "what was removed, and why".
+        """
+        return Redactor(secrets=(*self._secrets, *secrets))
+
     def redact_text(self, text: str) -> str:
         """Return ``text`` with every recognised secret replaced by a placeholder."""
         # Registered literals first: they are known-certain, and removing them up

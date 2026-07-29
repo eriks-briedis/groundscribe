@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.domain.models import ArtifactSnapshot
+from groundscribe.privacy.retention import RetentionPolicy
 from groundscribe.provenance import models, schemas
 from groundscribe.provenance.enums import (
     ActorType,
@@ -62,12 +63,28 @@ class ProvenanceRecorder:
         redactor: Redactor | None = None,
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
+        retention: RetentionPolicy | None = None,
     ) -> None:
         self._session = session
         self._snapshots = snapshots
-        self._redactor = redactor or Redactor()
         self._clock = clock or _default_clock
         self._new_id = id_factory or _default_id
+        # The retention policy is held here rather than consulted at each call
+        # site, for the reason the redactor is: a rule applied at N call sites is
+        # a rule that will be missed at the N+1th (phase 13).
+        self.retention = retention or RetentionPolicy()
+        self._redactor = self._with_retention(redactor or Redactor())
+
+    def _with_retention(self, redactor: Redactor) -> Redactor:
+        """Fold the retention mode's extra literals into the redactor.
+
+        ``redacted_full`` removes the project's restricted source material on top
+        of the usual rules. Doing it by extending the redactor rather than adding
+        a second scrubbing pass keeps one answer to "what was removed, and why" —
+        every removal still leaves the same labelled placeholder.
+        """
+        extra = self.retention.extra_secrets
+        return redactor.extended_with(extra) if extra else redactor
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -303,6 +320,9 @@ class ProvenanceRecorder:
             model=model,
             template_id=request.template_id,
             template_version=request.template_version,
+            # Stamped on the row, not looked up later: a settings change must not
+            # rewrite what an old call was captured under (phase 13).
+            retention_mode=self.retention.mode,
             request_snapshot=self._write_request(request, execution),
             raw_response_snapshot=self._write_optional(
                 ArtifactType.RAW_RESPONSE, raw_response, execution
@@ -684,8 +704,10 @@ class ProvenanceRecorder:
 
     def _write_request(
         self, request: EffectiveRequest, execution: models.StageExecution
-    ) -> ArtifactSnapshot:
+    ) -> ArtifactSnapshot | None:
         """Snapshot the redacted effective request, flagged as redacted."""
+        if not self.retention.keeps(ArtifactType.EFFECTIVE_REQUEST):
+            return None
         payload = self._redactor.redact_payload(request.model_dump())
         payload["redacted"] = True
         return self._write_snapshot(ArtifactType.EFFECTIVE_REQUEST, payload, execution)
@@ -696,7 +718,10 @@ class ProvenanceRecorder:
         payload: Payload | None,
         execution: models.StageExecution,
     ) -> ArtifactSnapshot | None:
-        if payload is None:
+        # The retention check comes before the redaction: a payload a mode does
+        # not keep is never redacted, hashed or written, rather than written and
+        # swept later (plan/13).
+        if payload is None or not self.retention.keeps(artifact_type):
             return None
         return self._write_snapshot(artifact_type, self._redact(payload), execution)
 

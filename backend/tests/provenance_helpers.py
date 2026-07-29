@@ -18,6 +18,7 @@ from itertools import count
 from sqlalchemy.orm import Session
 
 from groundscribe.domain import models as domain_models
+from groundscribe.privacy.retention import RetentionPolicy
 from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.provenance.redaction import Redactor
 from groundscribe.storage.snapshot_store import SnapshotStore
@@ -51,6 +52,7 @@ def make_recorder(
     snapshots: SnapshotStore,
     *,
     redactor: Redactor | None = None,
+    retention: RetentionPolicy | None = None,
 ) -> ProvenanceRecorder:
     """A recorder with a deterministic clock and id factory."""
     return ProvenanceRecorder(
@@ -59,4 +61,5 @@ def make_recorder(
         redactor=redactor,
         clock=ticking_clock(),
         id_factory=sequential_ids(),
+        retention=retention,
     )

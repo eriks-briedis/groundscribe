@@ -48,6 +48,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from groundscribe.db import Base, UTCDateTime, enum_column
 from groundscribe.domain.models import ArtifactSnapshot, Project, User
+from groundscribe.privacy.retention import RetentionMode
 from groundscribe.provenance.enums import (
     ActorType,
     ArtifactDirection,
@@ -249,6 +250,13 @@ class ModelInvocation(ProvenanceRecord, Base):
     model: Mapped[str] = mapped_column(String, nullable=False)
     template_id: Mapped[str] = mapped_column(String, nullable=False)
     template_version: Mapped[str] = mapped_column(String, nullable=False)
+    # The trace-retention mode this call was captured under (phase 13). Stamped
+    # on the row rather than read from the project when the question is asked:
+    # shortening retention today must not rewrite what a run last month was
+    # recorded under, and the expiry sweep needs to know which promise applied.
+    retention_mode: Mapped[RetentionMode] = mapped_column(
+        enum_column(RetentionMode), default=RetentionMode.FULL, nullable=False
+    )
     # Three separate references, never one "response" column: a response that
     # parses but fails validation must survive next to its repaired successor.
     request_snapshot_id: Mapped[str | None] = mapped_column(
