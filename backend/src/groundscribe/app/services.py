@@ -55,6 +55,7 @@ from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
+from groundscribe.observability.metrics import RunMetrics, collect_metrics
 from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
 from groundscribe.privacy.material import restricted_spans
 from groundscribe.privacy.retention import RetentionPolicy
@@ -608,6 +609,16 @@ class ApplicationService:
     def storage_report(self, project_id: str | None = None) -> StorageReport:
         """What the stored artefacts come to, broken down by kind."""
         return storage_report(self._runtime.session, project_id=project_id)
+
+    def metrics(self, project_id: str | None = None) -> RunMetrics:
+        """What this project — or the whole installation — has done and spent.
+
+        Read straight through to the collector with nothing in between: a
+        service that rounded a rate or defaulted a null to zero would make two
+        answers to the same question, and an operator who notices that once
+        stops trusting either (plan/14).
+        """
+        return collect_metrics(self._runtime.session, project_id=project_id)
 
     def delete_traces(self, project_id: str) -> TraceDeletion:
         """Drop this project's stored payloads, keeping what ran."""

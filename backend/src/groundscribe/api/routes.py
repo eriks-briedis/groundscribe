@@ -44,6 +44,7 @@ from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkRequest
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
+from groundscribe.observability.metrics import RunMetrics
 from groundscribe.privacy.export import ExportFormat
 from groundscribe.provenance import models
 from groundscribe.voice.schemas import VoiceProfileDocument
@@ -874,3 +875,31 @@ def export_project_traces(
 def delete_project_traces(project_id: str, service: Service) -> schemas.TraceDeletionOut:
     """Drop this project's stored payloads, keeping the record of what ran."""
     return schemas.TraceDeletionOut.model_validate(service.delete_traces(project_id))
+
+
+# ----------------------------------------------------------------------
+# Observability (phase 14)
+# ----------------------------------------------------------------------
+
+
+@router.get("/metrics", response_model=RunMetrics)
+def read_installation_metrics(service: Service) -> RunMetrics:
+    """What the whole installation has done and spent (plan/14).
+
+    Its own route rather than the per-project one with the id left off: this is
+    the question a monitoring check asks on a schedule, and expressing it as a
+    project id would mean inventing a sentinel value that every future filter
+    then has to remember to exclude.
+    """
+    return service.metrics()
+
+
+@router.get("/projects/{project_id}/metrics", response_model=RunMetrics)
+def read_project_metrics(project_id: str, service: Service) -> RunMetrics:
+    """The same seventeen numbers, for one project (plan/14).
+
+    The collector's own model is the response model. A second schema here could
+    drift from it, and the two would then disagree about the same installation —
+    which is the failure that makes an operator stop believing any of it.
+    """
+    return service.metrics(project_id)

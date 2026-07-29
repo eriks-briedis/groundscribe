@@ -683,6 +683,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Installation Metrics
+         * @description What the whole installation has done and spent (plan/14).
+         *
+         *     Its own route rather than the per-project one with the id left off: this is
+         *     the question a monitoring check asks on a schedule, and expressing it as a
+         *     project id would mean inventing a sentinel value that every future filter
+         *     then has to remember to exclude.
+         */
+        get: operations["read_installation_metrics_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects": {
         parameters: {
             query?: never;
@@ -843,6 +868,30 @@ export interface paths {
          * @description Where the project stands: state, source, articles, jobs, failures, cost.
          */
         get: operations["read_dashboard_projects__project_id__dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Project Metrics
+         * @description The same seventeen numbers, for one project (plan/14).
+         *
+         *     The collector's own model is the response model. A second schema here could
+         *     drift from it, and the two would then disagree about the same installation —
+         *     which is the failure that makes an operator stop believing any of it.
+         */
+        get: operations["read_project_metrics_projects__project_id__metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2504,6 +2553,43 @@ export interface components {
             validated_response?: unknown;
         };
         /**
+         * IssueDecisions
+         * @description What became of the findings a reviewer raised.
+         *
+         *     plan/14 names "accepted/rejected issues"; the row has five states, and the
+         *     other three are reported rather than folded in. A suppressed finding is the
+         *     *system* holding back a criticism the author already dismissed and an edited
+         *     one is the author rewriting it — counting either as accepted or rejected
+         *     would answer a question nobody asked with a number nobody could check.
+         */
+        IssueDecisions: {
+            /**
+             * Accepted
+             * @default 0
+             */
+            accepted: number;
+            /**
+             * Edited
+             * @default 0
+             */
+            edited: number;
+            /**
+             * Proposed
+             * @default 0
+             */
+            proposed: number;
+            /**
+             * Rejected
+             * @default 0
+             */
+            rejected: number;
+            /**
+             * Suppressed
+             * @default 0
+             */
+            suppressed: number;
+        };
+        /**
          * Job
          * @description One unit of queued work, as stored and as reported.
          */
@@ -2979,6 +3065,78 @@ export interface components {
             version_ordinal: number;
         };
         /**
+         * RunMetrics
+         * @description The observability surface for one project, or for the whole installation.
+         */
+        RunMetrics: {
+            /** Context Truncation Frequency */
+            context_truncation_frequency?: number | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd?: number | null;
+            /** Final Approval Rate */
+            final_approval_rate?: number | null;
+            /** Human Edit Distance */
+            human_edit_distance?: number | null;
+            /**
+             * @default {
+             *       "accepted": 0,
+             *       "edited": 0,
+             *       "proposed": 0,
+             *       "rejected": 0,
+             *       "suppressed": 0
+             *     }
+             */
+            issue_decisions: components["schemas"]["IssueDecisions"];
+            /** Model Fallback Frequency */
+            model_fallback_frequency?: number | null;
+            /** Override Frequency */
+            override_frequency?: number | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Question Response Rate */
+            question_response_rate?: number | null;
+            /**
+             * Retry Count
+             * @default 0
+             */
+            retry_count: number;
+            /**
+             * Rewrite Count
+             * @default 0
+             */
+            rewrite_count: number;
+            /**
+             * Runs
+             * @default 0
+             */
+            runs: number;
+            /** Schema Repair Frequency */
+            schema_repair_frequency?: number | null;
+            /** Score Change */
+            score_change?: number | null;
+            /**
+             * Stage Durations
+             * @default []
+             */
+            stage_durations: components["schemas"]["StageDuration"][];
+            /** Stagnation Frequency */
+            stagnation_frequency?: number | null;
+            /**
+             * @default {
+             *       "input_tokens": 0,
+             *       "output_tokens": 0
+             *     }
+             */
+            token_usage: components["schemas"]["TokenTotals"];
+            /** Tool Failure Frequency */
+            tool_failure_frequency?: number | null;
+            /**
+             * Validation Failures
+             * @default 0
+             */
+            validation_failures: number;
+        };
+        /**
          * ScoreConfidenceView
          * @description How far the repeat passes of one scoring run sat apart.
          *
@@ -3137,6 +3295,20 @@ export interface components {
             unknowns?: components["schemas"]["QuestionView"][];
         };
         /**
+         * StageDuration
+         * @description How long one stage takes, over every time it has run.
+         */
+        StageDuration: {
+            /** Executions */
+            executions: number;
+            /** Mean Ms */
+            mean_ms: number;
+            /** Stage */
+            stage: string;
+            /** Total Ms */
+            total_ms: number;
+        };
+        /**
          * StageInspection
          * @description plan/11 → *Stage inspector*: every layer of one execution, in one document.
          */
@@ -3184,6 +3356,22 @@ export interface components {
             provider: string;
             /** Stage */
             stage: string;
+        };
+        /**
+         * TokenTotals
+         * @description What the installation has asked models to read and write.
+         */
+        TokenTotals: {
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
         };
         /** ToolCallView */
         ToolCallView: {
@@ -4707,6 +4895,26 @@ export interface operations {
             };
         };
     };
+    read_installation_metrics_metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMetrics"];
+                };
+            };
+        };
+    };
     read_projects_projects_get: {
         parameters: {
             query?: never;
@@ -4978,6 +5186,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDashboard"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_project_metrics_projects__project_id__metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunMetrics"];
                 };
             };
             /** @description Validation Error */

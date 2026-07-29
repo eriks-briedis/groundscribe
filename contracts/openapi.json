@@ -2808,6 +2808,38 @@
         "title": "InvocationView",
         "type": "object"
       },
+      "IssueDecisions": {
+        "description": "What became of the findings a reviewer raised.\n\nplan/14 names \"accepted/rejected issues\"; the row has five states, and the\nother three are reported rather than folded in. A suppressed finding is the\n*system* holding back a criticism the author already dismissed and an edited\none is the author rewriting it \u2014 counting either as accepted or rejected\nwould answer a question nobody asked with a number nobody could check.",
+        "properties": {
+          "accepted": {
+            "default": 0,
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "edited": {
+            "default": 0,
+            "title": "Edited",
+            "type": "integer"
+          },
+          "proposed": {
+            "default": 0,
+            "title": "Proposed",
+            "type": "integer"
+          },
+          "rejected": {
+            "default": 0,
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "suppressed": {
+            "default": 0,
+            "title": "Suppressed",
+            "type": "integer"
+          }
+        },
+        "title": "IssueDecisions",
+        "type": "object"
+      },
       "Job": {
         "description": "One unit of queued work, as stored and as reported.",
         "properties": {
@@ -3799,6 +3831,190 @@
         "title": "ReviewRound",
         "type": "object"
       },
+      "RunMetrics": {
+        "description": "The observability surface for one project, or for the whole installation.",
+        "properties": {
+          "context_truncation_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Truncation Frequency"
+          },
+          "estimated_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Usd"
+          },
+          "final_approval_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Approval Rate"
+          },
+          "human_edit_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Edit Distance"
+          },
+          "issue_decisions": {
+            "$ref": "#/components/schemas/IssueDecisions",
+            "default": {
+              "accepted": 0,
+              "edited": 0,
+              "proposed": 0,
+              "rejected": 0,
+              "suppressed": 0
+            }
+          },
+          "model_fallback_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Fallback Frequency"
+          },
+          "override_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Frequency"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "question_response_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Response Rate"
+          },
+          "retry_count": {
+            "default": 0,
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "rewrite_count": {
+            "default": 0,
+            "title": "Rewrite Count",
+            "type": "integer"
+          },
+          "runs": {
+            "default": 0,
+            "title": "Runs",
+            "type": "integer"
+          },
+          "schema_repair_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Repair Frequency"
+          },
+          "score_change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Change"
+          },
+          "stage_durations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageDuration"
+            },
+            "title": "Stage Durations",
+            "type": "array"
+          },
+          "stagnation_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stagnation Frequency"
+          },
+          "token_usage": {
+            "$ref": "#/components/schemas/TokenTotals",
+            "default": {
+              "input_tokens": 0,
+              "output_tokens": 0
+            }
+          },
+          "tool_failure_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Failure Frequency"
+          },
+          "validation_failures": {
+            "default": 0,
+            "title": "Validation Failures",
+            "type": "integer"
+          }
+        },
+        "title": "RunMetrics",
+        "type": "object"
+      },
       "ScoreConfidenceView": {
         "description": "How far the repeat passes of one scoring run sat apart.\n\nplan/08 runs a score more than once precisely so disagreement is visible;\ndropping the spread here would leave the interface showing a single number\nwith nothing to doubt it by.",
         "properties": {
@@ -4099,6 +4315,35 @@
         "title": "SourceWorkspace",
         "type": "object"
       },
+      "StageDuration": {
+        "description": "How long one stage takes, over every time it has run.",
+        "properties": {
+          "executions": {
+            "title": "Executions",
+            "type": "integer"
+          },
+          "mean_ms": {
+            "title": "Mean Ms",
+            "type": "number"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "total_ms": {
+            "title": "Total Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "executions",
+          "total_ms",
+          "mean_ms"
+        ],
+        "title": "StageDuration",
+        "type": "object"
+      },
       "StageInspection": {
         "description": "plan/11 \u2192 *Stage inspector*: every layer of one execution, in one document.",
         "properties": {
@@ -4254,6 +4499,23 @@
           "permitted"
         ],
         "title": "StageVisibilityOut",
+        "type": "object"
+      },
+      "TokenTotals": {
+        "description": "What the installation has asked models to read and write.",
+        "properties": {
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "TokenTotals",
         "type": "object"
       },
       "ToolCallView": {
@@ -6525,6 +6787,25 @@
         "summary": "Stream Job Events"
       }
     },
+    "/metrics": {
+      "get": {
+        "description": "What the whole installation has done and spent (plan/14).\n\nIts own route rather than the per-project one with the id left off: this is\nthe question a monitoring check asks on a schedule, and expressing it as a\nproject id would mean inventing a sentinel value that every future filter\nthen has to remember to exclude.",
+        "operationId": "read_installation_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Installation Metrics"
+      }
+    },
     "/projects": {
       "get": {
         "description": "Every project this installation holds \u2014 the way into everything else.",
@@ -6907,6 +7188,46 @@
           }
         },
         "summary": "Read Dashboard"
+      }
+    },
+    "/projects/{project_id}/metrics": {
+      "get": {
+        "description": "The same seventeen numbers, for one project (plan/14).\n\nThe collector's own model is the response model. A second schema here could\ndrift from it, and the two would then disagree about the same installation \u2014\nwhich is the failure that makes an operator stop believing any of it.",
+        "operationId": "read_project_metrics_projects__project_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Project Metrics"
       }
     },
     "/projects/{project_id}/provider-visibility": {

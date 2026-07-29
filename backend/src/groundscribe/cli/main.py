@@ -148,6 +148,61 @@ def project_show(project: str) -> None:
         _emit(service.project_state(project))
 
 
+@project_app.command("metrics")
+def project_metrics(
+    project: Annotated[str | None, typer.Argument(help="One project, or all of them.")] = None,
+) -> None:
+    """What has been done and spent, in the seventeen numbers plan/14 names.
+
+    Here because an operator on a machine with no browser is the reason the CLI
+    exists at all. It asks the same service the API does — a second
+    implementation would be a second set of numbers to keep honest.
+
+    Rates print as ``n/a`` when nothing has been observed rather than as ``0``:
+    keeping that distinction is most of what the collector is for, and a renderer
+    that flattened it would put the dishonest number back on the screen.
+    """
+    with _command() as service:
+        metrics = service.metrics(project)
+
+    typer.echo(f"{metrics.project_id or 'all projects'}: {metrics.runs} run(s)")
+    typer.echo(
+        f"  tokens: {metrics.token_usage.input_tokens} in, "
+        f"{metrics.token_usage.output_tokens} out; "
+        f"cost: {_number(metrics.estimated_cost_usd)}"
+    )
+    typer.echo(
+        f"  retries: {metrics.retry_count}; rewrites: {metrics.rewrite_count}; "
+        f"validation failures: {metrics.validation_failures}; "
+        f"score change: {_number(metrics.score_change)}"
+    )
+    for name, value in (
+        ("schema repair", metrics.schema_repair_frequency),
+        ("model fallback", metrics.model_fallback_frequency),
+        ("context truncation", metrics.context_truncation_frequency),
+        ("tool failure", metrics.tool_failure_frequency),
+        ("stagnation", metrics.stagnation_frequency),
+        ("override", metrics.override_frequency),
+        ("question response", metrics.question_response_rate),
+        ("final approval", metrics.final_approval_rate),
+        ("human edit distance", metrics.human_edit_distance),
+    ):
+        typer.echo(f"  {name}: {_number(value)}")
+
+    decisions = metrics.issue_decisions
+    typer.echo(
+        f"  findings: {decisions.accepted} accepted, {decisions.rejected} rejected, "
+        f"{decisions.edited} edited, {decisions.suppressed} suppressed, "
+        f"{decisions.proposed} undecided"
+    )
+    typer.echo("  stage durations (slowest first):")
+    for duration in metrics.stage_durations:
+        typer.echo(
+            f"    {duration.stage}: {duration.total_ms}ms over "
+            f"{duration.executions} run(s) ({duration.mean_ms:.0f}ms mean)"
+        )
+
+
 @source_app.command("import")
 def source_import(
     project: str,
