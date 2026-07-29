@@ -184,7 +184,8 @@ class GenerateGapQuestions:
         """Persist every gap, surfaced or not, in the order the model produced them."""
         rows = tuple(
             domain_models.SourceGap(
-                id=gap.id,
+                id=uuid.uuid4().hex,
+                ref=gap.id,
                 project_id=context.project_id,
                 description=gap.question,
                 question=gap.question,

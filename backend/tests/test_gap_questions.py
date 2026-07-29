@@ -165,7 +165,7 @@ async def test_a_blocking_gap_parks_the_run_for_the_author(
 
     assert context.engine.state is WorkflowState.SOURCE_QUESTIONS_REQUIRED
     assert context.engine.is_paused
-    assert [row.id for row in extracted.analysis.surfaced] == ["g1"]
+    assert [row.ref for row in extracted.analysis.surfaced] == ["g1"]
 
 
 async def test_no_blocking_gap_completes_the_extraction(
@@ -212,7 +212,7 @@ async def test_the_queue_offers_the_surfaced_questions_and_takes_all_six_respons
     await extract_and_analyse(context, model_client, SIX_GAPS)
 
     queue = open_question_queue(context)
-    assert [row.id for row in queue.pending] == [f"g{n}" for n in range(1, 7)]
+    assert [row.ref for row in queue.pending] == [f"g{n}" for n in range(1, 7)]
 
     # ``strict`` is the assertion that there are exactly six response types: one
     # question each, no more and no fewer.
@@ -222,7 +222,7 @@ async def test_the_queue_offers_the_surfaced_questions_and_takes_all_six_respons
         assert answer.response_type is response
 
     still_open = f"g{responses.index(AnswerResponse.DEFERRED) + 1}"
-    assert [row.id for row in queue.pending] == [still_open]
+    assert [row.ref for row in queue.pending] == [still_open]
 
 
 async def test_an_answer_retains_its_question_reason_gaps_text_and_execution(
@@ -405,7 +405,9 @@ async def test_a_second_round_may_reuse_a_label_without_colliding(
     # The same source, asked again — a rebuild after an answer, or a phase-12
     # replay — and the model hands back the labels it used last time.
     model_client.script_response(GAP_STAGE, GAPS)
-    second = await StageRunner(context).run(GenerateGapQuestions(source_model=first.model))
+    second = await StageRunner(context).run(
+        GenerateGapQuestions(source_model=first.model), transitions=False
+    )
 
     labels = [row.ref for row in first.analysis.gaps] + [row.ref for row in second.value.gaps]
     ids = [row.id for row in first.analysis.gaps] + [row.id for row in second.value.gaps]

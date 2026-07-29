@@ -201,6 +201,11 @@ class SourceGap(EntityMixin, Base):
     __tablename__ = "source_gaps"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    # The model's own label for the question ("g1"), unique only within the round
+    # that produced it. The row id is generated, because a model asked about the
+    # same source twice hands back the same labels — and two rounds of questions
+    # have to coexist, exactly as two rounds of review findings do.
+    ref: Mapped[str] = mapped_column(String, default="", nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     question: Mapped[str] = mapped_column(String, default="", nullable=False)
     why_it_matters: Mapped[str] = mapped_column(String, default="", nullable=False)
