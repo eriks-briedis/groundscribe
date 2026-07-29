@@ -36,6 +36,15 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from groundscribe.storage.blob_store import BlobRef, BlobStore, content_hash
 
+#: Where a deployment hands the key over directly instead of using a file.
+#:
+#: plan/13's *env vars in dev, OS keychain for packaged desktop, encrypted
+#: storage for hosted*: all three end with a process holding a value, and an
+#: environment variable is the one handover every launcher can perform — a shell
+#: profile, a systemd unit, a ``launchd`` plist reading the Keychain, a container
+#: secret mounted into the environment.
+TRACE_KEY_ENV = "GROUNDSCRIBE_TRACE_KEY"
+
 #: The file a key store reads and, if absent, writes.
 KEY_FILENAME = "trace.key"
 
@@ -65,7 +74,19 @@ class KeyFileStore:
         self.path = self._root / KEY_FILENAME
 
     def key(self) -> bytes:
-        """The key from disk, generated on first use."""
+        """The key: from the environment if supplied, else from disk.
+
+        The environment wins, and is never copied to the file. A deployment that
+        supplies a key and also has a stale file beside the checkout must run
+        with what it was given — a file that could silently take precedence
+        makes "which key is this process using?" unanswerable, and the symptom
+        is not an error but a trace that cannot be read back. Writing a supplied
+        key down would also create a second, unmanaged copy that outlives
+        rotation and that nobody knows to delete.
+        """
+        supplied = os.environ.get(TRACE_KEY_ENV, "").strip()
+        if supplied:
+            return supplied.encode("utf-8")
         if self.path.exists():
             return self.path.read_bytes().strip()
         return self._generate()
@@ -130,6 +151,7 @@ class EncryptedBlobStore:
 
 __all__ = [
     "KEY_FILENAME",
+    "TRACE_KEY_ENV",
     "EncryptedBlobStore",
     "KeyFileStore",
     "MissingKey",
