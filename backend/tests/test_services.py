@@ -20,12 +20,10 @@ The service is exercised together with a real worker over the same rows, because
 from __future__ import annotations
 
 import pytest
-from golden import golden_json, golden_text, relabel
-from service_helpers import AUTHOR, Harness, build_harness
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from stage_helpers import DEFAULT_CONSTRAINTS
 
+from golden import golden_json, golden_text, relabel
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
 from groundscribe.jobs.enums import JobStatus, JobType
@@ -33,6 +31,9 @@ from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.errors import AttributionRequired, IllegalTransition
 from groundscribe.workflow.states import WorkflowState
+from service_helpers import AUTHOR, Harness, build_harness
+from stage_helpers import DEFAULT_CONSTRAINTS
+from test_gap_questions import GAPS
 
 S = WorkflowState
 
@@ -206,11 +207,16 @@ async def test_a_command_the_workflow_forbids_is_refused_before_anything_is_queu
 
 
 async def test_a_human_action_without_an_actor_is_refused(harness: Harness) -> None:
-    """plan/05's attribution rule reaches the API unchanged."""
+    """plan/05's attribution rule reaches the API unchanged.
+
+    Cancelling is the action to test it with: it is available in every
+    non-terminal state, so the refusal cannot be an accident of where the run
+    happens to be.
+    """
     project_id = await with_source(harness)
 
     with pytest.raises(AttributionRequired):
-        harness.service.approve_architecture(project_id, approved_by="")
+        harness.service.cancel(project_id, cancelled_by="")
 
 
 # ----------------------------------------------------------------------
@@ -245,14 +251,18 @@ async def test_an_execution_reports_its_events_and_its_model_calls(harness: Harn
     events = harness.service.execution_events(job.stage_execution_id)
     invocations = harness.service.execution_invocations(job.stage_execution_id)
 
-    assert [event.event_type for event in events][0] == "stage.started"
+    assert events[0].event_type == "stage.started"
     assert [invocation.template_id for invocation in invocations] == ["extract_source_truth"]
 
 
 def script_extraction(harness: Harness) -> None:
-    """Queue the golden source model, with its segment labels resolved.
+    """Queue what the extraction job will ask for: a source model and its gaps.
 
-    The labels are mapped from the stored segments rather than from an
+    Both, because one job runs both stages — the workflow has no state between
+    them, and "extract the source model" that could not say what was missing
+    would answer half a question.
+
+    The segment labels are mapped from the stored rows rather than from an
     ``IngestedSource``, because that is the position a worker is in: it has rows,
     not the object the ingesting request happened to build.
     """
@@ -266,3 +276,4 @@ def script_extraction(harness: Harness) -> None:
             {f"S{segment.ordinal}": segment.id for segment in segments},
         ),
     )
+    harness.client.script_response("generate_gap_questions", GAPS)

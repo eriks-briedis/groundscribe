@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
+
 from groundscribe.app.handlers import stage_handlers
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import ApplicationService
@@ -25,7 +27,6 @@ from groundscribe.prompts import PromptStore, prompts_root
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.position import PositionStore
 from provenance_helpers import make_recorder, sequential_ids
-from sqlalchemy.orm import Session
 from stage_helpers import SHIPPED_PROVIDER
 
 #: The author every test attributes its human actions to.

@@ -28,6 +28,7 @@ cheaper than a second protocol for the one stage that does not transition.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, runtime_checkable
 
@@ -149,19 +150,38 @@ class StageRunner:
     def __init__(self, context: PipelineContext) -> None:
         self._context = context
 
-    async def run[T](self, stage: PipelineStage[T]) -> StageResult[T]:
+    async def run[T](
+        self,
+        stage: PipelineStage[T],
+        *,
+        enter: bool = True,
+        on_execution: Callable[[models.StageExecution], None] | None = None,
+    ) -> StageResult[T]:
         """Run one stage end to end, or leave the run where it was.
 
         A failure fails the *stage* and re-raises. It deliberately does not fail
         the run: whether a failed stage is retried, replayed against a different
         model, or abandoned is a decision for the caller (phase 09's worker), and
         a runner that ended the run would take that decision away.
+
+        ``enter=False`` says the entry edge has already been taken. Phase 09's
+        API takes it in the request that queues the work — so the run visibly
+        enters ``drafting`` rather than appearing idle until a worker wakes —
+        and taking it a second time here would be an illegal transition from the
+        state the first one produced.
+
+        ``on_execution`` is called the moment the execution is opened, before any
+        work happens. The worker uses it to link the job to the stage while it is
+        still running; told only on completion, it would have nothing to point at
+        in the one case that matters.
         """
         context = self._context
-        if stage.entry_action is not None:
+        if enter and stage.entry_action is not None:
             context.engine.apply(stage.entry_action, actor_id=context.actor_id)
 
         execution = context.engine.begin_stage(stage.name, impl_version=stage.impl_version)
+        if on_execution is not None:
+            on_execution(execution)
         try:
             result = await stage.run(context, execution)
         except Exception as exc:
