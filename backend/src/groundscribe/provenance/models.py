@@ -454,15 +454,32 @@ def _reject_trace_delete(_mapper: Any, _connection: Any, target: TraceEvent) -> 
 
 
 class ExperimentRun(ProvenanceRecord, Base):
-    """Shell for the experimentation system; filled in phase 12."""
+    """One comparison of a baseline configuration against one or more candidates.
+
+    The arms, the per-example results and the human preferences live in
+    :mod:`groundscribe.experiments.models`, beside the builder that writes them —
+    the same call phase 09 made for jobs and phase 10 for voice versions. This row
+    is the experiment's identity, so a provenance record can name the experiment
+    an execution belongs to without provenance importing the experiment system.
+
+    ``dataset_id`` is nullable because the shell has existed since phase 03 and
+    rows written before this phase have no dataset. It is also the honest shape:
+    an experiment is opened before it is pointed at a corpus.
+    """
 
     __tablename__ = "experiment_runs"
 
     name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, default="", nullable=False)
     status: Mapped[ExecutionStatus] = mapped_column(
         enum_column(ExecutionStatus), default=ExecutionStatus.PENDING, nullable=False
     )
+    dataset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evaluation_datasets.id"), nullable=True
+    )
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
 # The jobs table used to be a shell here. Phase 09 filled it in

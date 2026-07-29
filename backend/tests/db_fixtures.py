@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 # Importing the ORM modules registers their tables on ``Base.metadata``; every
 # one of them is needed for the full schema to be visible.
 import groundscribe.domain.models
+import groundscribe.experiments.models
 import groundscribe.jobs.models
 import groundscribe.provenance.models
 import groundscribe.voice.models

@@ -350,15 +350,20 @@ class TraceEvent(_Record):
 
 
 class ExperimentRun(_Record):
-    """Shell for the experimentation system; filled in phase 12.
+    """One comparison of a baseline configuration against one or more candidates.
 
-    Present now so provenance records can reference an experiment from the start
-    rather than being retrofitted with the link later.
+    A shell until phase 12, which gave it a corpus to run over and somebody to
+    answer for it. The arms, results and preferences are separate records; this
+    is the experiment's identity, which is what other provenance points at.
     """
 
     name: str
+    description: str = ""
     status: ExecutionStatus = ExecutionStatus.PENDING
+    dataset_id: str | None = None
+    created_by: str | None = None
     created_at: datetime
+    completed_at: datetime | None = None
 
 
 # The Job schema used to be a shell here. Phase 09 filled it in

@@ -82,10 +82,27 @@ EXECUTION_TABLES: frozenset[str] = frozenset(
         "user_interventions",
         "trace_events",
         "experiment_runs",
+        # Phase 12. An arm is a configuration that was run, a result is what one
+        # run produced, and a preference is a person's judgement about it — all
+        # facts about execution rather than about the article.
+        "experiment_arms",
+        "experiment_results",
+        "experiment_preferences",
         "jobs",
         "workflow_positions",
     }
 )
 
-#: Evaluation data: scores over an execution's output, under a versioned rubric.
-EVALUATION_TABLES: frozenset[str] = frozenset({"evaluation_runs"})
+#: Evaluation data: scores over an execution's output, under a versioned rubric,
+#: and (phase 12) the corpus those scores are compared across.
+#:
+#: The datasets and their entries are evaluation data rather than editorial
+#: artefacts even though every entry points at one: a dataset is not part of what
+#: the author is writing, it is what the pipeline is measured against.
+EVALUATION_TABLES: frozenset[str] = frozenset(
+    {
+        "evaluation_runs",
+        "evaluation_datasets",
+        "evaluation_dataset_entries",
+    }
+)
