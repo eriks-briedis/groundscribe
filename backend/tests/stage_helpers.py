@@ -25,6 +25,7 @@ from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.routing import default_routing_policy
 from groundscribe.prompts import PromptStore, prompts_root
 from groundscribe.provenance.recorder import ProvenanceRecorder
+from groundscribe.provenance.redaction import Redactor
 from groundscribe.stages.base import PipelineContext
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.engine import WorkflowEngine
@@ -72,6 +73,7 @@ def scripted_context(
     model: str = "llama3.1:70b-instruct",
     constraints: EditorialConstraints | None = None,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
+    redactor: Redactor | None = None,
 ) -> tuple[PipelineContext, FakeLLMClient]:
     """A context plus the fake behind it, for tests that script model answers.
 
@@ -86,6 +88,7 @@ def scripted_context(
         clients={SHIPPED_PROVIDER: fake},
         constraints=constraints if constraints is not None else DEFAULT_CONSTRAINTS,
         state=state,
+        redactor=redactor,
     )
     return context, fake
 
@@ -97,10 +100,15 @@ def build_context(
     clients: Mapping[str, LLMClient] | None = None,
     constraints: EditorialConstraints = DEFAULT_CONSTRAINTS,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
+    redactor: Redactor | None = None,
 ) -> PipelineContext:
-    """A pipeline context over a seeded project, a live run, and a fake transport."""
+    """A pipeline context over a seeded project, a live run, and a fake transport.
+
+    ``redactor`` is named by the phase-13 audit, which registers a literal secret
+    the pattern rules could never recognise and then sweeps the store for it.
+    """
     project_id = seed_project(session)
-    recorder = make_recorder(session, snapshots)
+    recorder = make_recorder(session, snapshots, redactor=redactor)
     run = recorder.start_run(project_id=project_id)
     engine = WorkflowEngine(recorder=recorder, snapshots=snapshots, run=run, state=state)
     return PipelineContext(
