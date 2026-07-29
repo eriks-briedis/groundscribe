@@ -46,6 +46,7 @@ from groundscribe.llm.errors import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
+from groundscribe.llm.pricing import ModelPrice, PricingTable
 from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig
 from groundscribe.provenance.schemas import Message, ToolDefinition
 
@@ -504,6 +505,62 @@ async def test_the_key_never_appears_in_a_failure_message() -> None:
         await client.complete(request())
 
     assert KEY not in str(refused.value)
+
+
+# ----------------------------------------------------------------------
+# Cost
+# ----------------------------------------------------------------------
+
+
+async def test_a_priced_model_reports_what_the_call_cost() -> None:
+    """The provider reports tokens; the price table turns them into money.
+
+    Applied here rather than further up because this is the only place that knows
+    both halves at once — and `TokenUsage.cost_usd` travels with the response into
+    the record, so a cost computed later would be a second opinion about a call
+    that had already been written down.
+    """
+    client, _ = build_client(
+        pricing=PricingTable(
+            version="test",
+            models={"gpt-5": ModelPrice(input_per_million=1.0, output_per_million=10.0)},
+        )
+    )
+
+    answer = await client.complete(request())
+
+    # 1200 in at $1/M, 800 out at $10/M.
+    assert answer.usage.cost_usd == pytest.approx((1200 * 1.0 + 800 * 10.0) / 1_000_000)
+
+
+async def test_an_unpriced_call_reports_no_cost_rather_than_none_spent() -> None:
+    """The shipped table is empty, so this is what an installation does by
+    default: report the tokens honestly and decline to invent the money."""
+    client, _ = build_client()
+
+    answer = await client.complete(request())
+
+    assert answer.usage.input_tokens == 1200
+    assert answer.usage.cost_usd is None
+
+
+async def test_the_model_that_answered_is_what_gets_priced() -> None:
+    """Not the model that was asked for. A provider that served
+    `gpt-5-2026-01-01` for a request naming `gpt-5` has to be priced as what it
+    actually ran, or a table with per-snapshot rates would silently misprice."""
+    client, _ = build_client(
+        pricing=PricingTable(
+            version="test",
+            models={
+                "gpt-5": ModelPrice(input_per_million=1.0, output_per_million=1.0),
+                "gpt-5-2026-01-01": ModelPrice(input_per_million=2.0, output_per_million=2.0),
+            },
+        )
+    )
+
+    answer = await client.complete(request())
+
+    assert answer.usage.cost_usd == pytest.approx(2.0 * 2000 / 1_000_000)
 
 
 # ----------------------------------------------------------------------

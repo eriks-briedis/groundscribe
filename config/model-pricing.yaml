@@ -1,0 +1,51 @@
+# What each model charges, per million tokens.
+#
+# Providers report tokens; they do not report money. This is the table that turns
+# one into the other, and it is the only thing standing between a run and a cost
+# figure — `writer project metrics` reports `estimated_cost_usd: n/a` until it is
+# filled in.
+#
+# ---------------------------------------------------------------------------
+# It ships empty, on purpose.
+# ---------------------------------------------------------------------------
+#
+# Nobody preparing this repository can know what your account pays: prices change
+# without notice, differ by tier, and differ again with batch or cached-input
+# discounts. A number guessed on your behalf would produce a cost metric that is
+# confidently wrong — which is worse than one that is honestly absent, because a
+# wrong number gets believed and an absent one gets checked.
+#
+# So an unpriced model costs `null`, never `0.00`. That is the same rule the rest
+# of the system follows: nothing observed is unknown, not zero.
+#
+# ---------------------------------------------------------------------------
+# Filling it in
+# ---------------------------------------------------------------------------
+#
+# Copy the per-million figures from https://openai.com/api/pricing/ (or your
+# billing page, if you are on negotiated rates) and uncomment. Quote them per
+# million exactly as the page does — converting on the way in is what stops the
+# file being checkable against the page it came from.
+#
+# Model ids are matched by **longest prefix**, so an entry for `gpt-5` also prices
+# `gpt-5-2026-01-01`, while a separate `gpt-5-mini` entry keeps the cheap model
+# from being charged at the flagship's rate.
+#
+# Bump `version` when you change a price. A run recorded under the old numbers
+# should still be explicable, and git holds the previous table.
+
+version: "1"
+description: >
+  Empty until an operator enters their own rates. Cost is reported as unknown
+  rather than guessed.
+currency: usd
+
+models: {}
+  # gpt-5:
+  #   input_per_million: 0.00
+  #   output_per_million: 0.00
+  #   note: copied from the pricing page on YYYY-MM-DD
+  #
+  # gpt-5-mini:
+  #   input_per_million: 0.00
+  #   output_per_million: 0.00

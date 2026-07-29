@@ -42,6 +42,7 @@ from groundscribe.llm.errors import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
+from groundscribe.llm.pricing import PricingTable
 from groundscribe.llm.protocol import (
     LLMRequest,
     LLMResponse,
@@ -104,6 +105,7 @@ class OpenAIClient:
         retry_policy: RetryPolicy | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         model_revision: str | None = None,
+        pricing: PricingTable | None = None,
     ) -> None:
         key = (api_key or os.environ.get(OPENAI_API_KEY_ENV, "")).strip()
         if not key:
@@ -119,6 +121,9 @@ class OpenAIClient:
         self._timeout = timeout_seconds
         self._transport = transport
         self._retry_policy = retry_policy or RetryPolicy()
+        # Empty by default, which reports cost as unknown rather than free. The
+        # shipped table is empty too, and deliberately so — see `llm.pricing`.
+        self._pricing = pricing or PricingTable()
         self._metadata = ProviderMetadata(
             provider=self.provider,
             model=model,
@@ -231,8 +236,25 @@ class OpenAIClient:
             text=str(message.get("content") or ""),
             refusal=message.get("refusal") or None,
             tool_calls=tuple(_tool_calls(message.get("tool_calls") or ())),
-            usage=_usage(body.get("usage")),
+            usage=self._priced(_usage(body.get("usage")), body),
         )
+
+    def _priced(self, usage: TokenUsage, body: Mapping[str, Any]) -> TokenUsage:
+        """Attach what the call cost, if this installation has said.
+
+        Priced against the model that **answered**, not the one that was asked
+        for: a provider serving `gpt-5-2026-01-01` for a request naming `gpt-5`
+        has to be costed as what it actually ran, or a table with per-snapshot
+        rates would silently misprice every call.
+
+        Here rather than further up the stack because this is the only place that
+        holds both halves at once, and `cost_usd` travels with the response into
+        the record — a cost computed later would be a second opinion about a call
+        that had already been written down.
+        """
+        served = str(body.get("model") or self._metadata.model)
+        cost = self._pricing.price(usage, model=served)
+        return usage if cost is None else usage.model_copy(update={"cost_usd": cost})
 
     # ------------------------------------------------------------------
     # Transport
