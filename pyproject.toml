@@ -74,9 +74,11 @@ known-first-party = ["groundscribe"]
 python_version = "3.12"
 strict = true
 mypy_path = "backend/src"
-# Root ``tests/`` (cross-cutting) rejoins this list in phase 09 when it holds real
-# modules; kept out now to avoid a duplicate top-level ``conftest`` module clash.
-files = ["backend/src", "backend/tests", "scripts"]
+files = ["backend/src", "backend/tests", "scripts", "tests"]
+# The two suites each contribute a ``conftest``; mypy sees them as one duplicate
+# top-level module. Both are three lines of re-exports over ``db_fixtures``,
+# which *is* checked, so excluding them costs no coverage.
+exclude = ["(^|/)conftest\\.py$"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 warn_redundant_casts = true
