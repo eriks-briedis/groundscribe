@@ -341,6 +341,41 @@ def default_scoring_rubric() -> ScoringRubric:
     return ScoringRubric.from_yaml(config_root() / SCORING_RUBRIC_FILENAME)
 
 
+def scoring_rubric(version: str | None = None) -> ScoringRubric:
+    """The rubric of one version, or the shipped one when no version is named.
+
+    Versions are files, exactly as prompt versions are, and for the same reason:
+    a rubric that scored an article has to stay readable after a newer one
+    replaces it, or every historical score becomes a number under a document that
+    no longer exists. ``scoring-rubric.yaml`` is whichever version is current;
+    ``scoring-rubric-<version>.yaml`` is a superseded or candidate one kept beside
+    it.
+
+    A version that cannot be found is an error rather than a fallback. Falling
+    back to the shipped rubric would score an experiment's candidate arm under
+    the baseline's rubric and then report the two as comparable.
+    """
+    shipped = default_scoring_rubric()
+    if version is None or version == shipped.version:
+        return shipped
+
+    path = config_root() / f"scoring-rubric-{version}.yaml"
+    if not path.exists():
+        raise ScoringRubricError(
+            f"no scoring rubric version {version!r}: neither {SCORING_RUBRIC_FILENAME} "
+            f"(which is version {shipped.version!r}) nor {path.name} provides it"
+        )
+
+    rubric = ScoringRubric.from_yaml(path)
+    if rubric.version != version:
+        raise ScoringRubricError(
+            f"{path.name} declares version {rubric.version!r}, not {version!r}; a rubric "
+            "recorded against a score under a name it does not answer to is a score nobody "
+            "can reproduce"
+        )
+    return rubric
+
+
 __all__ = [
     "DEFAULT_CONTENT_TYPE",
     "SCORING_RUBRIC_FILENAME",
@@ -353,4 +388,5 @@ __all__ = [
     "ScoringRubric",
     "ScoringRubricError",
     "default_scoring_rubric",
+    "scoring_rubric",
 ]
