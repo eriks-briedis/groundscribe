@@ -68,6 +68,19 @@ stop() {
 }
 trap stop EXIT INT TERM
 
+# A port already in use is the failure that hurts most, because it does not look
+# like one: the new API exits, an *older* one keeps serving, and the first thing
+# to disagree is a password from a previous run being refused. Asked by opening a
+# socket rather than by parsing `ss`, so the check has no dependency and cannot
+# be defeated by a tool formatting its columns differently.
+for port in "$API_PORT" "$WEB_PORT"; do
+  if (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
+    echo "something is already listening on port ${port}." >&2
+    echo "stop it, or set API_PORT/WEB_PORT to something free." >&2
+    exit 1
+  fi
+done
+
 # The API refuses to start without a password, which is the point; rather than
 # fail a person's first run, write one and say what it is. Anything already in
 # the file or the environment is left alone.
