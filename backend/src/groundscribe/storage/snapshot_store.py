@@ -16,13 +16,13 @@ from sqlalchemy.orm import Session
 
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.domain.models import ArtifactSnapshot
-from groundscribe.storage.blob_store import BlobStore
+from groundscribe.storage.blob_store import BlobStorage
 
 
 class SnapshotStore:
     """Write-once artefact store over a session and a content-addressed blob store."""
 
-    def __init__(self, session: Session, blob_store: BlobStore) -> None:
+    def __init__(self, session: Session, blob_store: BlobStorage) -> None:
         self._session = session
         self._blobs = blob_store
 

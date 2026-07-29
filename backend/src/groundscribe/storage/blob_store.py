@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,21 @@ def content_hash(content: bytes) -> str:
     content addresses would make those references silently incomparable.
     """
     return hashlib.sha256(content).hexdigest()
+
+
+class BlobStorage(Protocol):
+    """What a snapshot store needs of the bytes underneath it.
+
+    Named so phase 13's encrypting store is substitutable without inheriting
+    from the filesystem one: it *wraps* a blob store rather than being a kind of
+    one, and a subclass relationship would claim otherwise.
+    """
+
+    def put(self, content: bytes) -> BlobRef: ...
+
+    def get(self, digest: str) -> bytes: ...
+
+    def verify(self, digest: str) -> bool: ...
 
 
 def _location_for(digest: str) -> str:
@@ -104,3 +120,6 @@ class BlobStore:
         except KeyError:
             return False
         return content_hash(stored) == digest
+
+
+__all__ = ["BlobRef", "BlobStorage", "BlobStore", "content_hash"]
