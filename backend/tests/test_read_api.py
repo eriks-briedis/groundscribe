@@ -286,6 +286,25 @@ async def test_the_source_workspace_shows_the_claims_and_the_segments_behind_the
     assert workspace["provenance"]["source_model_execution_id"]
 
 
+async def test_the_workspace_says_where_material_is_added(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Ingestion is a command with no workflow action behind it.
+
+    Nothing about a project's state makes importing legal or illegal, so it never
+    appears in ``available_actions`` and never gets a link from there. Without one
+    the interface has to build the URL itself, which is the copy of the API this
+    phase has spent its time not making.
+    """
+    await walk.open_project()
+
+    workspace = read(client, f"/projects/{walk.project_id}/source-workspace")
+
+    assert workspace["import_command"]["method"] == "POST"
+    assert workspace["import_command"]["path"] == f"/projects/{walk.project_id}/sources"
+    assert workspace["import_command"]["requires_actor"] is False
+
+
 async def test_the_workspace_marks_confidential_material_and_who_may_see_it(
     walk: Walkthrough, client: TestClient
 ) -> None:

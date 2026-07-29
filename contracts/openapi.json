@@ -3334,6 +3334,16 @@
             "title": "Documents",
             "type": "array"
           },
+          "import_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provenance": {
             "$ref": "#/components/schemas/SourceProvenance"
           },

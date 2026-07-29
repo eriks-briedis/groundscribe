@@ -2610,6 +2610,7 @@ export interface components {
             claims?: components["schemas"]["ClaimView"][];
             /** Documents */
             documents?: components["schemas"]["DocumentView"][];
+            import_command?: components["schemas"]["ActionLink"] | null;
             provenance: components["schemas"]["SourceProvenance"];
             provider_visibility: components["schemas"]["ConstraintsView"];
             /** Source Model */

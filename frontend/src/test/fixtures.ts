@@ -154,6 +154,12 @@ export const sourceWorkspace: SourceWorkspace = {
   ],
   source_model: { summary: 'A read-through cache in front of the fragment renderer.' },
   provider_visibility: dashboard.constraints,
+  import_command: {
+    action: 'import_source',
+    method: 'POST',
+    path: `/projects/${PROJECT_ID}/sources`,
+    requires_actor: false,
+  },
   provenance: {
     source_model_execution_id: 'e2',
     source_model_snapshot_id: 'snap-2',

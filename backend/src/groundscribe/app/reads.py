@@ -289,6 +289,11 @@ class ProjectionReader:
             ],
             source_model=self._document(snapshot),
             provider_visibility=_constraints_view(constraints),
+            import_command=ActionLink(
+                action="import_source",
+                method="POST",
+                path=f"/projects/{project_id}/sources",
+            ),
             provenance=SourceProvenance(
                 source_model_execution_id=producer.id if producer else None,
                 source_model_snapshot_id=snapshot.id if snapshot else None,

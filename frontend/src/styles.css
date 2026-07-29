@@ -332,3 +332,33 @@ tr[data-same='false'] {
 .new-project button {
   margin-top: 1rem;
 }
+
+.import-source label,
+.import-source .checkbox {
+  display: block;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.import-source input[type='text'],
+.import-source input:not([type]),
+.import-source select,
+.import-source textarea {
+  font: inherit;
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.import-source .checkbox input {
+  width: auto;
+  margin-right: 0.35rem;
+}
+
+.import-source button {
+  margin-top: 1rem;
+}

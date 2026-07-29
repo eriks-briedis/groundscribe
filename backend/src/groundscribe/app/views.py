@@ -359,6 +359,10 @@ class SourceWorkspace(BaseModel):
     source_model: dict[str, Any] | None = None
     provider_visibility: ConstraintsView
     provenance: SourceProvenance
+    #: Where material is added. Ingestion answers to no workflow action — nothing
+    #: about a run's state makes it legal or illegal — so it would otherwise be
+    #: the one command a client had to address on its own.
+    import_command: ActionLink | None = None
 
 
 class QuestionQueue(BaseModel):
