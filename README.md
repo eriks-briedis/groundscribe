@@ -140,6 +140,9 @@ holds the password *is* that author as far as the system can tell. The password
 travels in clear text over plain HTTP, so the network is the real boundary. The
 rest is plan/13.
 
+Defects found and consciously left open are in
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md), with what reproduces each one.
+
 ### The API contract
 
 `contracts/openapi.json` is generated from the app and committed, so a contract
