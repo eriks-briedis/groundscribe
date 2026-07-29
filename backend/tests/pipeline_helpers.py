@@ -72,7 +72,7 @@ async def run_to_approved_brief(
 
     concept = proposed.value.concept(proposed.value.proposal.decision.selected)
     assert concept is not None
-    article = proposed.value.proposal.article(concept.id)
+    article = proposed.value.proposal.article(concept.ref)
     assert article is not None
 
     model_client.script_response(BRIEF_STAGE, golden_json("brief.json"))

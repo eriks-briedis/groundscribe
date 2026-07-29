@@ -290,11 +290,23 @@ class ContentArchitecture(LineageMixin, EntityMixin, Base):
 
 
 class ArticleConcept(EntityMixin, Base):
+    """One candidate article within a content architecture.
+
+    ``ref`` is the model's own label for the article ("a1"), unique only within
+    the proposal that produced it. The row id is generated, for the reason
+    :class:`SourceGap` and :class:`ReviewIssue` generate theirs — a model shaping
+    the same source twice hands back the same labels — and for one reason neither
+    of them has: this id is what the API addresses an *article* by, for the whole
+    life of the project. An identifier that every draft, review and score hangs
+    off is not a name a language model should be choosing.
+    """
+
     __tablename__ = "article_concepts"
 
     architecture_id: Mapped[str] = mapped_column(
         ForeignKey("content_architectures.id"), nullable=False
     )
+    ref: Mapped[str] = mapped_column(String, default="", nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     angle: Mapped[str] = mapped_column(String, default="", nullable=False)
     # The claim being argued, kept apart from the angle: the angle is how it is

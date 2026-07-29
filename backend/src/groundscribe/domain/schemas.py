@@ -212,6 +212,8 @@ class ArticleConcept(_Entity):
     """One candidate article within a content architecture."""
 
     architecture_id: str
+    #: The proposal's own label for this article ("a1"), unique within it.
+    ref: str = ""
     title: str
     angle: str = ""
     thesis: str = ""

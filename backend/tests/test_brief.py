@@ -69,7 +69,7 @@ async def brief_for(
     result = await StageRunner(context).run(
         GenerateArticleBrief(
             concept=concept,
-            article=proposed.value.proposal.article(concept.id),  # type: ignore[arg-type]
+            article=proposed.value.proposal.article(concept.ref),  # type: ignore[arg-type]
             source_model=source_model,
             architecture_snapshot=proposed.outputs[0],
         )

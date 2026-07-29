@@ -281,9 +281,9 @@ async def _generate_brief(
     source_snapshot = rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
     architecture_snapshot = rehydrate.snapshot_of(session, concept.architecture.snapshot_id)
     proposal = rehydrate.document(runtime.snapshots, architecture_snapshot, ArchitectureProposal)
-    article = proposal.article(concept.id)
+    article = proposal.article(concept.ref)
     if article is None:
-        raise rehydrate.MissingInput(f"the architecture does not describe article {concept.id}")
+        raise rehydrate.MissingInput(f"the architecture does not describe article {concept.ref}")
 
     rerunning = Rerunning.of(runtime, request)
     return await StageRunner(resumed.context).run(

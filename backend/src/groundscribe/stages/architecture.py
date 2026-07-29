@@ -67,9 +67,14 @@ class ArchitectureOutcome:
         self.architecture = architecture
         self.concepts = concepts
 
-    def concept(self, concept_id: str) -> domain_models.ArticleConcept | None:
-        """The stored concept with ``concept_id``, if there is one."""
-        return next((concept for concept in self.concepts if concept.id == concept_id), None)
+    def concept(self, ref: str) -> domain_models.ArticleConcept | None:
+        """The stored concept the proposal calls ``ref``, if there is one.
+
+        Matched on the proposal's label rather than the row id: callers hold a
+        decision record naming ``a1``, and the row id is deliberately not
+        something the proposal knows about.
+        """
+        return next((concept for concept in self.concepts if concept.ref == ref), None)
 
 
 class ProposeContentArchitecture:
@@ -165,7 +170,8 @@ class ProposeContentArchitecture:
 
         concepts = tuple(
             domain_models.ArticleConcept(
-                id=article.id,
+                id=uuid.uuid4().hex,
+                ref=article.id,
                 architecture_id=architecture.id,
                 title=article.title,
                 angle=article.evidence_summary,
