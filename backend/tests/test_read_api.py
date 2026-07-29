@@ -137,6 +137,86 @@ async def test_the_dashboard_shows_failures_rather_than_hiding_them(
     assert all(failure["error_message"] for failure in dashboard["recent_failures"])
 
 
+async def test_every_offered_action_says_how_it_is_performed(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → *Actions rendered strictly from backend ``available_actions``*.
+
+    A name alone is not enough to act on. Something has to know that
+    ``approve_final`` is ``POST /articles/{id}/approve``, and if that knowledge
+    sits in the frontend it is a second, drifting copy of the API — the mapping
+    the plan's *no routing logic in the frontend* guard exists to prevent. So the
+    backend says it, per action, resolved against the thing being looked at.
+    """
+    await walk.to_approval()
+
+    workspace = read(client, f"/articles/{walk.article_id}/workspace")
+
+    links = {link["action"]: link for link in workspace["action_links"]}
+    assert set(links) == set(workspace["available_actions"])
+    assert links["approve_final"]["method"] == "POST"
+    assert links["approve_final"]["path"] == f"/articles/{walk.article_id}/approve"
+    assert links["approve_final"]["requires_actor"] is True
+
+
+async def test_an_action_the_api_cannot_perform_is_shown_without_a_way_to_take_it(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Some offered actions belong to the pipeline, not to a person.
+
+    ``fail`` is a legal transition in every non-terminal state and no endpoint
+    performs it. Reporting it with a null path is what lets the interface show
+    the true set of transitions while offering buttons only for what a person can
+    actually do — a list filtered by the backend would leave the client unable to
+    tell "not yours" from "not offered".
+    """
+    await walk.open_project()
+
+    links = {
+        link["action"]: link
+        for link in read(client, f"/projects/{walk.project_id}/dashboard")["action_links"]
+    }
+
+    assert links["fail"]["path"] is None
+    assert links["cancel"]["path"] == f"/projects/{walk.project_id}/cancel"
+
+
+async def test_a_run_waiting_on_work_names_the_command_that_starts_it(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """A state whose name ends in ``-ing`` is waiting for a worker to be given the job.
+
+    The transition into it was taken when the author approved the brief, so no
+    *action* remains to describe what happens next — but a command still has to
+    be issued. The backend names it rather than leaving each client to work out
+    which endpoint corresponds to which state.
+    """
+    await walk.open_project()
+    await walk.extract()
+    await walk.architecture()
+    await walk.brief()
+
+    workspace = read(client, f"/articles/{walk.article_id}/workspace")
+
+    assert workspace["state"] == "draft_generating"
+    assert workspace["pending_command"]["path"] == f"/articles/{walk.article_id}/draft"
+    assert workspace["pending_command"]["method"] == "POST"
+
+
+async def test_a_question_carries_the_endpoint_that_answers_it(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Answering is addressed per question, so the link belongs on the question."""
+    await walk.open_project()
+    await walk.extract(blocking=True)
+
+    (question, *_) = read(client, f"/projects/{walk.project_id}/questions")["questions"]
+
+    assert question["answer_path"] == (
+        f"/projects/{walk.project_id}/source-gaps/{question['id']}/answer"
+    )
+
+
 # ----------------------------------------------------------------------
 # Source workspace
 # ----------------------------------------------------------------------
