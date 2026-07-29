@@ -23,20 +23,22 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
-from stage_helpers import scripted_context
 
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.calibration import (
     CALIBRATION_STAGE,
     CalibrationDimension,
     CalibrationMark,
+    CalibrationVariants,
     Emphasis,
     Verdict,
     generate_variants,
     propose_profile,
 )
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory
+from stage_helpers import scripted_context
 
 PASSAGE = (
     "We put a read-through cache in front of the render pipeline in March, and "
@@ -126,19 +128,21 @@ async def test_generation_offers_both_ends_of_every_dimension(
     }
 
 
-async def test_a_dimension_offered_only_one_way_is_refused(
-    db_session: Session, snapshot_store: SnapshotStore
-) -> None:
+def test_a_dimension_offered_only_one_way_is_refused() -> None:
     """A lone variant produces a mark nobody can interpret.
 
     Marking it "wrong" says the author dislikes that paragraph, which is not the
-    same as preferring the other direction — and the proposal would be reading a
-    preference into a shrug.
-    """
-    lopsided = {"schema_version": 1, "variants": SCRIPTED["variants"][:1]}
+    same as preferring the other direction — and a proposal built on it would be
+    reading a preference into a shrug.
 
-    with pytest.raises(ValueError, match="depth"):
-        await calibrate(db_session, snapshot_store, lopsided)
+    Asserted against the schema rather than through the generator, because the
+    schema is where the rule lives: a lopsided round is an invalid response, and
+    the phase-04 repair ladder then does what it does with any invalid response.
+    """
+    with pytest.raises(ValidationError, match="depth"):
+        CalibrationVariants.model_validate(
+            {"schema_version": 1, "variants": SCRIPTED["variants"][:1]}
+        )
 
 
 async def test_the_calibration_call_is_recorded_like_any_other(
@@ -175,7 +179,10 @@ async def test_a_clear_preference_becomes_an_instruction(
     (instruction,) = proposed.instructions
     assert instruction.id == "calibrated-directness"
     assert instruction.category is VoiceCategory.TONE
-    assert "directly" in instruction.text or "direct" in instruction.text
+    # Operational, not a label: "leans direct" is a word the author would have to
+    # interpret, and plan/10 opens by ruling exactly that out.
+    assert instruction.text == CalibrationDimension.DIRECTNESS.instruction(Emphasis.MORE)
+    assert "Lead with the finding" in instruction.text
 
 
 async def test_a_proposal_is_made_of_tendencies(

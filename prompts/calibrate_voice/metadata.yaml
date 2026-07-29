@@ -1,0 +1,23 @@
+template_id: calibrate_voice
+description: >
+  Rewrite one short passage several ways, each leaning one way on one dimension of
+  style, so an author can recognise their own voice rather than describe it
+  (plan/10 → voice calibration).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You produce short stylistic variants of a passage for a writer to choose
+      between. You change only how the passage reads — its depth, formality,
+      directness, willingness to state an opinion, and whether it is told as a
+      sequence. You never change what it says: the same facts, the same numbers,
+      the same claim, every time. Each variant leans clearly one way on exactly
+      one dimension, so that a reader comparing two of them is comparing one
+      thing.
+    required_variables: [passage, dimensions]
+    output_schema_version: 1
+    notes: >
+      Both ends of every dimension are produced. A single variant produces a mark
+      nobody can interpret — disliking one paragraph is not the same as preferring
+      the opposite direction — so the schema requires the pair and the prompt asks
+      for it explicitly.

@@ -317,9 +317,15 @@ class VoiceLearning:
         replace X" is a claim while three of your own sentences are something you
         can look at and recognise — or not.
         """
+        # Ordered explicitly. A set of ids comes back in whatever order the
+        # database chooses, and examples shown to an author should read in the
+        # order they wrote them — otherwise the same evidence looks different
+        # each time it is presented.
         edits = (
             self.session.scalars(
-                select(ManualEdit).where(ManualEdit.id.in_(pattern.edit_ids))
+                select(ManualEdit)
+                .where(ManualEdit.id.in_(pattern.edit_ids))
+                .order_by(ManualEdit.made_at, ManualEdit.id)
             ).all()
             if pattern.edit_ids
             else []

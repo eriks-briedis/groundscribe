@@ -1,0 +1,27 @@
+Rewrite the passage below several times. Each rewrite says exactly the same
+thing and reads differently.
+
+The passage:
+{{ passage }}
+
+Produce two variants for each dimension listed — one leaning each way. Both
+variants of a pair must be recognisably about the same dimension, so that a
+writer comparing them is comparing one thing and not four:
+
+{% for dimension in dimensions %}
+- {{ dimension.name }}
+  - `more`: {{ dimension.more }}
+  - `less`: {{ dimension.less }}
+{% endfor %}
+
+Give each variant an id of the form `<dimension>-<emphasis>`, for example
+`formality-less`.
+
+Keep every variant to two or three sentences. The writer is going to read ten of
+these and mark the ones that sound like them; a long variant makes them judge the
+content instead of the voice.
+
+Change nothing about the facts. The same numbers, the same claim, the same
+subject in every variant — a variant that states a different result is not a
+variant of this passage, and a writer marking it is answering a question nobody
+asked.
