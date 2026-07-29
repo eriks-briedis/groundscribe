@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from groundscribe.jobs.queue import JobQueue
 from groundscribe.provenance import models
+from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.snapshot_store import SnapshotStore
 from provenance_helpers import START, make_recorder, seed_project, sequential_ids
 
@@ -40,10 +41,19 @@ def make_queue(session: Session, clock: ManualClock | None = None) -> JobQueue:
     return JobQueue(session, clock=clock or ManualClock(), id_factory=sequential_ids("job"))
 
 
-def seed_run(session: Session, snapshots: SnapshotStore) -> models.PipelineRun:
-    """A project and an open pipeline run for jobs to hang from."""
+def seed_run(
+    session: Session,
+    snapshots: SnapshotStore,
+    recorder: ProvenanceRecorder | None = None,
+) -> models.PipelineRun:
+    """A project and an open pipeline run for jobs to hang from.
+
+    A test that also records against the run must pass *its* recorder: two
+    recorders built by ``make_recorder`` each run their own id counter, so
+    sharing a database while not sharing a factory collides on the first write.
+    """
     project_id = seed_project(session)
-    return make_recorder(session, snapshots).start_run(project_id=project_id)
+    return (recorder or make_recorder(session, snapshots)).start_run(project_id=project_id)
 
 
 __all__ = ["ManualClock", "make_queue", "seed_run"]

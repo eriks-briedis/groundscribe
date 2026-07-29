@@ -26,8 +26,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from job_helpers import ManualClock, make_queue, seed_run
-from provenance_helpers import make_recorder
 from sqlalchemy.orm import Session
 
 from groundscribe.jobs.enums import JobType
@@ -38,6 +36,8 @@ from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.snapshot_store import SnapshotStore
+from job_helpers import ManualClock, make_queue, seed_run
+from provenance_helpers import make_recorder
 
 
 @pytest.fixture
@@ -51,8 +51,10 @@ def recorder(db_session: Session, snapshot_store: SnapshotStore) -> ProvenanceRe
 
 
 @pytest.fixture
-def run(db_session: Session, snapshot_store: SnapshotStore) -> models.PipelineRun:
-    return seed_run(db_session, snapshot_store)
+def run(
+    db_session: Session, snapshot_store: SnapshotStore, recorder: ProvenanceRecorder
+) -> models.PipelineRun:
+    return seed_run(db_session, snapshot_store, recorder)
 
 
 class Ticker:
@@ -83,6 +85,16 @@ def started_job(queue: JobQueue, recorder: ProvenanceRecorder, run: models.Pipel
     return job
 
 
+def finish(queue: JobQueue, job: Job) -> None:
+    """Complete a job from inside a tick, discarding the row it returns."""
+    queue.complete(job, result={"snapshot_ids": ["s1"]})
+
+
+def stop(queue: JobQueue, job: Job) -> None:
+    """Cancel a job from inside a tick."""
+    queue.cancel(job)
+
+
 def progress(recorder: ProvenanceRecorder, job: Job, session: Session, **payload: Any) -> None:
     execution = session.get(models.StageExecution, job.stage_execution_id)
     assert execution is not None
@@ -109,13 +121,14 @@ async def test_the_stream_opens_by_saying_where_the_job_is(
 ) -> None:
     """A client that connects late must not have to guess the job's state."""
     job = started_job(queue, recorder, run)
-    queue.complete(job, result={"snapshot_ids": ["s1"]})
+    ticker = Ticker(lambda _tick: finish(queue, job))
 
-    events = await collect(JobEventStream(db_session, queue, sleep=Ticker()), job)
+    events = await collect(JobEventStream(db_session, queue, sleep=ticker), job)
 
     assert events[0].event == "job.status"
     assert events[0].data["status"] == "running"
     assert events[0].data["job_id"] == job.id
+    assert events[0].data["stage_execution_id"] == job.stage_execution_id
 
 
 async def test_the_stream_carries_the_stages_own_trace(
@@ -142,7 +155,7 @@ async def test_the_stream_ends_when_the_job_reaches_a_terminal_status(
     silence, which is indistinguishable from a network that stopped.
     """
     job = started_job(queue, recorder, run)
-    ticker = Ticker(lambda tick: queue.complete(job) if tick == 2 else None)
+    ticker = Ticker(lambda tick: finish(queue, job) if tick == 2 else None)
 
     events = await collect(JobEventStream(db_session, queue, sleep=ticker), job)
 
@@ -193,7 +206,7 @@ async def test_a_job_with_no_execution_yet_still_streams(
 ) -> None:
     """A queued job has no stage to report on, and must not fail the request."""
     job = queue.enqueue(job_type=JobType.EXTRACT_SOURCE_MODEL, run=run)
-    ticker = Ticker(lambda tick: queue.cancel(job) if tick == 1 else None)
+    ticker = Ticker(lambda tick: stop(queue, job) if tick == 1 else None)
 
     events = await collect(JobEventStream(db_session, queue, sleep=ticker), job)
 

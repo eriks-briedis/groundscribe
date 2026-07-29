@@ -25,8 +25,6 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 import pytest
-from job_helpers import ManualClock, make_queue, seed_run
-from provenance_helpers import make_recorder
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -36,7 +34,10 @@ from groundscribe.jobs.worker import JobOutcome, JobRequest, UnknownJobType, Wor
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, ExecutionStatus, InvocationOutcome
 from groundscribe.provenance.recorder import ProvenanceRecorder
+from groundscribe.provenance.schemas import EffectiveRequest
 from groundscribe.storage.snapshot_store import SnapshotStore
+from job_helpers import ManualClock, make_queue, seed_run
+from provenance_helpers import make_recorder
 
 LEASE = timedelta(seconds=30)
 
@@ -63,8 +64,10 @@ def recorder(db_session: Session, snapshot_store: SnapshotStore) -> ProvenanceRe
 
 
 @pytest.fixture
-def run(db_session: Session, snapshot_store: SnapshotStore) -> models.PipelineRun:
-    return seed_run(db_session, snapshot_store)
+def run(
+    db_session: Session, snapshot_store: SnapshotStore, recorder: ProvenanceRecorder
+) -> models.PipelineRun:
+    return seed_run(db_session, snapshot_store, recorder)
 
 
 def build_worker(
@@ -85,12 +88,14 @@ def partial_work(
     request.opened(execution)
     recorder.record_model_invocation(
         execution,
-        outcome=InvocationOutcome.ACCEPTED,
+        request=EffectiveRequest(
+            template_id="extract_source_truth",
+            template_version="1.0.0",
+            rendered_prompt="extract the claims",
+        ),
         provider="fake",
         model="fake-1",
-        template_id="extract_source_truth",
-        template_version="1.0.0",
-        request_payload={"messages": []},
+        outcome=InvocationOutcome.ACCEPTED,
     )
     recorder.emit(
         event_type="stage.progress",
@@ -240,12 +245,18 @@ async def test_a_killed_worker_leaves_the_job_reclaimable_and_its_stage_orphaned
     assert enqueued.status is JobStatus.RUNNING
     assert execution.status is ExecutionStatus.RUNNING
     assert len(execution.model_invocations) == 1
-    assert queue.orphaned_executions() == (execution,)
+    # Nothing is detectable yet, and that is correct: a job holding a valid
+    # lease is indistinguishable from one whose worker is merely slow. Calling
+    # it orphaned here would mean re-running stages that are still going.
+    assert queue.orphaned_executions() == ()
 
     clock.advance(timedelta(minutes=10))
-    assert queue.reclaim_expired(lease=LEASE) == (enqueued,)
-    assert enqueued.status is JobStatus.PENDING
-    assert queue.claim(worker_id="worker-2") is enqueued
+    (reclaimed,) = queue.reclaim_expired(lease=LEASE)
+
+    assert reclaimed is enqueued
+    assert reclaimed.status is JobStatus.PENDING
+    assert queue.orphaned_executions() == (execution,)
+    assert queue.claim(worker_id="worker-2") is reclaimed
 
 
 # ----------------------------------------------------------------------
