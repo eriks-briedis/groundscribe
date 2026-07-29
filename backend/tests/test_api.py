@@ -18,16 +18,18 @@ stages; re-asserting it here would test FastAPI.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
-from golden import golden_text
-from service_helpers import AUTHOR, Harness, build_harness
 from sqlalchemy.orm import Session
-from stage_helpers import DEFAULT_CONSTRAINTS
-from test_services import script_extraction
 
+from golden import golden_text
 from groundscribe.api.app import create_app
 from groundscribe.storage.snapshot_store import SnapshotStore
+from service_helpers import AUTHOR, Harness, build_harness
+from stage_helpers import DEFAULT_CONSTRAINTS
+from test_services import script_extraction
 
 
 @pytest.fixture
@@ -46,7 +48,7 @@ def client(harness: Harness) -> TestClient:
     return TestClient(create_app(runtime_factory=lambda: harness.runtime))
 
 
-def create_project(client: TestClient) -> dict[str, object]:
+def create_project(client: TestClient) -> dict[str, Any]:
     response = client.post(
         "/projects",
         json={
@@ -56,7 +58,7 @@ def create_project(client: TestClient) -> dict[str, object]:
         },
     )
     assert response.status_code == 201, response.text
-    body: dict[str, object] = response.json()
+    body: dict[str, Any] = response.json()
     return body
 
 
@@ -133,13 +135,17 @@ def test_an_out_of_order_command_is_a_conflict_not_a_crash(client: TestClient) -
     409 because the request is well-formed and the *run* is in the wrong state —
     a client that fixes its JSON will get the same answer, and one that waits may
     not.
+
+    Proposing an architecture before the source model exists is the cleanest case
+    to test it with: the engine refuses on the way in, before anything is looked
+    up, so the answer is unambiguously the workflow's.
     """
     project_id = with_source(client)
 
-    response = client.post(f"/projects/{project_id}/architecture/current/approve", json={})
+    response = client.post(f"/projects/{project_id}/architecture/propose")
 
     assert response.status_code == 409
-    assert "approve_architecture" in response.json()["detail"]
+    assert "propose_architecture" in response.json()["detail"]
 
 
 def test_an_unattributed_human_action_is_rejected_as_unprocessable(client: TestClient) -> None:
@@ -227,5 +233,3 @@ async def test_a_jobs_progress_is_streamed_as_server_sent_events(
     assert "event: job.status" in frames
     assert "event: stage.started" in frames
     assert frames.endswith("\n\n")
-
-
