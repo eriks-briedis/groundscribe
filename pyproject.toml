@@ -30,6 +30,10 @@ dev = [
     "types-pyyaml>=6.0.12.20260724",
 ]
 
+[project.scripts]
+# The spec's CLI is `writer`; the distribution is groundscribe.
+writer = "groundscribe.cli.main:run"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -18,12 +18,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from service_helpers import build_harness
 from sqlalchemy.orm import Session
 
 from groundscribe.api.app import create_app
 from groundscribe.api.openapi import CONTRACT_PATH, build_schema, export_schema
 from groundscribe.storage.snapshot_store import SnapshotStore
+from service_helpers import build_harness
 
 #: Every command endpoint plan/09 names, as ``(method, path)``. Written out by
 #: hand from the plan so the list is a statement of intent rather than a mirror.

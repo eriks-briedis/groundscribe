@@ -18,22 +18,26 @@ an opinion about it.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from golden import golden_text
-from service_helpers import AUTHOR
-from stage_helpers import DEFAULT_CONSTRAINTS
 from typer.testing import CliRunner
 
+from golden import golden_text
 from groundscribe.api.app import create_app
 from groundscribe.api.routes import get_service
-from groundscribe.app.services import CommandResult
+from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.cli import main as cli
+from groundscribe.provenance import models
+from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.workflow.states import WorkflowState
+from service_helpers import AUTHOR
+from stage_helpers import DEFAULT_CONSTRAINTS
 
 
 @dataclass
@@ -57,15 +61,26 @@ class RecordingService:
     calls: list[Call] = field(default_factory=list)
 
     def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
+        """Answer like the real service, including whether the call is awaited.
+
+        The method is looked up on :class:`ApplicationService` first, so a typo
+        in a route or a command is an ``AttributeError`` here rather than a
+        recorded call to something that does not exist — and so an async command
+        gets something awaitable back, as it would in production.
+        """
+        real = getattr(ApplicationService, name, None)
+        if name.startswith("_") or real is None:
             raise AttributeError(name)
 
         def record(*args: Any, **kwargs: Any) -> Any:
             positional = {"target": args[0]} if args else {}
             self.calls.append(Call(method=name, kwargs={**positional, **kwargs}))
-            return _RESULT
+            return _RETURNS.get(name, _RESULT)
 
-        return record
+        async def record_async(*args: Any, **kwargs: Any) -> Any:
+            return record(*args, **kwargs)
+
+        return record_async if inspect.iscoroutinefunction(real) else record
 
     @property
     def last(self) -> Call:
@@ -78,6 +93,27 @@ _RESULT = CommandResult(
     state=WorkflowState.SOURCE_INGESTED,
     available_actions=("cancel",),
 )
+
+_EXECUTION = models.StageExecution(
+    id="e1",
+    pipeline_run_id="r1",
+    stage="extract_source_truth",
+    impl_version="1.1",
+    ordinal=0,
+    status=ExecutionStatus.SUCCEEDED,
+    correlation_id="c1",
+    started_at=datetime(2026, 7, 25, 12, 0, tzinfo=UTC),
+)
+
+#: What the double hands back for the few commands that do not answer with a
+#: command envelope. Only the shape matters — every assertion here is about the
+#: call that was made, never about the reply.
+_RETURNS: dict[str, Any] = {
+    "get_execution": _EXECUTION,
+    "replay_execution": _EXECUTION,
+    "fork_execution": _EXECUTION,
+    "compare_executions": (_EXECUTION, _EXECUTION),
+}
 
 
 @pytest.fixture
