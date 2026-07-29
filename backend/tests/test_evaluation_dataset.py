@@ -36,8 +36,12 @@ from sqlalchemy.orm import Session
 from groundscribe.api.app import create_app
 from groundscribe.experiments.datasets import DatasetBuilder, SensitiveProject
 from groundscribe.storage.snapshot_store import SnapshotStore
-from read_helpers import Walkthrough
+from read_helpers import VOICE_AFTER, Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
+
+#: A third phrasing of the sentence the walk's voice pass rewrites, so a second
+#: pass over the same body lands somewhere the first one did not.
+SECOND_OPINION = "That number is the point of reading this."
 
 
 @pytest.fixture
@@ -117,21 +121,22 @@ async def test_an_entry_does_not_change_when_the_project_does(
 ) -> None:
     """plan/12 → *mutating project state afterward does not change the dataset*.
 
-    The article is sent back and rewritten after the dataset was built. Its
-    newest version is now different prose; the entry still names, and still
-    reads back, what was approved.
+    The article moves on after the dataset was built. Its newest version is now
+    different prose; the entry still names, and still reads back, what was
+    approved.
     """
     await approved(walk)
     dataset = builder.build(name="before", created_by=AUTHOR)
     (entry,) = dataset.entries
     approved_body = builder.reference(entry)["body"]
 
-    # The article moves on: the voice pass is run again, which writes a new
-    # version branching from the one it edited last time.
+    # A forked voice pass, landing on a different phrasing, so the newest version
+    # really is different prose rather than the same answer written twice.
     voice_id = walk.executions("align_voice")[0]
-    walk.script(
-        "align_voice", walk.voice_pass(snapshot_id=walk.input_snapshot(voice_id, "article_version"))
-    )
+    again = walk.voice_pass(snapshot_id=walk.input_snapshot(voice_id, "article_version"))
+    again["body"] = again["body"].replace(VOICE_AFTER, SECOND_OPINION)
+    again["changes"][0]["after"] = SECOND_OPINION
+    walk.script("align_voice", again)
     response = walk.client.post(f"/executions/{voice_id}/fork", json={"actor_id": AUTHOR})
     assert response.status_code == 202, response.text
     await walk.harness.drain()
