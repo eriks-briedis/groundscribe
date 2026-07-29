@@ -61,7 +61,20 @@ class BlobStore:
         is left byte-for-byte untouched (identical content is, by construction,
         already there), so repeated puts dedup to a single blob.
         """
-        digest = content_hash(content)
+        return self.put_at(content_hash(content), content)
+
+    def put_at(self, digest: str, payload: bytes) -> BlobRef:
+        """Store ``payload`` under an address computed by the caller.
+
+        The one case where address and bytes come apart is phase 13's encryption
+        at rest: the address must stay the hash of the *article*, while the bytes
+        on disk are its ciphertext. Two authentic encryptions of identical
+        plaintext differ, so addressing on what is written would end dedup and
+        make every recorded content hash unverifiable.
+
+        Ordinary callers use :meth:`put`, which computes the address from the
+        content and cannot get the two out of step.
+        """
         location = _location_for(digest)
         path = self._root / location
         if not path.exists():
@@ -69,9 +82,9 @@ class BlobStore:
             # Write to a temp file then atomically rename, so a crash mid-write
             # never leaves a partial blob under a valid content address.
             tmp = path.with_suffix(".tmp")
-            tmp.write_bytes(content)
+            tmp.write_bytes(payload)
             tmp.rename(path)
-        return BlobRef(content_hash=digest, location=location, size=len(content))
+        return BlobRef(content_hash=digest, location=location, size=len(payload))
 
     def get(self, digest: str) -> bytes:
         """Return the bytes stored under ``digest``; ``KeyError`` if absent."""
