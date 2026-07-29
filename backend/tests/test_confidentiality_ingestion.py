@@ -30,7 +30,7 @@ from groundscribe.domain.confidentiality import Confidentiality, Exclusion
 from groundscribe.domain.enums import ArticleDepth, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.stages.base import StageRunner
-from groundscribe.stages.ingestion import IngestSource, IngestedSource
+from groundscribe.stages.ingestion import IngestedSource, IngestSource
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.states import WorkflowState
 from stage_helpers import build_context

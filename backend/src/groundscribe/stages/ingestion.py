@@ -30,10 +30,12 @@ from typing import ClassVar
 from sqlalchemy import select
 
 from groundscribe.domain import models as domain_models
+from groundscribe.domain.confidentiality import Confidentiality
 from groundscribe.domain.enums import ArtifactType, BranchStatus, SegmentKind, SourceFormat
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.provenance import models
+from groundscribe.provenance.redaction import CONFIDENTIAL_OPEN
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.storage.blob_store import content_hash
 from groundscribe.workflow.states import WorkflowAction
@@ -232,6 +234,14 @@ class IngestSource:
                 "segments": len(segments),
                 "source_format": self._format.value,
                 "confidential": self._confidential,
+                # Ingestion is where sensitivity enters the system, so the count
+                # belongs in the trace: a run that flagged three paragraphs and
+                # one that flagged none must not look identical afterwards.
+                "confidential_segments": sum(
+                    1
+                    for segment in segments
+                    if segment.confidentiality is Confidentiality.CONFIDENTIAL
+                ),
             },
         )
 
@@ -268,7 +278,7 @@ class IngestSource:
         document: domain_models.SourceDocument,
         parsed: Sequence[ParsedSegment],
     ) -> tuple[domain_models.SourceSegment, ...]:
-        """Persist the parsed segments against their document."""
+        """Persist the parsed segments against their document, flags included."""
         segments = tuple(
             domain_models.SourceSegment(
                 id=f"{document.id}-{segment.ordinal}",
@@ -279,6 +289,7 @@ class IngestSource:
                 content_hash=segment.content_hash,
                 char_start=segment.char_start,
                 char_end=segment.char_end,
+                confidentiality=self._classify(segment),
                 created_by_execution_id=execution.id,
             )
             for segment in parsed
@@ -286,6 +297,25 @@ class IngestSource:
         context.session.add_all(segments)
         context.session.flush()
         return segments
+
+    def _classify(self, segment: ParsedSegment) -> Confidentiality:
+        """How sensitive one parsed passage is (phase 13).
+
+        Two sources and no third. The document's import flag covers the whole
+        thing, because a person who imported a postmortem as confidential has
+        already said what they mean and asking them to tick each paragraph would
+        be a checklist — a thing people half-finish.
+
+        The author's inline marker covers the case the document flag cannot: one
+        sensitive paragraph in otherwise publishable material. The marker is
+        phase 03's, reused rather than reinvented, so the same marks that keep a
+        passage out of the trace keep it out of the prompt and the article. A
+        second syntax would be a second thing to remember in only one of the
+        places it matters.
+        """
+        if self._confidential or CONFIDENTIAL_OPEN in segment.text:
+            return Confidentiality.CONFIDENTIAL
+        return Confidentiality.PUBLISHABLE
 
     def _resolve_constraints(
         self, context: PipelineContext, execution: models.StageExecution
