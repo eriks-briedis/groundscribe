@@ -8,6 +8,7 @@ enabled for SQLite so ALTER-heavy migrations in later phases work there too.
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -21,6 +22,7 @@ import groundscribe.jobs.models
 import groundscribe.provenance.models
 import groundscribe.voice.models
 import groundscribe.workflow.position  # noqa: F401
+from groundscribe.app.bootstrap import DATABASE_URL_ENV
 from groundscribe.db import DEFAULT_URL, Base, create_engine
 
 config = context.config
@@ -32,7 +34,21 @@ target_metadata = Base.metadata
 
 
 def _resolve_url() -> str:
-    return config.get_main_option("sqlalchemy.url") or DEFAULT_URL
+    """The database to migrate: the environment's, then the ini's, then ours.
+
+    The environment first, because that is the one the *application* will open
+    (``app/bootstrap.py``) and migrating anything else produces a system that is
+    successfully migrated and unusable at the same time — reported to a person as
+    ``no such table: projects``, which names neither cause. Closes KNOWN-ISSUES
+    §2, which phase 14's compose stack turned from a papercut into a blocker.
+
+    Whitespace is treated as unset. ``GROUNDSCRIBE_DATABASE_URL=`` in a shell is
+    a variable someone meant to set, not a request to migrate the empty string.
+    """
+    configured = os.environ.get(DATABASE_URL_ENV, "").strip()
+    if configured:
+        return configured
+    return (config.get_main_option("sqlalchemy.url") if config is not None else None) or DEFAULT_URL
 
 
 def _configure(connection: Connection | None = None, url: str | None = None) -> None:
