@@ -37,6 +37,7 @@ from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory, VoiceScope
 from groundscribe.voice.models import ManualEdit, VoiceSuggestion
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
+from groundscribe.workflow.errors import AttributionRequired
 
 #: How many times a correction has to recur before it is a habit rather than a
 #: coincidence. Three, because two is the number of times anyone does anything by
@@ -132,7 +133,9 @@ class VoiceLearning:
         only what the model did.
         """
         if not edited_by:
-            raise ValueError("edited_by is required: an unattributed edit is unattributable")
+            raise AttributionRequired(
+                "edited_by is required: an unattributed edit is unattributable"
+            )
 
         run = _run_of(version, self.session)
         execution = self._recorder.start_stage(run, stage="manual_edit", impl_version="1.0")
@@ -244,7 +247,9 @@ class VoiceLearning:
         "written under ada@1" describe a document that no longer exists.
         """
         if not approved_by:
-            raise ValueError("approved_by is required: an anonymous approval is unreviewable")
+            raise AttributionRequired(
+                "approved_by is required: an anonymous approval is unreviewable"
+            )
         self._require_undecided(suggestion)
 
         suggestion.status = FindingStatus.ACCEPTED
@@ -263,7 +268,9 @@ class VoiceLearning:
         vanished would be raised again the next time the habit recurred.
         """
         if not rejected_by:
-            raise ValueError("rejected_by is required: an anonymous rejection is unreviewable")
+            raise AttributionRequired(
+                "rejected_by is required: an anonymous rejection is unreviewable"
+            )
         self._require_undecided(suggestion)
 
         suggestion.status = FindingStatus.REJECTED

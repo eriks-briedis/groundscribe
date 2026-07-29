@@ -59,6 +59,11 @@ from groundscribe.stages.schemas import (
     SourceModel,
 )
 from groundscribe.validation.stage import ValidateFinalOutput
+from groundscribe.voice.learning import VoiceLearning
+from groundscribe.voice.models import VoiceProfileVersion, VoiceSuggestion
+from groundscribe.voice.precedence import ResolvedVoice
+from groundscribe.voice.schemas import VoiceProfileDocument
+from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.engine import WorkflowEngine
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
@@ -420,6 +425,85 @@ class ApplicationService:
         return self._act(project_id, A.CANCEL, actor_id=cancelled_by)
 
     # ------------------------------------------------------------------
+    # Voice (phase 10)
+    # ------------------------------------------------------------------
+
+    def save_voice_profile(
+        self,
+        document: VoiceProfileDocument,
+        *,
+        user_id: str,
+        project_id: str | None = None,
+        article_id: str | None = None,
+    ) -> VoiceProfileVersion:
+        """Put a profile version in force at its scope."""
+        return self._voice().save(
+            document, user_id=user_id, project_id=project_id, article_id=article_id
+        )
+
+    def voice_profiles(self, *, user_id: str) -> tuple[VoiceProfileVersion, ...]:
+        """Every version this author has saved, in force or superseded."""
+        return self._voice().versions(user_id=user_id)
+
+    def effective_voice(
+        self, *, user_id: str, project_id: str | None = None, article_id: str | None = None
+    ) -> ResolvedVoice:
+        """The voice in force here, with the source of each instruction."""
+        return self._voice().resolve(user_id=user_id, project_id=project_id, article_id=article_id)
+
+    def voice_suggestions(self, *, user_id: str) -> tuple[VoiceSuggestion, ...]:
+        """Inferred rules still waiting for an answer."""
+        return self._learning().open_suggestions(user_id=user_id)
+
+    def approve_voice_suggestion(
+        self, suggestion_id: str, *, approved_by: str, version: str
+    ) -> VoiceProfileVersion:
+        """Make an inferred rule permanent, and save the version it produces.
+
+        The only path through this service that changes a voice. It takes an
+        approver, and it writes a new version rather than editing one — the two
+        properties plan/10 asks for, kept together so neither can be satisfied
+        without the other.
+        """
+        learning = self._learning()
+        suggestion = self._suggestion(suggestion_id)
+        current = self.effective_voice(user_id=suggestion.user_id).profile
+        stored = self._voice()
+        active = stored.versions(user_id=suggestion.user_id)
+        base = stored.document(active[-1]) if active else current
+        updated = learning.approve(
+            suggestion, profile=base, approved_by=approved_by, version=version
+        )
+        saved = stored.save(updated, user_id=suggestion.user_id)
+        suggestion.resulting_version_id = saved.id
+        self._runtime.session.flush()
+        return saved
+
+    def reject_voice_suggestion(
+        self, suggestion_id: str, *, rejected_by: str, reason: str = ""
+    ) -> VoiceSuggestion:
+        """Record that the author said no, and why."""
+        suggestion = self._suggestion(suggestion_id)
+        self._learning().reject(suggestion, rejected_by=rejected_by, reason=reason)
+        return suggestion
+
+    def _voice(self) -> VoiceStore:
+        return VoiceStore(
+            self._runtime.session,
+            snapshots=self._runtime.snapshots,
+            recorder=self._runtime.recorder,
+        )
+
+    def _learning(self) -> VoiceLearning:
+        return VoiceLearning(self._runtime.session, recorder=self._runtime.recorder)
+
+    def _suggestion(self, suggestion_id: str) -> VoiceSuggestion:
+        suggestion = self._runtime.session.get(VoiceSuggestion, suggestion_id)
+        if suggestion is None:
+            raise UnknownProject(f"no voice suggestion {suggestion_id}")
+        return suggestion
+
+    # ------------------------------------------------------------------
     # Reading
     # ------------------------------------------------------------------
 
@@ -499,6 +583,18 @@ class ApplicationService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def author_of(self, project_id: str) -> str:
+        """Whose voice a project is written in.
+
+        A lookup, like ``project_for_article``: the API addresses a voice by the
+        project it applies to, while profiles belong to a person, and something
+        has to join the two in one place rather than in each interface.
+        """
+        project = self._runtime.session.get(domain_models.Project, project_id)
+        if project is None:
+            raise UnknownProject(f"no project {project_id}")
+        return project.user_id
 
     def project_for_article(self, article_id: str) -> str:
         """Which project an article belongs to.

@@ -27,6 +27,7 @@ from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.jobs.events import JobEventStream
 from groundscribe.jobs.schemas import Job
+from groundscribe.voice.schemas import VoiceProfileDocument
 
 router = APIRouter()
 
@@ -335,6 +336,102 @@ def override_and_approve(
 ) -> schemas.CommandResponse:
     """Accept an article the score refused, on a person's explicit say-so."""
     return render(service.override_and_approve(article_id, approved_by=body.actor_id))
+
+
+# ----------------------------------------------------------------------
+# Voice (phase 10)
+# ----------------------------------------------------------------------
+
+
+@router.post("/voice/profiles", response_model=schemas.VoiceProfileSummary, status_code=201)
+def save_voice_profile(
+    body: VoiceProfileDocument,
+    service: Service,
+    user_id: Annotated[str, Query(description="Whose voice this is.")],
+    project_id: Annotated[str | None, Query()] = None,
+    article_id: Annotated[str | None, Query()] = None,
+) -> schemas.VoiceProfileSummary:
+    """Put a profile version in force at its scope.
+
+    The body is the profile *document* itself rather than an API-shaped wrapper.
+    It is what the author edits and what the voice pass consumes, and a second
+    shape in between would be a place for the two to disagree — including about
+    whether a hard rule names anything checkable, which the document validates
+    and a wrapper would have to remember to.
+    """
+    return schemas.VoiceProfileSummary.model_validate(
+        service.save_voice_profile(
+            body, user_id=user_id, project_id=project_id, article_id=article_id
+        )
+    )
+
+
+@router.get("/voice/profiles", response_model=list[schemas.VoiceProfileSummary])
+def list_voice_profiles(
+    service: Service, user_id: Annotated[str, Query()]
+) -> list[schemas.VoiceProfileSummary]:
+    """Every version this author has saved, in force or superseded."""
+    return [
+        schemas.VoiceProfileSummary.model_validate(version)
+        for version in service.voice_profiles(user_id=user_id)
+    ]
+
+
+@router.get("/projects/{project_id}/voice", response_model=schemas.EffectiveVoice)
+def read_effective_voice(
+    project_id: str,
+    service: Service,
+    article_id: Annotated[str | None, Query()] = None,
+) -> schemas.EffectiveVoice:
+    """The voice in force here, and where each instruction came from."""
+    user_id = service.author_of(project_id)
+    resolved = service.effective_voice(
+        user_id=user_id, project_id=project_id, article_id=article_id
+    )
+    return schemas.EffectiveVoice(
+        sources=resolved.sources,
+        active=tuple(
+            schemas.ActiveInstructionOut.model_validate(entry) for entry in resolved.record()
+        ),
+        suppressed=tuple(item.instruction.id for item in resolved.suppressed),
+    )
+
+
+@router.get("/voice/suggestions", response_model=list[schemas.VoiceSuggestionOut])
+def list_voice_suggestions(
+    service: Service, user_id: Annotated[str, Query()]
+) -> list[schemas.VoiceSuggestionOut]:
+    """Inferred rules still waiting for an answer. Listing applies nothing."""
+    return [
+        schemas.VoiceSuggestionOut.model_validate(suggestion)
+        for suggestion in service.voice_suggestions(user_id=user_id)
+    ]
+
+
+@router.post(
+    "/voice/suggestions/{suggestion_id}/approve", response_model=schemas.VoiceProfileSummary
+)
+def approve_voice_suggestion(
+    suggestion_id: str, body: schemas.ApproveSuggestion, service: Service
+) -> schemas.VoiceProfileSummary:
+    """Make an inferred rule permanent. The only endpoint that changes a voice."""
+    return schemas.VoiceProfileSummary.model_validate(
+        service.approve_voice_suggestion(
+            suggestion_id, approved_by=body.actor_id, version=body.version
+        )
+    )
+
+
+@router.post("/voice/suggestions/{suggestion_id}/reject", response_model=schemas.VoiceSuggestionOut)
+def reject_voice_suggestion(
+    suggestion_id: str, body: schemas.RejectSuggestion, service: Service
+) -> schemas.VoiceSuggestionOut:
+    """Record that the author said no, and why."""
+    return schemas.VoiceSuggestionOut.model_validate(
+        service.reject_voice_suggestion(
+            suggestion_id, rejected_by=body.actor_id, reason=body.reason
+        )
+    )
 
 
 # ----------------------------------------------------------------------

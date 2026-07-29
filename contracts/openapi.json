@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "ActiveInstructionOut": {
+        "description": "One instruction in force, and where it came from.\n\nThe source travels to the client because the question it answers \u2014 \"why does\nit write like this, and where do I change it?\" \u2014 is asked by a person looking\nat a screen, not by the resolver.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "instruction_id": {
+            "title": "Instruction Id",
+            "type": "string"
+          },
+          "overrides": {
+            "title": "Overrides",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "strength": {
+            "title": "Strength",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction_id",
+          "category",
+          "strength",
+          "source",
+          "overrides"
+        ],
+        "title": "ActiveInstructionOut",
+        "type": "object"
+      },
       "ActorAction": {
         "description": "A human action. The actor is mandatory: an anonymous decision is unreviewable.",
         "properties": {
@@ -62,6 +96,25 @@
         ],
         "title": "AnswerResponse",
         "type": "string"
+      },
+      "ApproveSuggestion": {
+        "description": "Making an inferred rule permanent, and naming the version it becomes.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id",
+          "version"
+        ],
+        "title": "ApproveSuggestion",
+        "type": "object"
       },
       "ArticleDepth": {
         "description": "How deep the finished article goes, declared per project.\n\nA project constraint rather than a stage decision: it bounds scope for every\nstage at once (extraction's token budget, the architecture's article count,\nthe brief's length), and letting each stage infer it would let them disagree.",
@@ -218,6 +271,39 @@
           "depth"
         ],
         "title": "EditorialConstraints",
+        "type": "object"
+      },
+      "EffectiveVoice": {
+        "description": "The resolved voice, and the profiles it was resolved from.",
+        "properties": {
+          "active": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveInstructionOut"
+            },
+            "title": "Active",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "suppressed": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suppressed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources",
+          "active"
+        ],
+        "title": "EffectiveVoice",
         "type": "object"
       },
       "ExecutionComparison": {
@@ -389,6 +475,18 @@
         "title": "ExtractSourceModel",
         "type": "object"
       },
+      "FindingStatus": {
+        "description": "What the author decided about one review finding (phase 07 \u00a78).\n\nFive states because a criticism has five fates, and collapsing any two of them\nloses something the next round needs. ``REJECTED`` is the author disagreeing;\n``SUPPRESSED`` is the *system* holding back a finding the author already\ndismissed, raised again with nothing new behind it. Neither deletes anything:\nplan/07 requires resolved criticism to stay visible, so a dismissed finding is\nkept with the reason it was dismissed for.",
+        "enum": [
+          "proposed",
+          "accepted",
+          "rejected",
+          "edited",
+          "suppressed"
+        ],
+        "title": "FindingStatus",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -440,6 +538,16 @@
         ],
         "title": "ImportSource",
         "type": "object"
+      },
+      "InstructionStrength": {
+        "description": "How firmly an instruction binds (plan/10 \u2192 Instruction strength model).\n\nDeclared in descending order of force, and the order is meaningful: a\nresolver comparing two instructions for the same thing takes the stronger.\n\n- ``HARD_RULE`` \u2014 rarely violated, and *checked*. This is the only strength\n  the system verifies mechanically, which is why a hard rule has to name\n  something findable in the finished text.\n- ``STRONG_PREFERENCE`` \u2014 normally followed; a justified exception is\n  allowed, and the model is told so rather than being left to guess whether\n  it may ever deviate.\n- ``TENDENCY`` \u2014 the usual style, offered as such. Explicitly *not* a\n  template: plan/10's named risk is homogenisation, and a tendency applied\n  as a mandate is how that happens.",
+        "enum": [
+          "hard_rule",
+          "strong_preference",
+          "tendency"
+        ],
+        "title": "InstructionStrength",
+        "type": "string"
       },
       "InvocationOutcome": {
         "description": "How a single model invocation ended.\n\n``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can\nbe useful yet unparseable, or parseable yet non-conforming; both are\npreserved alongside their repaired successor rather than discarded.",
@@ -744,6 +852,25 @@
         "title": "ModelInvocationOut",
         "type": "object"
       },
+      "RejectSuggestion": {
+        "description": "Declining an inferred rule, with the reason kept.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id"
+        ],
+        "title": "RejectSuggestion",
+        "type": "object"
+      },
       "SourceFormat": {
         "description": "How a source document arrived, which decides how it is segmented.\n\nFrom *Editorial workflow \u00a71 Source ingestion*: Markdown, plain text and pasted\nnotes are the three supported inputs. The distinction is kept after parsing\nbecause it explains the segmentation: a heading in Markdown is a structural\nfact, whereas the same line in pasted notes is just a line.",
         "enum": [
@@ -888,6 +1015,229 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VoiceCategory": {
+        "description": "What an instruction is about (plan/10 \u2192 VoiceProfile structure).\n\nFive, because that is how a person reads and edits a profile: the categories\nare the sections of the document, not an internal taxonomy. ``PROHIBITED_\nPATTERNS`` is the one that is not a facet of style but a list of things never\nto write, and it earns its own category because it is the one people add to\nmost often \u2014 usually right after seeing the pattern in their own draft.",
+        "enum": [
+          "tone",
+          "language",
+          "structure",
+          "prohibited_patterns",
+          "punctuation"
+        ],
+        "title": "VoiceCategory",
+        "type": "string"
+      },
+      "VoiceInstruction": {
+        "additionalProperties": false,
+        "description": "One thing the author's prose does, or never does.\n\n``id`` is stable across versions and scopes, and that is its whole purpose:\nit is how an article override replaces the project's version of the same\ninstruction rather than sitting beside it. Ids are chosen by whoever writes\nthe instruction \u2014 ``no-em-dash``, ``open-concrete`` \u2014 because a generated id\ncould not be matched across two profiles written months apart.\n\n``prohibits`` holds literal strings that must not appear in finished prose.\nLiterals rather than patterns on purpose: a regular expression in a voice\nprofile is a thing the author cannot read, and every rule this has been\nneeded for so far \u2014 an em dash, a banned product name, a hype word \u2014 is a\nliteral.",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/VoiceCategory"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "prohibits": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Prohibits",
+            "type": "array"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/InstructionStrength"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "strength",
+          "text"
+        ],
+        "title": "VoiceInstruction",
+        "type": "object"
+      },
+      "VoiceProfileDocument": {
+        "additionalProperties": false,
+        "description": "A named, versioned set of instructions at one scope.\n\nReplaces the placeholder phase 07 shipped with. The two fields it kept \u2014\n``name`` and ``version`` \u2014 are the ones already written into article records,\nso an article drafted before this phase still names something meaningful.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "first_person": {
+            "default": true,
+            "title": "First Person",
+            "type": "boolean"
+          },
+          "instructions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/VoiceInstruction"
+            },
+            "title": "Instructions",
+            "type": "array"
+          },
+          "name": {
+            "default": "default",
+            "title": "Name",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/VoiceScope",
+            "default": "global"
+          },
+          "suppresses": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suppresses",
+            "type": "array"
+          },
+          "version": {
+            "default": "1",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "title": "VoiceProfileDocument",
+        "type": "object"
+      },
+      "VoiceProfileSummary": {
+        "description": "One stored profile version, as a client lists them.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "article_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/VoiceScope"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "profile_id",
+          "scope",
+          "version",
+          "active"
+        ],
+        "title": "VoiceProfileSummary",
+        "type": "object"
+      },
+      "VoiceScope": {
+        "description": "Where a profile applies (plan/10 \u2192 voice hierarchy).\n\nOrdered widest to narrowest, which is also precedence order: an article\noverride beats a project profile beats the author's global one. The narrower\nscope wins because it is the more deliberate act \u2014 a person who set something\nfor one article meant it for that article.",
+        "enum": [
+          "global",
+          "project",
+          "article"
+        ],
+        "title": "VoiceScope",
+        "type": "string"
+      },
+      "VoiceSuggestionOut": {
+        "description": "An inferred rule awaiting an answer, with the edits behind it.",
+        "properties": {
+          "decided_by": {
+            "title": "Decided By",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "habit": {
+            "title": "Habit",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instruction": {
+            "additionalProperties": true,
+            "title": "Instruction",
+            "type": "object"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FindingStatus"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "habit",
+          "instruction",
+          "evidence",
+          "status",
+          "decided_by",
+          "reason"
+        ],
+        "title": "VoiceSuggestionOut",
         "type": "object"
       },
       "WorkflowState": {
@@ -2299,6 +2649,332 @@
           }
         },
         "summary": "Import Source"
+      }
+    },
+    "/projects/{project_id}/voice": {
+      "get": {
+        "description": "The voice in force here, and where each instruction came from.",
+        "operationId": "read_effective_voice_projects__project_id__voice_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "article_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Article Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveVoice"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Effective Voice"
+      }
+    },
+    "/voice/profiles": {
+      "get": {
+        "description": "Every version this author has saved, in force or superseded.",
+        "operationId": "list_voice_profiles_voice_profiles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VoiceProfileSummary"
+                  },
+                  "title": "Response List Voice Profiles Voice Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Voice Profiles"
+      },
+      "post": {
+        "description": "Put a profile version in force at its scope.\n\nThe body is the profile *document* itself rather than an API-shaped wrapper.\nIt is what the author edits and what the voice pass consumes, and a second\nshape in between would be a place for the two to disagree \u2014 including about\nwhether a hard rule names anything checkable, which the document validates\nand a wrapper would have to remember to.",
+        "operationId": "save_voice_profile_voice_profiles_post",
+        "parameters": [
+          {
+            "description": "Whose voice this is.",
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "Whose voice this is.",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "article_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Article Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceProfileDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceProfileSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Voice Profile"
+      }
+    },
+    "/voice/suggestions": {
+      "get": {
+        "description": "Inferred rules still waiting for an answer. Listing applies nothing.",
+        "operationId": "list_voice_suggestions_voice_suggestions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VoiceSuggestionOut"
+                  },
+                  "title": "Response List Voice Suggestions Voice Suggestions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Voice Suggestions"
+      }
+    },
+    "/voice/suggestions/{suggestion_id}/approve": {
+      "post": {
+        "description": "Make an inferred rule permanent. The only endpoint that changes a voice.",
+        "operationId": "approve_voice_suggestion_voice_suggestions__suggestion_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveSuggestion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceProfileSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Voice Suggestion"
+      }
+    },
+    "/voice/suggestions/{suggestion_id}/reject": {
+      "post": {
+        "description": "Record that the author said no, and why.",
+        "operationId": "reject_voice_suggestion_voice_suggestions__suggestion_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectSuggestion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceSuggestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Voice Suggestion"
       }
     }
   }

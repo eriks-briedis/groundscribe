@@ -17,10 +17,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from groundscribe.domain.enums import AnswerResponse, SourceFormat
+from groundscribe.domain.enums import AnswerResponse, FindingStatus, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.jobs.schemas import Job
 from groundscribe.provenance.enums import ActorType, ExecutionStatus, InvocationOutcome
+from groundscribe.voice.enums import VoiceScope
 from groundscribe.workflow.states import WorkflowState
 
 
@@ -90,6 +91,72 @@ class ActorAction(BaseModel):
 
 class CreateExperiment(BaseModel):
     name: str
+
+
+class ApproveSuggestion(BaseModel):
+    """Making an inferred rule permanent, and naming the version it becomes."""
+
+    actor_id: str
+    version: str
+
+
+class RejectSuggestion(BaseModel):
+    """Declining an inferred rule, with the reason kept."""
+
+    actor_id: str
+    reason: str = ""
+
+
+class VoiceProfileSummary(BaseModel):
+    """One stored profile version, as a client lists them."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    profile_id: str
+    scope: VoiceScope
+    project_id: str | None = None
+    article_id: str | None = None
+    version: str
+    active: bool
+
+
+class ActiveInstructionOut(BaseModel):
+    """One instruction in force, and where it came from.
+
+    The source travels to the client because the question it answers — "why does
+    it write like this, and where do I change it?" — is asked by a person looking
+    at a screen, not by the resolver.
+    """
+
+    instruction_id: str
+    category: str
+    strength: str
+    source: str
+    overrides: str
+
+
+class EffectiveVoice(BaseModel):
+    """The resolved voice, and the profiles it was resolved from."""
+
+    sources: tuple[str, ...]
+    active: tuple[ActiveInstructionOut, ...]
+    suppressed: tuple[str, ...] = ()
+
+
+class VoiceSuggestionOut(BaseModel):
+    """An inferred rule awaiting an answer, with the edits behind it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    habit: str
+    instruction: dict[str, Any]
+    evidence: dict[str, Any]
+    status: FindingStatus
+    decided_by: str
+    reason: str
 
 
 class ExecutionSummary(BaseModel):
@@ -169,17 +236,23 @@ class ExperimentOut(BaseModel):
 
 
 __all__ = [
+    "ActiveInstructionOut",
     "ActorAction",
     "AnswerGap",
+    "ApproveSuggestion",
     "CommandResponse",
     "CreateExperiment",
     "CreateProject",
+    "EffectiveVoice",
     "ExecutionComparison",
     "ExecutionSummary",
     "ExperimentOut",
     "ExtractSourceModel",
     "ImportSource",
     "ModelInvocationOut",
+    "RejectSuggestion",
     "TraceEventOut",
     "UpdateArchitecture",
+    "VoiceProfileSummary",
+    "VoiceSuggestionOut",
 ]

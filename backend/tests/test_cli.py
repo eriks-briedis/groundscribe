@@ -326,5 +326,13 @@ def test_every_command_group_the_plan_names_exists(cli_runner: CliRunner) -> Non
     """The spec's CLI surface: project, source, architecture, article, execution."""
     output = cli_runner.invoke(cli.app, ["--help"]).output
 
-    for group in ("project", "source", "architecture", "article", "execution", "experiment"):
+    for group in (
+        "project",
+        "source",
+        "architecture",
+        "article",
+        "execution",
+        "experiment",
+        "voice",
+    ):
         assert group in output

@@ -37,6 +37,7 @@ from groundscribe.voice.learning import (
 from groundscribe.voice.models import ManualEdit, VoiceSuggestion
 from groundscribe.voice.precedence import resolve_voice
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
+from groundscribe.workflow.errors import AttributionRequired
 from provenance_helpers import make_recorder, seed_project
 
 AUTHOR = "u1"
@@ -318,12 +319,16 @@ def test_approval_is_attributed_and_recorded(
 def test_an_anonymous_approval_is_refused(
     learning: VoiceLearning, version: domain_models.ArticleVersion
 ) -> None:
-    """The same rule phases 05 and 06 apply: an unattributed decision is unreviewable."""
+    """The same rule phases 05 and 06 apply, raised as the same exception.
+
+    One principle with two error types would earn two status codes at the API
+    and two ways of being handled everywhere else.
+    """
     record_all(learning, version)
     (pattern,) = detect_edit_patterns(learning.training_edits(AUTHOR))
     suggestion = learning.suggest(pattern, user_id=AUTHOR, category=VoiceCategory.LANGUAGE)
 
-    with pytest.raises(ValueError, match="approved_by"):
+    with pytest.raises(AttributionRequired, match="approved_by"):
         learning.approve(suggestion, profile=PROFILE, approved_by="", version="2")
 
 

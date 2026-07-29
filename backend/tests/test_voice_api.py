@@ -16,14 +16,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from service_helpers import AUTHOR, Harness, build_harness
 from sqlalchemy.orm import Session
-from stage_helpers import DEFAULT_CONSTRAINTS
 
 from groundscribe.api.app import create_app
 from groundscribe.domain.enums import FindingStatus
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory, VoiceScope
+from service_helpers import AUTHOR, Harness, build_harness
+from stage_helpers import DEFAULT_CONSTRAINTS
 
 PROFILE: dict[str, Any] = {
     "name": "ada",
@@ -101,7 +101,8 @@ def test_the_effective_voice_says_where_each_instruction_came_from(
     client.post(f"/voice/profiles?user_id={AUTHOR}", json=PROFILE)
     client.post(
         f"/voice/profiles?user_id={AUTHOR}&project_id={project_id}",
-        json=PROFILE | {"scope": "project", "version": "2", "instructions": [PROFILE["instructions"][1]]},
+        json=PROFILE
+        | {"scope": "project", "version": "2", "instructions": [PROFILE["instructions"][1]]},
     )
 
     effective = client.get(f"/projects/{project_id}/voice").json()
@@ -171,9 +172,7 @@ def test_approving_a_suggestion_writes_a_new_profile_version(
     assert [version["version"] for version in versions] == ["1", "2"]
 
 
-def test_rejecting_a_suggestion_changes_no_profile(
-    client: TestClient, harness: Harness
-) -> None:
+def test_rejecting_a_suggestion_changes_no_profile(client: TestClient, harness: Harness) -> None:
     """A refusal is an answer, and it is recorded as one."""
     project_id = new_project(client)
     client.post(f"/voice/profiles?user_id={AUTHOR}", json=PROFILE)

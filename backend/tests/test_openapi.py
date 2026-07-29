@@ -52,6 +52,13 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("get", "/executions/compare"),
     ("post", "/experiments"),
     ("get", "/jobs/{job_id}/events"),
+    # plan/10 → expose profile management via the API.
+    ("post", "/voice/profiles"),
+    ("get", "/voice/profiles"),
+    ("get", "/projects/{project_id}/voice"),
+    ("get", "/voice/suggestions"),
+    ("post", "/voice/suggestions/{suggestion_id}/approve"),
+    ("post", "/voice/suggestions/{suggestion_id}/reject"),
 )
 
 

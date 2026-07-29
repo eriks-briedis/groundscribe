@@ -32,6 +32,7 @@ from groundscribe.app.services import ApplicationService
 from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.jobs.worker import Worker
+from groundscribe.voice.schemas import VoiceProfileDocument
 
 app = typer.Typer(help="groundscribe — a local-first, inspectable editorial workflow.")
 project_app = typer.Typer(help="Create and inspect projects.")
@@ -40,6 +41,7 @@ architecture_app = typer.Typer(help="Propose and approve the shape of the work."
 article_app = typer.Typer(help="Draft, review, rewrite and publish one article.")
 execution_app = typer.Typer(help="Inspect, replay and fork execution records.")
 experiment_app = typer.Typer(help="Compare executions and open experiments.")
+voice_app = typer.Typer(help="Manage the personal voice profile.")
 worker_app = typer.Typer(help="Run the background worker.")
 contracts_app = typer.Typer(help="Generate the API contract.")
 
@@ -49,6 +51,7 @@ app.add_typer(architecture_app, name="architecture")
 app.add_typer(article_app, name="article")
 app.add_typer(execution_app, name="execution")
 app.add_typer(experiment_app, name="experiment")
+app.add_typer(voice_app, name="voice")
 app.add_typer(worker_app, name="worker")
 app.add_typer(contracts_app, name="contracts")
 
@@ -321,6 +324,77 @@ def experiment_create(name: str) -> None:
     """Open an experiment record."""
     with _command() as service:
         typer.echo(service.create_experiment(name=name).id)
+
+
+# ----------------------------------------------------------------------
+# Voice
+# ----------------------------------------------------------------------
+
+
+@voice_app.command("save")
+def voice_save(
+    user: Annotated[str, typer.Option(help="Whose voice this is.")],
+    file: Annotated[Path, typer.Option(help="A profile document, as JSON.")],
+    project: Annotated[str | None, typer.Option()] = None,
+    article: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Put a profile version in force at its scope.
+
+    Read from a file rather than assembled from flags. A profile is a document a
+    person edits, versions and keeps — five categories of instruction with
+    strengths — and reconstructing one from command-line options would be a
+    worse editor than the one they already have.
+    """
+    with _command() as service:
+        document = VoiceProfileDocument.model_validate_json(file.read_text(encoding="utf-8"))
+        saved = service.save_voice_profile(
+            document, user_id=user, project_id=project, article_id=article
+        )
+        typer.echo(f"{saved.id} {saved.scope.value} {saved.version}")
+
+
+@voice_app.command("show")
+def voice_show(project: str, article: Annotated[str | None, typer.Option()] = None) -> None:
+    """The voice in force here, and where each instruction came from."""
+    with _command() as service:
+        resolved = service.effective_voice(
+            user_id=service.author_of(project), project_id=project, article_id=article
+        )
+        for entry in resolved.record():
+            typer.echo(f"{entry['instruction_id']}  [{entry['strength']}]  {entry['source']}")
+
+
+@voice_app.command("suggestions")
+def voice_suggestions(user: Annotated[str, typer.Option()]) -> None:
+    """Inferred rules waiting for an answer. Listing applies nothing."""
+    with _command() as service:
+        for suggestion in service.voice_suggestions(user_id=user):
+            occurrences = suggestion.evidence.get("occurrences", "?")
+            typer.echo(f"{suggestion.id}  {suggestion.habit}  ({occurrences} edits)")
+
+
+@voice_app.command("approve")
+def voice_approve(
+    suggestion: str,
+    by: Annotated[str, typer.Option(help="Who is approving.")],
+    version: Annotated[str, typer.Option(help="The version this creates.")],
+) -> None:
+    """Make an inferred rule permanent. The only command that changes a voice."""
+    with _command() as service:
+        saved = service.approve_voice_suggestion(suggestion, approved_by=by, version=version)
+        typer.echo(f"{saved.id} {saved.version}")
+
+
+@voice_app.command("reject")
+def voice_reject(
+    suggestion: str,
+    by: Annotated[str, typer.Option(help="Who is declining.")],
+    reason: Annotated[str, typer.Option()] = "",
+) -> None:
+    """Decline an inferred rule, keeping the reason."""
+    with _command() as service:
+        declined = service.reject_voice_suggestion(suggestion, rejected_by=by, reason=reason)
+        typer.echo(f"{declined.id} {declined.status.value}")
 
 
 # ----------------------------------------------------------------------
