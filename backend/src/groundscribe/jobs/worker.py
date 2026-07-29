@@ -148,6 +148,7 @@ class Worker:
 
         self._queue.complete(job, result=outcome.result)
         self._emit(job, "job.completed", payload={"result": outcome.result})
+        self._commit()
         return job
 
     async def run_until_idle(self, *, limit: int | None = None) -> tuple[Job, ...]:
@@ -199,7 +200,20 @@ class Worker:
             execution=execution,
             payload={"error_type": type(exc).__name__, "error_message": str(exc)},
         )
+        # Committed, not rolled back. The records the stage wrote before it
+        # failed are the explanation of the failure, and phase 03 took the same
+        # position for the same reason.
+        self._commit()
         return job
+
+    def _commit(self) -> None:
+        """End the job's transaction.
+
+        One job, one transaction — the unit a worker can retry is the unit that
+        must either have happened or not. A worker that never committed would do
+        every piece of work twice and store none of it.
+        """
+        self._queue.session.commit()
 
     def _emit(
         self,

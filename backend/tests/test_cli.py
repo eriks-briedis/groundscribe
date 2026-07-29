@@ -84,8 +84,15 @@ class RecordingService:
 
     @property
     def last(self) -> Call:
-        return self.calls[-1]
+        """The last *command*, ignoring the transaction boundary around it."""
+        return [call for call in self.calls if call.method not in _LIFECYCLE][-1]
 
+    def methods(self) -> list[str]:
+        return [call.method for call in self.calls]
+
+
+#: Not commands: the unit-of-work boundary each interface puts around one.
+_LIFECYCLE = frozenset({"commit", "rollback"})
 
 _RESULT = CommandResult(
     project_id="p1",
@@ -284,6 +291,21 @@ def test_comparing_executions_matches_its_endpoint(
 # ----------------------------------------------------------------------
 # The CLI holds no rules of its own
 # ----------------------------------------------------------------------
+
+
+def test_the_cli_ends_the_transaction_it_opened(
+    cli_runner: CliRunner, recorder: RecordingService
+) -> None:
+    """A command that printed its result and committed nothing did nothing.
+
+    The unit a person can re-run is the unit that must either have happened or
+    not, so each invocation is one transaction. The API's half of this is
+    asserted where it can be: against a real database, in the cross-cutting
+    suite, where a second connection either sees the row or does not.
+    """
+    run(cli_runner, "article", "draft", "a1")
+
+    assert recorder.methods() == ["draft", "commit"]
 
 
 def test_the_cli_cannot_see_the_workflow_at_all() -> None:

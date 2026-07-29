@@ -103,6 +103,30 @@ class ApplicationService:
         self._runtime = runtime
 
     # ------------------------------------------------------------------
+    # The unit of work
+    # ------------------------------------------------------------------
+
+    def commit(self) -> None:
+        """Make this command's writes permanent.
+
+        The service exposes the boundary but does not choose it. Where a
+        transaction ends is the *caller's* question — one HTTP request, one CLI
+        invocation, one worker job — and a service that committed inside every
+        method would make it impossible for any of them to group two writes.
+        """
+        self._runtime.session.commit()
+
+    def rollback(self) -> None:
+        """Discard this command's writes.
+
+        Used when a command failed before producing anything worth keeping.
+        Provenance for work that *did* happen is committed by whoever recorded
+        it (phase 03 writes failures rather than rolling them back), so this
+        never discards the explanation of a failure.
+        """
+        self._runtime.session.rollback()
+
+    # ------------------------------------------------------------------
     # Projects and sources
     # ------------------------------------------------------------------
 

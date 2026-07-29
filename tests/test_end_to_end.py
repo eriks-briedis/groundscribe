@@ -19,6 +19,7 @@ FastAPI, which is not what this file is for.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,9 +29,18 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
 from groundscribe.api.app import create_app
+from groundscribe.app.runtime import Runtime
+from groundscribe.db import Base, create_engine, session_factory
 from groundscribe.domain import models as domain_models
 from groundscribe.jobs.enums import JobStatus
+from groundscribe.jobs.queue import JobQueue
+from groundscribe.llm.generation import StructuredGenerator
+from groundscribe.llm.routing import default_routing_policy
+from groundscribe.prompts import PromptStore, prompts_root
+from groundscribe.provenance.recorder import ProvenanceRecorder
+from groundscribe.storage.blob_store import BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
+from groundscribe.workflow.position import PositionStore
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
 from test_gap_questions import gap
@@ -247,3 +257,56 @@ async def test_the_whole_run_is_reconstructible_afterwards(
     assert [invocation["provider"] for invocation in invocations] == ["ollama"]
     assert "event: job.status" in frames
     assert '"status": "succeeded"' in frames
+
+
+def test_a_command_is_durable_by_the_time_it_answers(tmp_path: Path) -> None:
+    """plan/09 → a command that returned has happened, and a later process sees it.
+
+    Asserted against a real file-backed database with two independent sessions,
+    because that is the only arrangement in which the claim means anything. The
+    rest of this suite runs inside one rolled-back transaction, where an
+    interface that never committed would look identical to one that did — which
+    is exactly how a system ends up printing results it did not store.
+    """
+    url = f"sqlite+pysqlite:///{tmp_path / 'groundscribe.sqlite'}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    sessions = session_factory(engine)
+
+    client = TestClient(
+        create_app(runtime_factory=lambda: build_test_runtime(sessions(), tmp_path))
+    )
+    response = client.post(
+        "/projects",
+        json={
+            "title": "Read-through caching",
+            "author_id": AUTHOR,
+            "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    with sessions() as fresh:
+        stored = fresh.scalars(select(domain_models.Project)).all()
+    engine.dispose()
+
+    assert [project.id for project in stored] == [response.json()["project_id"]]
+
+
+def build_test_runtime(session: Session, root: Path) -> Runtime:
+    """A runtime over one session, as a deployment builds one per request."""
+    snapshots = SnapshotStore(session, BlobStore(root / "blobs"))
+    recorder = ProvenanceRecorder(session, snapshots)
+    return Runtime(
+        session=session,
+        snapshots=snapshots,
+        recorder=recorder,
+        generator=StructuredGenerator(
+            clients={},
+            recorder=recorder,
+            prompts=PromptStore(prompts_root()),
+            routing=default_routing_policy(),
+        ),
+        queue=JobQueue(session),
+        positions=PositionStore(session),
+    )

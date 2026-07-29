@@ -18,7 +18,8 @@ binary at a different database by setting one environment variable.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -63,8 +64,22 @@ def default_service() -> ApplicationService:
 service_factory: Callable[[], ApplicationService] = default_service
 
 
-def _service() -> ApplicationService:
-    return service_factory()
+@contextmanager
+def _command() -> Iterator[ApplicationService]:
+    """One invocation, one transaction.
+
+    A command a person can re-run is the unit that must either have happened or
+    not, so the boundary is here rather than inside the service. Without it the
+    CLI would appear to work — every command printing the state it produced —
+    and persist nothing at all.
+    """
+    service = service_factory()
+    try:
+        yield service
+    except Exception:
+        service.rollback()
+        raise
+    service.commit()
 
 
 def _emit(result: Any) -> None:
@@ -99,26 +114,28 @@ def project_create(
     description: Annotated[str, typer.Option()] = "",
 ) -> None:
     """Open a project and the run behind it."""
-    _emit(
-        _service().create_project(
-            title=title,
-            author_id=author,
-            description=description,
-            constraints=EditorialConstraints(
-                audience=audience,
-                platform=platform,
-                depth=depth,
-                target_length_words=words,
-                allowed_providers=tuple(provider or ()),
-            ),
+    with _command() as service:
+        _emit(
+            service.create_project(
+                title=title,
+                author_id=author,
+                description=description,
+                constraints=EditorialConstraints(
+                    audience=audience,
+                    platform=platform,
+                    depth=depth,
+                    target_length_words=words,
+                    allowed_providers=tuple(provider or ()),
+                ),
+            )
         )
-    )
 
 
 @project_app.command("show")
 def project_show(project: str) -> None:
     """Where a run is, and what may be done to it."""
-    _emit(_service().project_state(project))
+    with _command() as service:
+        _emit(service.project_state(project))
 
 
 @source_app.command("import")
@@ -130,18 +147,19 @@ def source_import(
     confidential: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Store one piece of source material."""
-    _emit(
-        asyncio.run(
-            _service().import_source(
-                project,
-                title=title,
-                text=file.read_text(encoding="utf-8"),
-                source_format=source_format,
-                confidential=confidential,
-                uri=None,
+    with _command() as service:
+        _emit(
+            asyncio.run(
+                service.import_source(
+                    project,
+                    title=title,
+                    text=file.read_text(encoding="utf-8"),
+                    source_format=source_format,
+                    confidential=confidential,
+                    uri=None,
+                )
             )
         )
-    )
 
 
 @source_app.command("extract")
@@ -150,7 +168,8 @@ def source_extract(
     token_budget: Annotated[int | None, typer.Option()] = None,
 ) -> None:
     """Queue the source-model build and the gap analysis after it."""
-    _emit(asyncio.run(_service().extract_source_model(project, token_budget=token_budget)))
+    with _command() as service:
+        _emit(asyncio.run(service.extract_source_model(project, token_budget=token_budget)))
 
 
 @source_app.command("answer")
@@ -162,7 +181,8 @@ def source_answer(
     response: Annotated[AnswerResponse, typer.Option()] = AnswerResponse.ANSWERED,
 ) -> None:
     """Answer a surfaced question and rebuild the source model."""
-    _emit(_service().answer_gap(project, gap_id=gap, text=text, answered_by=by, response=response))
+    with _command() as service:
+        _emit(service.answer_gap(project, gap_id=gap, text=text, answered_by=by, response=response))
 
 
 # ----------------------------------------------------------------------
@@ -173,7 +193,8 @@ def source_answer(
 @architecture_app.command("propose")
 def architecture_propose(project: str) -> None:
     """Queue a proposal of the article or series the source supports."""
-    _emit(asyncio.run(_service().propose_architecture(project)))
+    with _command() as service:
+        _emit(asyncio.run(service.propose_architecture(project)))
 
 
 @architecture_app.command("approve")
@@ -181,55 +202,64 @@ def architecture_approve(
     project: str, by: Annotated[str, typer.Option(help="Who is approving.")]
 ) -> None:
     """Lock the architecture and open an article per concept."""
-    _emit(_service().approve_architecture(project, approved_by=by))
+    with _command() as service:
+        _emit(service.approve_architecture(project, approved_by=by))
 
 
 @article_app.command("brief")
 def article_brief(article: str) -> None:
     """Queue the brief this article is drafted against."""
-    _emit(asyncio.run(_service().generate_brief(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.generate_brief(article)))
 
 
 @article_app.command("draft")
 def article_draft(article: str) -> None:
     """Queue the first draft."""
-    _emit(asyncio.run(_service().draft(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.draft(article)))
 
 
 @article_app.command("review")
 def article_review(article: str) -> None:
     """Queue a substantive review of the current version."""
-    _emit(asyncio.run(_service().review(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.review(article)))
 
 
 @article_app.command("plan")
 def article_plan(article: str) -> None:
     """Queue the revision plan a rewrite will be bound by."""
-    _emit(asyncio.run(_service().plan_revision(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.plan_revision(article)))
 
 
 @article_app.command("rewrite")
 def article_rewrite(article: str) -> None:
     """Queue the rewrite."""
-    _emit(asyncio.run(_service().rewrite(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.rewrite(article)))
 
 
 @article_app.command("voice")
 def article_voice(article: str) -> None:
     """Queue the voice pass."""
-    _emit(asyncio.run(_service().voice_align(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.voice_align(article)))
 
 
 @article_app.command("score")
 def article_score(article: str) -> None:
     """Queue the scoring pass."""
-    _emit(asyncio.run(_service().score(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.score(article)))
 
 
 @article_app.command("validate")
 def article_validate(article: str) -> None:
     """Run the final deterministic checks now."""
-    _emit(asyncio.run(_service().validate(article)))
+    with _command() as service:
+        _emit(asyncio.run(service.validate(article)))
 
 
 @article_app.command("export")
@@ -242,7 +272,8 @@ def article_export(
     What publishing *produces* — formats, redaction, destinations — is phase 13;
     here it is the approval that makes an article publishable.
     """
-    _emit(_service().approve(article, approved_by=by))
+    with _command() as service:
+        _emit(service.approve(article, approved_by=by))
 
 
 # ----------------------------------------------------------------------
@@ -253,8 +284,9 @@ def article_export(
 @execution_app.command("inspect")
 def execution_inspect(execution: str) -> None:
     """One execution: which stage ran, under which build, and how it ended."""
-    record = _service().get_execution(execution)
-    typer.echo(f"{record.id} {record.stage} {record.impl_version} {record.status.value}")
+    with _command() as service:
+        record = service.get_execution(execution)
+        typer.echo(f"{record.id} {record.stage} {record.impl_version} {record.status.value}")
 
 
 @execution_app.command("replay")
@@ -262,7 +294,8 @@ def execution_replay(
     execution: str, by: Annotated[str, typer.Option(help="Who asked for it.")]
 ) -> None:
     """Re-run a stage as a new execution; the original is untouched."""
-    _emit(_service().replay_execution(execution, requested_by=by))
+    with _command() as service:
+        _emit(service.replay_execution(execution, requested_by=by))
 
 
 @execution_app.command("fork")
@@ -270,21 +303,24 @@ def execution_fork(
     execution: str, by: Annotated[str, typer.Option(help="Who asked for it.")]
 ) -> None:
     """Branch a new execution from an existing one."""
-    _emit(_service().fork_execution(execution, requested_by=by))
+    with _command() as service:
+        _emit(service.fork_execution(execution, requested_by=by))
 
 
 @experiment_app.command("compare")
 def experiment_compare(left: str, right: str) -> None:
     """Put two executions side by side."""
-    first, second = _service().compare_executions(left, right)
-    typer.echo(f"{first.id} {first.stage} {first.status.value}")
-    typer.echo(f"{second.id} {second.stage} {second.status.value}")
+    with _command() as service:
+        first, second = service.compare_executions(left, right)
+        typer.echo(f"{first.id} {first.stage} {first.status.value}")
+        typer.echo(f"{second.id} {second.stage} {second.status.value}")
 
 
 @experiment_app.command("create")
 def experiment_create(name: str) -> None:
     """Open an experiment record."""
-    typer.echo(_service().create_experiment(name=name).id)
+    with _command() as service:
+        typer.echo(service.create_experiment(name=name).id)
 
 
 # ----------------------------------------------------------------------
@@ -296,7 +332,12 @@ def experiment_create(name: str) -> None:
 def worker_run(
     worker_id: Annotated[str, typer.Option(help="Name this worker reports itself as.")] = "worker",
 ) -> None:
-    """Recover anything a previous worker abandoned, then drain the queue."""
+    """Recover anything a previous worker abandoned, then drain the queue.
+
+    Outside ``_command`` because a worker is not one transaction: each job is
+    its own, committed as it finishes, so a crash halfway through a batch keeps
+    what the earlier jobs did.
+    """
     runtime = build_runtime()
     worker = Worker(
         queue=runtime.queue,
@@ -305,6 +346,7 @@ def worker_run(
         worker_id=worker_id,
     )
     recovered = worker.recover()
+    runtime.session.commit()
     for job in recovered.reclaimed:
         typer.echo(f"reclaimed {job.id}")
     for execution in recovered.orphaned:

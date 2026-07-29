@@ -40,8 +40,23 @@ def get_runtime(request: Request) -> Iterator[Runtime]:
     yield request.app.state.runtime_factory()
 
 
-def get_service(runtime: Annotated[Runtime, Depends(get_runtime)]) -> ApplicationService:
-    return ApplicationService(runtime)
+def get_service(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+) -> Iterator[ApplicationService]:
+    """One request, one transaction.
+
+    The boundary belongs here rather than inside the service: a request is the
+    unit a client can retry, so it is the unit that must either have happened or
+    not. A command that raised leaves nothing half-written, and one that
+    returned is durable by the time the response is sent.
+    """
+    service = ApplicationService(runtime)
+    try:
+        yield service
+    except Exception:
+        service.rollback()
+        raise
+    service.commit()
 
 
 #: The two dependencies every route needs, named once. ``Annotated`` rather than
