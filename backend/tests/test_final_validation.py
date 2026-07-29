@@ -234,9 +234,17 @@ def test_a_heading_level_that_skips_is_a_formatting_problem() -> None:
 
 
 def test_the_checks_are_exactly_the_ones_the_spec_lists() -> None:
-    """Fourteen, and a validator quietly missing one is a validator that passes it."""
+    """The closed list, and a validator quietly missing one is one that passes it.
+
+    Fourteen from plan/08 plus ``excluded_material``, which plan/13 adds when
+    source segments and claims gain confidentiality flags of their own. It is
+    listed here rather than in the phase-13 module for the reason the whole set
+    is pinned in one place: the report claims which checks *ran*, and a list that
+    could be extended somewhere else is a list nobody can read as complete.
+    """
     assert {check.value for check in ValidationCheck} == {
         "confidential_names",
+        "excluded_material",
         "prohibited_terminology",
         "unresolved_placeholders",
         "required_facts",

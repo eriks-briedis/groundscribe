@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.domain.models import ArtifactSnapshot
+from groundscribe.privacy.material import restricted_spans
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
@@ -205,7 +206,12 @@ class ValidateFinalOutput:
         )
 
     def _input(self, context: PipelineContext) -> ValidationInput:
-        """What the checks read, including the two facts only the stage knows."""
+        """What the checks read, including the two facts only the stage knows.
+
+        The project's flagged material is *queried*, not accepted as an argument
+        (phase 13). A safety check a caller can forget to enable is a safety
+        check that is off in exactly the code path nobody reviewed.
+        """
         return ValidationInput(
             draft=self._draft,
             brief=self._brief,
@@ -215,6 +221,7 @@ class ValidateFinalOutput:
             version_id=self._version.id,
             passed_version_id=self._passed_version.id,
             hash_verified=context.snapshots.verify(self._version_snapshot),
+            excluded_material=restricted_spans(context.session, context.project_id),
         )
 
     def _apply(

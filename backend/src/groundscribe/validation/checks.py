@@ -77,6 +77,10 @@ class ValidationCheck(StrEnum):
     """
 
     CONFIDENTIAL_NAMES = "confidential_names"
+    #: Phase 13's addition, and a different question from the one above: that
+    #: check knows a list of names the project holds confidential, this one knows
+    #: which spans of the *source* were flagged out of the final output.
+    EXCLUDED_MATERIAL = "excluded_material"
     PROHIBITED_TERMINOLOGY = "prohibited_terminology"
     UNRESOLVED_PLACEHOLDERS = "unresolved_placeholders"
     REQUIRED_FACTS = "required_facts"
@@ -142,6 +146,10 @@ class ValidationInput:
     #: nothing was asked to verify them.
     hash_verified: bool | None = None
     reserved_material: Sequence[str] = field(default=())
+    #: Spans of source material flagged out of the final output (phase 13).
+    #: Empty for a project that flagged nothing, which is the common case and
+    #: costs the check nothing.
+    excluded_material: Sequence[str] = field(default=())
 
 
 def run_checks(article: ValidationInput) -> tuple[ValidationFinding, ...]:
@@ -156,6 +164,7 @@ def run_checks(article: ValidationInput) -> tuple[ValidationFinding, ...]:
         finding
         for check in (
             _confidential_names,
+            _excluded_material,
             _prohibited_terminology,
             _unresolved_placeholders,
             _required_facts,
@@ -184,6 +193,37 @@ def _confidential_names(article: ValidationInput) -> tuple[ValidationFinding, ..
         ValidationFinding(
             check=ValidationCheck.CONFIDENTIAL_NAMES,
             detail=f"the article names {', '.join(found)}, which this project holds confidential",
+            suggested_route=FailureCategory.SUBSTANTIVE_ISSUE,
+        ),
+    )
+
+
+def _excluded_material(article: ValidationInput) -> tuple[ValidationFinding, ...]:
+    """plan/13: source flagged out of the final output must not appear in it.
+
+    Verbatim, and only verbatim. A paraphrase gets through — stated here rather
+    than papered over, because this validator calls no model, every finding it
+    raises has to be one an author can reproduce by reading, and a fuzzy matcher
+    would raise failures nobody could confirm while still missing the determined
+    case. Verbatim reuse is the failure that actually happens: a sentence copied
+    out of the source while drafting.
+
+    The finding names where the material came from rather than repeating it. The
+    report is stored and exported, so a finding that quoted the leak would move
+    it into the document written to complain about it.
+    """
+    text = f"{article.draft.title}\n{article.draft.body}"
+    found = [span for span in article.excluded_material if span and span in text]
+    if not found:
+        return ()
+    return (
+        ValidationFinding(
+            check=ValidationCheck.EXCLUDED_MATERIAL,
+            detail=(
+                f"the article reproduces {len(found)} passage(s) of source material flagged "
+                "as excluded from the final output; the longest is "
+                f"{max(len(span) for span in found)} characters"
+            ),
             suggested_route=FailureCategory.SUBSTANTIVE_ISSUE,
         ),
     )
