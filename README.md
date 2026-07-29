@@ -159,7 +159,7 @@ cd frontend && npm run contract   # and the TypeScript types from it
 
 ```bash
 scripts/dev.sh                # migrations, API, worker and web app on 127.0.0.1
-HOST=0.0.0.0 scripts/dev.sh   # the same, reachable from the LAN
+scripts/dev.sh --lan          # the same, reachable from the network
 ```
 
 Three processes, because the system is three: an API that queues work, a worker
@@ -184,8 +184,8 @@ command URLs.
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173, proxying /api to the backend on :8000
-                   # add -- --host 0.0.0.0 to serve the LAN
+npm run dev        # http://127.0.0.1:5173, proxying /api to the backend on :8000
+HOST=0.0.0.0 npm run dev   # the same, on every interface
 npm test           # component + contract tests
 npm run typecheck  # tsc --strict, the frontend's equivalent of mypy --strict
 ```

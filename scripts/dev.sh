@@ -3,7 +3,8 @@
 # Everything groundscribe needs to be usable, in one command.
 #
 #   scripts/dev.sh              # local only, on 127.0.0.1
-#   HOST=0.0.0.0 scripts/dev.sh # reachable from the LAN
+#   scripts/dev.sh --lan        # reachable from the LAN
+#   HOST=0.0.0.0 scripts/dev.sh # the same thing, said the long way
 #
 # Three processes, because the system is three processes: an API that queues
 # work, a worker that does it, and the web app. Running fewer looks like it
@@ -25,7 +26,27 @@ set -euo pipefail
 # spawned holding the port, and the next run fails to bind.
 set -m
 
+# `--lan` before anything else, because "how do I expose this?" should be
+# answerable from `--help` rather than from the source of an environment
+# variable. Loopback stays the default: a script that put the pipeline on the
+# network by default would be the wrong way round.
+LAN=""
+for argument in "$@"; do
+  case "$argument" in
+    --lan) LAN=1 ;;
+    -h | --help)
+      sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $argument (try --lan, or --help)" >&2
+      exit 2
+      ;;
+  esac
+done
+
 HOST="${HOST:-127.0.0.1}"
+[[ -n "$LAN" ]] && HOST=0.0.0.0
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 POLL="${POLL:-2}"
@@ -92,6 +113,11 @@ cat <<BANNER
     api   http://${HOST}:${API_PORT}   (proxied at /api, so it need not be exposed)
 
 BANNER
+
+if [[ "$HOST" != "0.0.0.0" ]]; then
+  echo "  Bound to ${HOST}: this machine only. Run with --lan to serve the network."
+  echo
+fi
 
 if [[ "$HOST" == "0.0.0.0" ]]; then
   echo "  On the LAN, reachable at:"
