@@ -329,6 +329,56 @@ async def test_an_approved_architecture_says_who_locked_it(
     assert current[0]["locked_by"] == AUTHOR
 
 
+async def test_the_board_says_how_the_architecture_is_edited_and_approved(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → the board's cards carry *merge/split/delete/reorder/rename/
+    edit-thesis/reassign-evidence/approve*.
+
+    Seven operations and two endpoints, all of them the backend's: the same
+    reasoning as ``action_links``. A board that knew the URL and the vocabulary
+    would be a second copy of the override API, and phase 06 made that
+    vocabulary closed precisely so an eighth operation could not be invented at
+    a call site.
+    """
+    await walk.open_project()
+    await walk.extract()
+    await walk.architecture(approve=False)
+
+    board = read(client, f"/projects/{walk.project_id}/architecture")
+
+    assert board["operations"] == [
+        "merge",
+        "split",
+        "remove",
+        "reorder",
+        "rename",
+        "edit_thesis",
+        "reassign_evidence",
+    ]
+    assert board["edit_command"]["method"] == "PUT"
+    assert board["edit_command"]["path"] == (
+        f"/projects/{walk.project_id}/architecture/{board['current_version_id']}"
+    )
+    assert board["approve_command"]["path"] == (
+        f"/projects/{walk.project_id}/architecture/{board['current_version_id']}/approve"
+    )
+    assert board["approve_command"]["requires_actor"] is True
+
+
+async def test_an_empty_board_offers_nothing_to_edit(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Before anything is proposed there is no version to address."""
+    await walk.open_project()
+
+    board = read(client, f"/projects/{walk.project_id}/architecture")
+
+    assert board["current_version_id"] is None
+    assert board["edit_command"] is None
+    assert board["approve_command"] is None
+
+
 # ----------------------------------------------------------------------
 # Article workspace
 # ----------------------------------------------------------------------
@@ -351,6 +401,43 @@ async def test_the_article_workspace_gathers_what_is_needed_to_judge_a_version(
     assert workspace["scores"][-1]["passed"] is True
     assert workspace["validation"]["passed"] is True
     assert workspace["producing_execution"]["stage"]
+
+
+async def test_the_workspace_carries_the_source_evidence_the_article_rests_on(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → *Article workspace: … source evidence …*.
+
+    The claims the brief was written from, beside the prose written from them.
+    Without it, checking a figure means leaving the article, finding the source
+    workspace and matching claim ids by eye — which is the moment a person stops
+    checking.
+    """
+    await walk.to_approval()
+
+    workspace = read(client, f"/articles/{walk.article_id}/workspace")
+
+    assert workspace["source_evidence"], "the brief cites claims; the workspace should carry them"
+    (claim, *_) = workspace["source_evidence"]
+    assert claim["text"]
+    assert claim["segment_ids"]
+
+
+async def test_a_score_carries_the_confidence_it_was_reached_with(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → the approval view shows *scores, confidence*.
+
+    plan/08 records how far repeat passes sat apart precisely so a number can be
+    doubted; a projection that dropped it would show the number alone, which is
+    the false precision the rubric work was built to avoid.
+    """
+    await walk.to_approval()
+
+    (score, *_) = read(client, f"/articles/{walk.article_id}/workspace")["scores"]
+
+    assert score["confidence"]["repeats"] >= 1
+    assert score["confidence"]["repeat_scores"]
 
 
 async def test_the_workspace_diffs_a_version_against_the_one_before_it(
