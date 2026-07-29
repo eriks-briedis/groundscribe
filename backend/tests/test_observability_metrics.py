@@ -303,11 +303,18 @@ async def test_a_real_run_reports_what_it_spent_and_what_it_did(
     assert all(duration.total_ms > 0 for duration in metrics.stage_durations)
 
     # What the walk did, counted: one rewrite round, one validation, and it
-    # passed. The findings the reviewer raised were decided rather than left
-    # proposed, which is what the revision plan was built from.
+    # passed.
     assert metrics.rewrite_count == 1
     assert metrics.validation_failures == 0
-    assert metrics.issue_decisions.accepted > 0
+
+    # The reviewer's findings are still *proposed*, and that is the walk being
+    # reported accurately rather than the metric being wrong: this run planned a
+    # revision straight from the review without going through the acceptance
+    # stage, so nobody has decided about them. A surface that folded "nobody has
+    # looked" into "rejected" would lose the distinction phase 07 built five
+    # finding states to keep.
+    assert metrics.issue_decisions.proposed > 0
+    assert metrics.issue_decisions.accepted == metrics.issue_decisions.rejected == 0
 
     # Nothing in the happy path repairs, falls back, truncates or calls a tool,
     # so those report the honest zero-of-many rather than the dishonest None.
