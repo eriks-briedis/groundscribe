@@ -26,16 +26,25 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
-from golden import golden_json, with_segment_ids
+from golden import relabel, with_segment_ids
 from groundscribe.domain.enums import SegmentKind
 from groundscribe.domain.models import SourceSegment
 from groundscribe.provenance.enums import ContextDisposition
 from groundscribe.stages.base import StageRunner
-from groundscribe.stages.context import CHARS_PER_TOKEN, ContextStrategy, select_context
+from groundscribe.stages.context import (
+    CHARS_PER_TOKEN,
+    ContextStrategy,
+    ContextWindow,
+    select_context,
+)
 from groundscribe.stages.extraction import ExtractSourceTruth
 from groundscribe.storage.snapshot_store import SnapshotStore
 from stage_helpers import scripted_context
-from test_extraction import ingest_golden, script
+from test_extraction import BUDGETED_MODEL, ingest_golden, script
+
+#: What ``provenance_helpers.seed_project`` calls the project every stage test
+#: runs under — and therefore the query extraction ranks its source against.
+SUBJECT = "Caching write-up"
 
 #: Three passages, one of which is about the query and two of which are not.
 #: Short on purpose: the budgets below are in characters divided by
@@ -67,13 +76,17 @@ def segments() -> tuple[SourceSegment, ...]:
 
 
 def budget_for(*texts: str) -> int:
-    """A token budget that fits exactly ``texts`` and nothing more."""
-    return sum(len(text) for text in texts) // CHARS_PER_TOKEN
+    """A token budget that fits exactly ``texts`` and nothing more.
+
+    Rounded up, because a budget that fell a character short of its own fixture
+    would make every assertion below true for the wrong reason.
+    """
+    total = sum(len(text) for text in texts)
+    return -(-total // CHARS_PER_TOKEN)
 
 
-def disposition_of(window: object, reference: str) -> ContextDisposition:
-    candidates = getattr(window, "candidates")
-    return next(item.disposition for item in candidates if item.reference == reference)
+def disposition_of(window: ContextWindow, reference: str) -> ContextDisposition:
+    return next(item.disposition for item in window.candidates if item.reference == reference)
 
 
 # ----------------------------------------------------------------------
@@ -185,7 +198,17 @@ async def test_a_retrieved_run_records_every_segment_and_which_strategy_ran(
     """
     context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
+    # Scripted against what the retrieval actually chose, rather than against a
+    # segment picked by hand: a budgeted run can only cite what it was shown, and
+    # a fixture that guessed which passage that would be would be testing the
+    # guess.
+    chosen = select_context(
+        source.segments,
+        strategy=ContextStrategy.RELEVANCE_RANKED,
+        query=SUBJECT,
+        token_budget=60,
+    ).selected[0]
+    script(model_client, relabel(BUDGETED_MODEL, {"S1": chosen.id}))
 
     result = await StageRunner(context).run(
         ExtractSourceTruth(
@@ -223,7 +246,7 @@ async def test_extraction_still_reads_the_source_in_order_unless_asked_otherwise
     """
     context, model_client = scripted_context(db_session, snapshot_store)
     source = await ingest_golden(context)
-    script(model_client, with_segment_ids(golden_json("source_model.json"), source))
+    script(model_client, with_segment_ids(BUDGETED_MODEL, source))
 
     result = await StageRunner(context).run(ExtractSourceTruth(source=source, token_budget=60))
     execution = result.execution

@@ -25,17 +25,22 @@ rather than storing a source model whose evidence links nowhere.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import ClassVar
 
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import AnswerResponse, ArtifactType
-from groundscribe.domain.models import ArtifactSnapshot, SourceSegment
+from groundscribe.domain.models import ArtifactSnapshot, Project
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
-from groundscribe.provenance.enums import ContextDisposition
-from groundscribe.provenance.schemas import ContextCandidate
 from groundscribe.stages.base import PipelineContext, StageResult
+from groundscribe.stages.context import (
+    CHARS_PER_TOKEN,
+    ContextStrategy,
+    ContextWindow,
+    SelectedSegment,
+    select_context,
+    select_segments,
+)
 from groundscribe.stages.diffing import structured_diff
 from groundscribe.stages.errors import EvidenceError, ProviderNotPermitted
 from groundscribe.stages.ingestion import IngestedSource
@@ -47,97 +52,14 @@ from groundscribe.workflow.states import WorkflowAction
 #: record could drift apart would be untraceable in exactly the case that matters.
 EXTRACTION_STAGE = "extract_source_truth"
 
-#: The versioned context-selection strategy recorded with every run of it.
-EXTRACTION_STRATEGY = "source_segments_in_order"
+#: The context-selection strategy phase 06 chose, kept under the name phase 06
+#: gave it so records written before phase 12 read the same as records written
+#: after it. The strategies themselves now live in :mod:`groundscribe.stages.context`.
+EXTRACTION_STRATEGY = ContextStrategy.IN_ORDER.value
 EXTRACTION_STRATEGY_VERSION = "1"
 
 #: Default budget for the source material in one extraction call.
 DEFAULT_TOKEN_BUDGET = 6000
-
-#: Characters per token. A heuristic, and deliberately a crude one: it is used to
-#: decide what fits, and it is *recorded* alongside the decision, so a later phase
-#: swapping in a real tokeniser changes the numbers without changing the meaning.
-CHARS_PER_TOKEN = 4
-
-
-@dataclass(frozen=True)
-class SelectedSegment:
-    """One segment as offered to the model, possibly shortened to fit."""
-
-    segment: SourceSegment
-    text: str
-    truncated: bool
-
-    @property
-    def id(self) -> str:
-        return self.segment.id
-
-    @property
-    def kind(self) -> str:
-        return self.segment.kind.value
-
-
-@dataclass(frozen=True)
-class ContextWindow:
-    """What was chosen for one call, and what became of everything else."""
-
-    selected: tuple[SelectedSegment, ...]
-    candidates: tuple[ContextCandidate, ...]
-    token_budget: int
-
-
-def select_segments(segments: Sequence[SourceSegment], *, token_budget: int) -> ContextWindow:
-    """Fit the source into ``token_budget``, recording the fate of every segment.
-
-    Segments are taken in document order rather than by relevance. Extraction
-    reads the *whole* source; there is no query to be relevant to, and reordering
-    it would break the development history the order encodes. Retrieval-based
-    selection arrives in phase 12, which is why the strategy is versioned now.
-    """
-    selected: list[SelectedSegment] = []
-    candidates: list[ContextCandidate] = []
-    remaining = token_budget * CHARS_PER_TOKEN
-
-    for segment in segments:
-        length = len(segment.text)
-        if remaining <= 0:
-            candidates.append(
-                ContextCandidate(
-                    reference=segment.id,
-                    disposition=ContextDisposition.EXCLUDED,
-                    reason=f"beyond the {token_budget}-token context budget",
-                )
-            )
-            continue
-        if length <= remaining:
-            selected.append(SelectedSegment(segment=segment, text=segment.text, truncated=False))
-            candidates.append(
-                ContextCandidate(
-                    reference=segment.id,
-                    disposition=ContextDisposition.SELECTED,
-                    reason=f"fits the {token_budget}-token context budget",
-                )
-            )
-            remaining -= length
-            continue
-        selected.append(
-            SelectedSegment(segment=segment, text=segment.text[:remaining], truncated=True)
-        )
-        candidates.append(
-            ContextCandidate(
-                reference=segment.id,
-                disposition=ContextDisposition.TRUNCATED,
-                reason=(
-                    f"cut to {remaining} of {length} characters by the "
-                    f"{token_budget}-token context budget"
-                ),
-            )
-        )
-        remaining = 0
-
-    return ContextWindow(
-        selected=tuple(selected), candidates=tuple(candidates), token_budget=token_budget
-    )
 
 
 class ExtractSourceTruth:
@@ -169,6 +91,7 @@ class ExtractSourceTruth:
         answers: Sequence[domain_models.UserAnswer] = (),
         previous: SourceModel | None = None,
         previous_snapshot: ArtifactSnapshot | None = None,
+        context_strategy: ContextStrategy = ContextStrategy.IN_ORDER,
     ) -> None:
         self._source = source
         self._token_budget = token_budget
@@ -178,6 +101,7 @@ class ExtractSourceTruth:
         self._answers = tuple(answers)
         self._previous = previous
         self._previous_snapshot = previous_snapshot
+        self._context_strategy = context_strategy
 
     async def run(
         self, context: PipelineContext, execution: models.StageExecution
@@ -185,11 +109,16 @@ class ExtractSourceTruth:
         """Select context, generate, check the citations, store the model."""
         require_permitted_provider(context, EXTRACTION_STAGE, override=self._override)
 
-        window = select_segments(self._source.segments, token_budget=self._token_budget)
+        window = select_context(
+            self._source.segments,
+            strategy=self._context_strategy,
+            query=_subject_of(context),
+            token_budget=self._token_budget,
+        )
         context.recorder.record_context_selection(
             execution,
-            strategy=EXTRACTION_STRATEGY,
-            strategy_version=EXTRACTION_STRATEGY_VERSION,
+            strategy=window.strategy.value,
+            strategy_version=window.strategy_version,
             candidates=window.candidates,
             token_budget=window.token_budget,
         )
@@ -315,6 +244,21 @@ def require_permitted_provider(
         )
 
 
+def _subject_of(context: PipelineContext) -> str:
+    """What this project is for, as the query relevance is measured against.
+
+    The project's own title and description, because they are the only statement
+    of intent that exists this early — the architecture and the brief are both
+    downstream of the source model being extracted. A retrieval query nobody
+    wrote is not available here, and inventing one from the source itself would
+    rank the source against a summary of the source.
+    """
+    project = context.session.get(Project, context.project_id)
+    if project is None:
+        return ""
+    return f"{project.title} {project.description}".strip()
+
+
 def check_citations(cited: frozenset[str], window: ContextWindow) -> None:
     """Fail unless every cited segment is one that was actually shown.
 
@@ -340,10 +284,12 @@ __all__ = [
     "EXTRACTION_STAGE",
     "EXTRACTION_STRATEGY",
     "EXTRACTION_STRATEGY_VERSION",
+    "ContextStrategy",
     "ContextWindow",
     "ExtractSourceTruth",
     "SelectedSegment",
     "check_citations",
     "require_permitted_provider",
+    "select_context",
     "select_segments",
 ]
