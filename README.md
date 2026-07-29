@@ -39,6 +39,8 @@ prompts/<template_id>/metadata.yaml   # declared versions + which one is current
 prompts/<template_id>/v1.jinja2       # one file per version
 config/model-routing.yaml             # per-stage provider/model/params, versioned
 config/workflow-policy.yaml           # failure routing, rewrite limits, stagnation
+config/scoring-rubric.yaml            # dimension weights + what passes, versioned
+config/scoring-rubric-<version>.yaml  # a superseded or candidate rubric, kept
 ```
 
 Both roots can be pointed elsewhere with `GROUNDSCRIBE_PROMPTS_ROOT` and
@@ -50,13 +52,20 @@ provenance record ambiguous.
 A superseded prompt version is kept rather than deleted: a run that produced an
 artefact under `v1` must still be able to name and re-render the prompt it
 actually used, which is why `metadata.yaml` declares `current_version` instead of
-the store inferring it from the highest file on disk.
+the store inferring it from the highest file on disk. Scoring rubrics work the
+same way — `scoring-rubric.yaml` is whichever is current, and an experiment
+comparing two of them loads the other by name. A version that is not on disk is
+an error rather than a fallback: scoring a candidate under the baseline's rubric
+and reporting the two as comparable is the failure worth being loud about.
 
 ### Golden data
 
 `evaluations/golden/` holds representative source material and the structured
-output a good model returns for it — the same data phase 12's evaluation suite
-scores against. Golden responses reference source segments by label (`S0`, `S1`,
+output a good model returns for it — the fixtures the stage tests run against.
+Evaluation *datasets* are a different thing built at runtime: a corpus of
+articles a person actually approved, which is what an experiment measures a
+candidate configuration over (`writer experiment dataset`). Confidential source
+material stays out of one until a project is named as an exception. Golden responses reference source segments by label (`S0`, `S1`,
 …) because ids are generated per run; the tests substitute the real ids of a
 freshly ingested document.
 
@@ -115,8 +124,25 @@ uv run writer architecture propose <project>
 uv run writer architecture approve <project> --by me
 uv run writer article draft <article>
 uv run writer execution inspect <execution>
+uv run writer execution replay <execution> --by me
+uv run writer execution fork <execution> --by me --model llama3.1:8b-instruct
 uv run writer experiment compare <left> <right>
+uv run writer experiment reproducibility
+uv run writer experiment dataset "approved work" --created-by me
+uv run writer experiment create "cheaper model?" --dataset <id> --created-by me \
+    --arm baseline --arm "small=model=llama3.1:8b-instruct"
+uv run writer experiment start <experiment>
+uv run writer experiment report <experiment>
 ```
+
+An experiment arm is a *fork*: a label plus the variables it changes, run over a
+corpus built from the articles a person approved. The baseline runs too rather
+than reusing the numbers already on record — a hosted model may answer
+differently the second time, and a candidate compared against a stored figure
+would be compared against a different draw as well as a different configuration.
+`writer experiment reproducibility` prints what repeating work here does and does
+not guarantee; the last clause is the one that says a model is not promised to
+repeat itself.
 
 `GROUNDSCRIBE_DATABASE_URL` and `GROUNDSCRIBE_BLOB_ROOT` point the same binaries at
 a different installation — note that Alembic reads its URL from `alembic.ini`
