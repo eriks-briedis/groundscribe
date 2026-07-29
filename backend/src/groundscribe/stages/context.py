@@ -33,10 +33,11 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from groundscribe.domain.confidentiality import Exclusion
 from groundscribe.domain.models import SourceSegment
 from groundscribe.provenance.enums import ContextDisposition
 from groundscribe.provenance.schemas import ContextCandidate
@@ -127,15 +128,86 @@ def select_context(
     in-order strategy. It is accepted by both so that switching strategy is a
     change of one argument — a caller that had to restructure its call to run an
     experiment would be a caller that quietly stops running them.
+
+    Material flagged excluded-from-model-input is withheld first, whatever the
+    strategy (plan/13).
     """
+    sendable, withheld = _partition_by_confidentiality(segments)
     if strategy is ContextStrategy.RELEVANCE_RANKED:
-        return _relevance_ranked(segments, query=query, token_budget=token_budget)
-    return _in_order(segments, token_budget=token_budget)
+        window = _relevance_ranked(sendable, query=query, token_budget=token_budget)
+    else:
+        window = _in_order(sendable, token_budget=token_budget)
+    return _with_withheld(window, segments, withheld)
 
 
 def select_segments(segments: Sequence[SourceSegment], *, token_budget: int) -> ContextWindow:
     """Phase 06's selection, by the name phase 06 gave it."""
-    return _in_order(segments, token_budget=token_budget)
+    return select_context(segments, token_budget=token_budget)
+
+
+# ----------------------------------------------------------------------
+# Confidentiality (phase 13)
+# ----------------------------------------------------------------------
+
+
+def _partition_by_confidentiality(
+    segments: Sequence[SourceSegment],
+) -> tuple[list[SourceSegment], dict[str, ContextCandidate]]:
+    """Split the source into what may be sent and what may not.
+
+    Done *before* the strategy runs, so withheld material never competes for the
+    budget. A confidential paragraph that still reserved its own space would push
+    publishable material out of the prompt, which would make marking something
+    confidential quietly degrade the article — a cost nobody agreed to and
+    nothing in the record would explain.
+    """
+    sendable: list[SourceSegment] = []
+    withheld: dict[str, ContextCandidate] = {}
+    for segment in segments:
+        flags = segment.flags
+        if flags.may_be_sent_to_a_provider:
+            sendable.append(segment)
+            continue
+        withheld[segment.id] = ContextCandidate(
+            reference=segment.id,
+            disposition=ContextDisposition.EXCLUDED,
+            # Names confidentiality and never the budget: a reader who cannot
+            # tell "withheld because it is confidential" from "did not fit"
+            # cannot tell a working safeguard from a small budget.
+            reason=(
+                f"withheld from the model: {flags.classification.value} material, "
+                f"{Exclusion.MODEL_INPUT.value}"
+            ),
+        )
+    return sendable, withheld
+
+
+def _with_withheld(
+    window: ContextWindow,
+    segments: Sequence[SourceSegment],
+    withheld: Mapping[str, ContextCandidate],
+) -> ContextWindow:
+    """Put the withheld segments back into the record, in document order.
+
+    They are absent from ``selected`` and present in ``candidates``. Material
+    that vanished without a record would be indistinguishable from material that
+    was never there — the confusion the context-selection record exists to
+    prevent (plan/03).
+    """
+    if not withheld:
+        return window
+    considered = {candidate.reference: candidate for candidate in window.candidates}
+    return ContextWindow(
+        selected=window.selected,
+        candidates=tuple(
+            withheld.get(segment.id) or considered[segment.id]
+            for segment in segments
+            if segment.id in withheld or segment.id in considered
+        ),
+        token_budget=window.token_budget,
+        strategy=window.strategy,
+        ranked=window.ranked,
+    )
 
 
 # ----------------------------------------------------------------------
