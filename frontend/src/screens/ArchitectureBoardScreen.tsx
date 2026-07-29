@@ -10,20 +10,22 @@
  */
 import { useState } from 'react';
 
-import { fetchArchitecture, type ArchitectureBoard } from '@/api/client';
+import { fetchArchitecture, sendCommand, type ArchitectureBoard } from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
 import { Payload } from '@/components/Disclosure';
 
 export interface ArchitectureBoardScreenProps {
   projectId: string;
+  actor: string;
 }
 
-export function ArchitectureBoardScreen({ projectId }: ArchitectureBoardScreenProps) {
+export function ArchitectureBoardScreen({ projectId, actor }: ArchitectureBoardScreenProps) {
   const resource = useResource<ArchitectureBoard>(
     () => fetchArchitecture(projectId),
     [projectId],
   );
   const [comparing, setComparing] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     <Loaded resource={resource}>
@@ -52,9 +54,37 @@ export function ArchitectureBoardScreen({ projectId }: ArchitectureBoardScreenPr
               ))}
             </ul>
 
-            <button type="button" onClick={() => setComparing((value) => !value)}>
-              {comparing ? 'hide versions' : 'compare versions'}
-            </button>
+            <div className="actions">
+              <button type="button" onClick={() => setComparing((value) => !value)}>
+                {comparing ? 'hide versions' : 'compare versions'}
+              </button>
+              {board.edit_command ? (
+                <button type="button" onClick={() => setEditing((value) => !value)}>
+                  {editing ? 'stop editing' : 'edit the architecture'}
+                </button>
+              ) : null}
+              {board.approve_command ? (
+                <Approve
+                  path={board.approve_command.path ?? ''}
+                  actor={actor}
+                  onDone={() => resource.reload()}
+                />
+              ) : null}
+            </div>
+
+            {editing && board.edit_command ? (
+              <EditForm
+                path={board.edit_command.path ?? ''}
+                method={board.edit_command.method ?? 'PUT'}
+                operations={board.operations ?? []}
+                concepts={current?.concepts ?? []}
+                actor={actor}
+                onDone={() => {
+                  setEditing(false);
+                  resource.reload();
+                }}
+              />
+            ) : null}
 
             {comparing ? (
               <section className="panel versions">
@@ -80,5 +110,135 @@ export function ArchitectureBoardScreen({ projectId }: ArchitectureBoardScreenPr
         );
       }}
     </Loaded>
+  );
+}
+
+function Approve({ path, actor, onDone }: { path: string; actor: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setProblem(null);
+          sendCommand(path, { actor_id: actor })
+            .then(onDone)
+            .catch((error: unknown) => setProblem(String(error)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        approve architecture
+      </button>
+      {problem ? <p role="alert">{problem}</p> : null}
+    </>
+  );
+}
+
+interface EditFormProps {
+  path: string;
+  method: string;
+  operations: readonly string[];
+  concepts: readonly { id: string; title: string }[];
+  actor: string;
+  onDone: () => void;
+}
+
+/**
+ * One override, submitted as the backend describes it.
+ *
+ * The operations come from the response and the fields are filled in for
+ * whichever is chosen; the form does not know that a rename needs a title and a
+ * merge does not, beyond offering the inputs. Phase 06 validates the command and
+ * refuses one that does not make sense, which is the check that matters — a form
+ * that enforced its own version of those rules would be a second opinion about
+ * what an override may do.
+ */
+function EditForm({ path, method, operations, concepts, actor, onDone }: EditFormProps) {
+  const [operation, setOperation] = useState(operations[0] ?? '');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [title, setTitle] = useState('');
+  const [thesis, setThesis] = useState('');
+  const [claims, setClaims] = useState('');
+  const [reason, setReason] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const submit = async () => {
+    setProblem(null);
+    const command: Record<string, unknown> = { operation, article_ids: selected };
+    if (title) command.title = title;
+    if (thesis) command.thesis = thesis;
+    if (claims) command.claim_ids = claims.split(/[,\s]+/).filter(Boolean);
+    try {
+      await sendCommand(path, { commands: [command], requested_by: actor, reason }, method);
+      onDone();
+    } catch (error) {
+      setProblem(String(error));
+    }
+  };
+
+  return (
+    <form
+      className="panel edit-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <label>
+        Operation
+        <select value={operation} onChange={(event) => setOperation(event.target.value)}>
+          {operations.map((name) => (
+            <option key={name} value={name}>
+              {name.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Which articles</legend>
+        {concepts.map((concept) => (
+          <label key={concept.id}>
+            <input
+              type="checkbox"
+              value={concept.id}
+              checked={selected.includes(concept.id)}
+              onChange={() =>
+                setSelected((current) =>
+                  current.includes(concept.id)
+                    ? current.filter((id) => id !== concept.id)
+                    : [...current, concept.id],
+                )
+              }
+            />
+            {concept.title}
+          </label>
+        ))}
+      </fieldset>
+
+      <label>
+        New title
+        <input value={title} onChange={(event) => setTitle(event.target.value)} />
+      </label>
+      <label>
+        New thesis
+        <input value={thesis} onChange={(event) => setThesis(event.target.value)} />
+      </label>
+      <label>
+        Claim ids
+        <input value={claims} onChange={(event) => setClaims(event.target.value)} />
+      </label>
+      <label>
+        Why
+        <input value={reason} onChange={(event) => setReason(event.target.value)} />
+      </label>
+
+      <button type="submit">submit the edit</button>
+      {problem ? <p role="alert">{problem}</p> : null}
+    </form>
   );
 }

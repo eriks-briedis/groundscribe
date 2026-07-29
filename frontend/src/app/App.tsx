@@ -51,7 +51,7 @@ function Screen({ hash }: { hash: string }) {
   if (route === 'projects' && id) {
     if (tail === 'source') return <SourceWorkspaceScreen projectId={id} />;
     if (tail === 'questions') return <QuestionQueueScreen projectId={id} actor={ACTOR} />;
-    if (tail === 'architecture') return <ArchitectureBoardScreen projectId={id} />;
+    if (tail === 'architecture') return <ArchitectureBoardScreen projectId={id} actor={ACTOR} />;
     if (tail === 'trace') return <ExecutionTimelineScreen projectId={id} />;
     return <DashboardScreen projectId={id} actor={ACTOR} />;
   }

@@ -1,13 +1,30 @@
 /**
  * How the score moved (phase 11).
  *
- * plan/11 → *Review history: score progression table*. Every row carries the
- * rubric version it was scored under and, where it failed, what it failed on:
+ * plan/11 → *Review history: score progression table*, and the *confidence*
+ * the approval view needs. Every row carries the rubric version it was scored
+ * under, how many passes produced it and how far they disagreed, and — where it
+ * failed — what it failed on:
  * phase 08's mitigation for false precision is that a score is never shown
  * without the reasoning that produced it, and a table of bare numbers would undo
  * that on the screen where it matters most.
  */
 import type { ScoreView } from '@/api/client';
+
+/** How many passes produced a score, and how far they sat apart. */
+function Confidence({ value }: { value: ScoreView['confidence'] }) {
+  if (!value) return <>not recorded</>;
+  const spread =
+    value.dispersion === null || value.dispersion === undefined
+      ? ''
+      : ` · spread ${value.dispersion}`;
+  return (
+    <>
+      {value.repeats} {value.repeats === 1 ? 'pass' : 'passes'}
+      {spread}
+    </>
+  );
+}
 
 export interface ScoreTableProps {
   scores: readonly ScoreView[];
@@ -26,6 +43,7 @@ export function ScoreTable({ scores }: ScoreTableProps) {
           <th scope="col">overall</th>
           <th scope="col">dimensions</th>
           <th scope="col">why</th>
+          <th scope="col">confidence</th>
           <th scope="col">rubric</th>
         </tr>
       </thead>
@@ -49,6 +67,9 @@ export function ScoreTable({ scores }: ScoreTableProps) {
                   <li key={position}>{String((failure as { detail?: unknown }).detail ?? '')}</li>
                 ))}
               </ul>
+            </td>
+            <td>
+              <Confidence value={score.confidence} />
             </td>
             <td>
               {score.rubric_version} · {score.evaluator_version}

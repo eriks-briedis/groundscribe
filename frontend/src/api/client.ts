@@ -188,7 +188,7 @@ export async function fetchJob(jobId: string): Promise<Job> {
 }
 
 /**
- * Send one command, by the path and body a screen was handed.
+ * Send one command, by the path, method and body a screen was handed.
  *
  * Untyped in its body on purpose, and only here: an action bar is given
  * `available_actions` by the backend and posts what that action names. Typing
@@ -199,9 +199,10 @@ export async function fetchJob(jobId: string): Promise<Job> {
 export async function sendCommand(
   path: string,
   body: Record<string, unknown> = {},
+  method = 'POST',
 ): Promise<CommandResponse> {
   const response = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
+    method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });

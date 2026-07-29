@@ -111,6 +111,25 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
             </ul>
           </section>
 
+          <section className="panel" data-testid="source-evidence">
+            <h2>Source evidence</h2>
+            {workspace.source_evidence?.length ? (
+              <ul className="claims">
+                {workspace.source_evidence.map((claim) => (
+                  <li key={claim.id}>
+                    {claim.text} <span className="tag">{claim.classification}</span>
+                    <span className="muted"> ({(claim.segment_ids ?? []).join(', ')})</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>
+                No claim is cited yet.{' '}
+                <a href={`#/projects/${workspace.article.project_id}/source`}>Source workspace</a>
+              </p>
+            )}
+          </section>
+
           <section className="panel">
             <h2>Revision plan</h2>
             {workspace.revision_plan ? (
