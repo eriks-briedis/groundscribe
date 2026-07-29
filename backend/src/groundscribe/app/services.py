@@ -55,6 +55,7 @@ from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobType
 from groundscribe.jobs.models import Job
+from groundscribe.privacy.material import restricted_spans
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageRunner
@@ -937,7 +938,15 @@ def resume_run(runtime: Runtime, run: models.PipelineRun) -> Resumed:
         run=run,
         state=position.state,
         policy=runtime.policy,
-        confidential=constraints.confidential_names,
+        # The names the project declared, plus the spans of source material a
+        # person flagged out of the final output (phase 13). Both are the same
+        # question to the guard — "does this text appear in what is about to be
+        # published?" — and a guard handed only half the evidence passes half
+        # the leaks.
+        confidential=(
+            *constraints.confidential_names,
+            *restricted_spans(runtime.session, run.project_id),
+        ),
         actor_id=runtime.actor_id,
         execution=position.workflow_execution,
     )

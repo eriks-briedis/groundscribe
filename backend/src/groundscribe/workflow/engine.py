@@ -499,6 +499,10 @@ class WorkflowEngine:
         gate before something is published, and the cost of a false positive —
         a person looking at the draft again — is nothing beside the cost of the
         miss it is here to prevent.
+
+        The markers are the project's declared confidential names *and* the spans
+        of source material flagged out of the final output (phase 13); the caller
+        assembles them, because only it can read the database.
         """
         if not self._confidential:
             return
@@ -507,8 +511,8 @@ class WorkflowEngine:
             for marker in self._confidential:
                 if marker in body:
                     raise ConfidentialMaterialError(
-                        f"version {snapshot.id} contains confidential material ({marker!r}) "
-                        "and cannot be published"
+                        f"version {snapshot.id} contains confidential material "
+                        f"({_describe(marker)}) and cannot be published"
                     )
 
     def _remember(self, action: WorkflowAction, artifacts: Sequence[ArtifactSnapshot]) -> None:
@@ -610,6 +614,21 @@ class WorkflowEngine:
             execution=self.execution,
             payload={"reason": reason, **payload},
         )
+
+
+#: Longest marker quoted verbatim in a refusal. A declared confidential *name* is
+#: short, and repeating it tells the person who declared it exactly what was
+#: found. A flagged span of source material is a sentence, and repeating one puts
+#: the leak into the error message, the log, and the bug report it gets pasted
+#: into — so those are described by length instead.
+_QUOTABLE_MARKER = 32
+
+
+def _describe(marker: str) -> str:
+    """Name what was found without becoming another copy of it."""
+    if len(marker) <= _QUOTABLE_MARKER:
+        return repr(marker)
+    return f"a {len(marker)}-character passage flagged as excluded from the final output"
 
 
 __all__ = [
