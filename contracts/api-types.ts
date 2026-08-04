@@ -992,6 +992,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/routing-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Routing Profile
+         * @description Point this project's stages at a routing profile, or back at the default.
+         *
+         *     ``PUT``, not ``POST``: the body states what the profile *is*, and sending it
+         *     twice leaves the project where sending it once did. Not 202 either — nothing
+         *     is queued, and the change applies to the next stage that runs.
+         */
+        put: operations["set_routing_profile_projects__project_id__routing_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {
         parameters: {
             query?: never;
@@ -2968,6 +2992,7 @@ export interface components {
             /** Recent Failures */
             recent_failures?: components["schemas"]["FailureView"][];
             retry_command?: components["schemas"]["ActionLink"] | null;
+            routing: components["schemas"]["RoutingProfilesView"];
             /** Run Id */
             run_id: string;
             source: components["schemas"]["SourceCompleteness"];
@@ -3016,6 +3041,8 @@ export interface components {
             description: string;
             /** Id */
             id: string;
+            /** Routing Profile */
+            routing_profile?: string | null;
             /** Title */
             title: string;
         };
@@ -3190,6 +3217,32 @@ export interface components {
             version_ordinal: number;
         };
         /**
+         * RoutingProfilesView
+         * @description Which routing policy a project runs against, and what else it could.
+         *
+         *     ``selected`` is ``None`` for the shipped default, and the default is absent
+         *     from ``available``: it is what not choosing means, and listing it beside the
+         *     named profiles would make "the default" and "openai" look like the same kind
+         *     of answer when one of them is currently the other.
+         *
+         *     Carried on the dashboard rather than served from its own read, for the reason
+         *     every other screen is fed by one composed read: a screen that assembled
+         *     itself from four GETs would have four chances to be half-loaded, and this is
+         *     the one panel whose whole job is to state a fact accurately.
+         */
+        RoutingProfilesView: {
+            /** Available */
+            available?: string[];
+            command?: components["schemas"]["ActionLink"] | null;
+            /**
+             * Policy Version
+             * @default
+             */
+            policy_version: string;
+            /** Selected */
+            selected?: string | null;
+        };
+        /**
          * RunMetrics
          * @description The observability surface for one project, or for the whole installation.
          */
@@ -3340,6 +3393,20 @@ export interface components {
         SessionState: {
             /** Authenticated */
             authenticated: boolean;
+        };
+        /**
+         * SetRoutingProfile
+         * @description Move a project onto a routing profile, or back onto the default.
+         *
+         *     ``null`` is the default, and is meaningfully different from omitting the
+         *     field — so it is required. A screen that left it out because the person
+         *     cleared the box would otherwise be asking for no change at all.
+         */
+        SetRoutingProfile: {
+            /** Actor Id */
+            actor_id: string;
+            /** Profile */
+            profile: string | null;
         };
         /**
          * SourceCompleteness
@@ -5456,6 +5523,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_routing_profile_projects__project_id__routing_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRoutingProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -445,6 +445,17 @@ class ProviderVisibilityOut(BaseModel):
     has_confidential_material: bool
 
 
+class SetRoutingProfile(ActorAction):
+    """Move a project onto a routing profile, or back onto the default.
+
+    ``null`` is the default, and is meaningfully different from omitting the
+    field — so it is required. A screen that left it out because the person
+    cleared the box would otherwise be asking for no change at all.
+    """
+
+    profile: str | None
+
+
 class TraceExportOut(BaseModel):
     """One project's execution records, with what was withheld from them."""
 
@@ -497,6 +508,7 @@ __all__ = [
     "ProviderVisibilityOut",
     "RecordPreference",
     "RejectSuggestion",
+    "SetRoutingProfile",
     "StageVisibilityOut",
     "TraceDeletionOut",
     "TraceEventOut",

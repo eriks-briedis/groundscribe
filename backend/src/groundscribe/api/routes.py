@@ -894,6 +894,26 @@ def read_provider_visibility(project_id: str, service: Service) -> schemas.Provi
     return schemas.ProviderVisibilityOut.model_validate(service.provider_visibility(project_id))
 
 
+@router.put(
+    "/projects/{project_id}/routing-profile",
+    response_model=schemas.CommandResponse,
+)
+def set_routing_profile(
+    project_id: str,
+    body: schemas.SetRoutingProfile,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Point this project's stages at a routing profile, or back at the default.
+
+    ``PUT``, not ``POST``: the body states what the profile *is*, and sending it
+    twice leaves the project where sending it once did. Not 202 either — nothing
+    is queued, and the change applies to the next stage that runs.
+    """
+    return render(
+        service.set_routing_profile(project_id, profile=body.profile, chosen_by=body.actor_id)
+    )
+
+
 @router.get("/projects/{project_id}/traces", response_model=schemas.TraceExportOut)
 def export_project_traces(
     project_id: str,

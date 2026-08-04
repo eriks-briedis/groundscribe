@@ -89,6 +89,7 @@ from groundscribe.app.views import (
     QuestionView,
     ReviewHistory,
     ReviewRound,
+    RoutingProfilesView,
     ScoreConfidenceView,
     ScoreView,
     SegmentView,
@@ -110,6 +111,7 @@ from groundscribe.domain.enums import ArtifactType, FindingStatus
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.jobs.enums import JobStatus
 from groundscribe.jobs.models import Job
+from groundscribe.llm.routing import RoutingConfigError, available_profiles, routing_policy
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import (
     ExecutionStatus,
@@ -225,6 +227,7 @@ class ProjectionReader:
                 title=project.title,
                 description=project.description,
                 author_id=project.user_id,
+                routing_profile=project.routing_profile,
             ),
             run_id=run.id,
             state=position.state,
@@ -236,6 +239,7 @@ class ProjectionReader:
             ),
             retry_command=self._retry_command(run, project_id),
             constraints=_constraints_view(constraints),
+            routing=_routing_view(project),
             source=self._completeness(project_id, questions),
             articles=[self._card(article) for article in self._articles(project_id)],
             questions=[question for question in questions if not question.resolved],
@@ -1429,6 +1433,36 @@ def _constraints_view(row: domain_models.ProjectConstraints) -> ConstraintsView:
         allowed_providers=list(row.allowed_providers),
         confidential_names=list(row.confidential_names),
         trace_retention_consent=row.trace_retention_consent,
+    )
+
+
+def _routing_view(project: domain_models.Project) -> RoutingProfilesView:
+    """Which routing policy this project runs against, and what else it could.
+
+    The policy is loaded to read its version, which is a file read per dashboard
+    — cheap, and the alternative is worse: caching it here would mean a screen
+    reporting the version of a file somebody has since edited, on the one panel
+    whose entire job is to say accurately what is running.
+
+    A selected profile whose file has gone is reported as selected with no
+    version rather than raising. The dashboard is where a person would go to
+    *fix* that, and a read that failed would take the screen down with it.
+    """
+    try:
+        version = routing_policy(project.routing_profile).version
+    except RoutingConfigError:
+        version = ""
+    return RoutingProfilesView(
+        selected=project.routing_profile,
+        available=list(available_profiles()),
+        policy_version=version,
+        command=ActionLink(
+            action="set_routing_profile",
+            method="PUT",
+            path=f"/projects/{project.id}/routing-profile",
+            requires_actor=True,
+            taken_by="you",
+        ),
     )
 
 

@@ -73,6 +73,18 @@ export const dashboard: Dashboard = {
     confidential_names: ['Project Halide'],
     trace_retention_consent: true,
   },
+  routing: {
+    selected: null,
+    available: ['openai'],
+    policy_version: '11',
+    command: {
+      action: 'set_routing_profile',
+      method: 'PUT',
+      path: `/projects/${PROJECT_ID}/routing-profile`,
+      requires_actor: true,
+      taken_by: 'you',
+    },
+  },
   source: {
     documents: 1,
     confidential_documents: 0,

@@ -38,6 +38,7 @@ to any of them changes what the system produces:
 prompts/<template_id>/metadata.yaml   # declared versions + which one is current
 prompts/<template_id>/v1.jinja2       # one file per version
 config/model-routing.yaml             # per-stage provider/model/params, versioned
+config/model-routing.<profile>.yaml   # an alternative policy a project can select
 config/model-pricing.yaml             # per-model token prices, for the cost metric
 config/workflow-policy.yaml           # failure routing, rewrite limits, stagnation
 config/scoring-rubric.yaml            # dimension weights + what passes, versioned
@@ -196,11 +197,50 @@ unpriced, once, rather than leaving you to notice on a dashboard weeks later.
 
 ### Running hosted models instead
 
-Routing v9 in git history points every stage at OpenAI; restoring it is this one
-file plus an `OPENAI_API_KEY`. The Anthropic adapter is still a phase-04 stub that
-raises rather than answers — wiring it is the same shape of work as
-`llm/adapters/ollama.py` or `llm/adapters/openai.py`, each about 200 lines against
-that provider's own wire format.
+`config/model-routing.yaml` is the installation's default, and editing it moves
+every project. To move **one** project, select a routing profile:
+
+```bash
+# what this project runs against, and what else it could
+uv run writer project routing <project-id>
+
+# move it, and move it back
+uv run writer project routing <project-id> --profile openai --by ada
+uv run writer project routing <project-id> --profile default --by ada
+```
+
+The same control is on the project dashboard, under **Models**.
+
+A profile is a whole policy file named beside the default —
+`config/model-routing.openai.yaml` is the one that ships — not a provider field to
+flip. That is deliberate: `context_window` exists because Ollama allocates one per
+call, the "degrade the window" fallback is a local memory decision, and the
+reasoning models reject `temperature` outright. Swapping a provider on a route
+built for another provider produces a config that is valid, wrong, and quiet about
+it. Adding a profile is adding a file; the name in the filename is the name you
+select.
+
+Check a profile before you move anything onto it — `probe` takes one:
+
+```bash
+uv run writer llm probe --profile openai
+```
+
+Each profile carries its own `version:` string, so every `StageExecution` still
+names the policy it ran under and a run that changed profile half way through
+says so per stage. Selecting a profile takes effect on the next stage to run; it
+does not re-run anything already recorded.
+
+**Three separate statements, and this is only one of them.** A key on the machine
+makes a provider *reachable*; a project's `allowed_providers` makes it
+*permitted*; a routing profile decides *where the calls go*. Selecting `openai`
+for a project that has not permitted it fails at the stage, loudly, saying so.
+
+Routing v9 in git history also points every stage at OpenAI, from before profiles
+existed. The Anthropic adapter is still a phase-04 stub that raises rather than
+answers — wiring it is the same shape of work as `llm/adapters/ollama.py` or
+`llm/adapters/openai.py`, each about 200 lines against that provider's own wire
+format.
 
 The two real adapters deliberately share no HTTP base class, and that is worth
 knowing before you write a third. Ollama serves an OpenAI-compatible endpoint, so

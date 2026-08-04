@@ -191,6 +191,11 @@ class ProjectSummary(BaseModel):
     title: str
     description: str = ""
     author_id: str
+    #: Which routing policy this project's stages run against (phase 15).
+    #: ``None`` is the shipped default, and is the honest answer rather than a
+    #: name — the default file's identity is that it has none, and inventing one
+    #: here would make "default" look like a profile somebody chose.
+    routing_profile: str | None = None
 
 
 class ProjectCard(BaseModel):
@@ -323,6 +328,29 @@ class ProjectJourney(BaseModel):
     waiting_on: str = "pipeline"
 
 
+class RoutingProfilesView(BaseModel):
+    """Which routing policy a project runs against, and what else it could.
+
+    ``selected`` is ``None`` for the shipped default, and the default is absent
+    from ``available``: it is what not choosing means, and listing it beside the
+    named profiles would make "the default" and "openai" look like the same kind
+    of answer when one of them is currently the other.
+
+    Carried on the dashboard rather than served from its own read, for the reason
+    every other screen is fed by one composed read: a screen that assembled
+    itself from four GETs would have four chances to be half-loaded, and this is
+    the one panel whose whole job is to state a fact accurately.
+    """
+
+    selected: str | None = None
+    available: list[str] = Field(default_factory=list)
+    #: The version string of the policy actually in force, so a screen can say
+    #: what is running without loading the file again and disagreeing.
+    policy_version: str = ""
+    #: How to change it, addressed by the backend like every other command.
+    command: ActionLink | None = None
+
+
 class ProjectDashboard(BaseModel):
     """plan/11 → *Project dashboard*, assembled from rows and nothing else."""
 
@@ -338,6 +366,7 @@ class ProjectDashboard(BaseModel):
     #: time, so an interface never offers to re-run work that is already coming.
     retry_command: ActionLink | None = None
     constraints: ConstraintsView
+    routing: RoutingProfilesView
     source: SourceCompleteness
     articles: list[ArticleCard] = Field(default_factory=list)
     questions: list[QuestionView] = Field(default_factory=list)
@@ -853,6 +882,7 @@ __all__ = [
     "QuestionView",
     "ReviewHistory",
     "ReviewRound",
+    "RoutingProfilesView",
     "ScoreConfidenceView",
     "ScoreView",
     "SegmentView",

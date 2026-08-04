@@ -3495,6 +3495,9 @@
               }
             ]
           },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingProfilesView"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -3515,6 +3518,7 @@
           "state",
           "journey",
           "constraints",
+          "routing",
           "source",
           "usage"
         ],
@@ -3573,6 +3577,17 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "routing_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Profile"
           },
           "title": {
             "title": "Title",
@@ -3914,6 +3929,46 @@
         "title": "ReviewRound",
         "type": "object"
       },
+      "RoutingProfilesView": {
+        "description": "Which routing policy a project runs against, and what else it could.\n\n``selected`` is ``None`` for the shipped default, and the default is absent\nfrom ``available``: it is what not choosing means, and listing it beside the\nnamed profiles would make \"the default\" and \"openai\" look like the same kind\nof answer when one of them is currently the other.\n\nCarried on the dashboard rather than served from its own read, for the reason\nevery other screen is fed by one composed read: a screen that assembled\nitself from four GETs would have four chances to be half-loaded, and this is\nthe one panel whose whole job is to state a fact accurately.",
+        "properties": {
+          "available": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available",
+            "type": "array"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy_version": {
+            "default": "",
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected"
+          }
+        },
+        "title": "RoutingProfilesView",
+        "type": "object"
+      },
       "RunMetrics": {
         "description": "The observability surface for one project, or for the whole installation.",
         "properties": {
@@ -4248,6 +4303,32 @@
           "authenticated"
         ],
         "title": "SessionState",
+        "type": "object"
+      },
+      "SetRoutingProfile": {
+        "description": "Move a project onto a routing profile, or back onto the default.\n\n``null`` is the default, and is meaningfully different from omitting the\nfield \u2014 so it is required. A screen that left it out because the person\ncleared the box would otherwise be asking for no change at all.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          }
+        },
+        "required": [
+          "actor_id",
+          "profile"
+        ],
+        "title": "SetRoutingProfile",
         "type": "object"
       },
       "SourceCompleteness": {
@@ -7467,6 +7548,56 @@
           }
         },
         "summary": "Retry Failed Job"
+      }
+    },
+    "/projects/{project_id}/routing-profile": {
+      "put": {
+        "description": "Point this project's stages at a routing profile, or back at the default.\n\n``PUT``, not ``POST``: the body states what the profile *is*, and sending it\ntwice leaves the project where sending it once did. Not 202 either \u2014 nothing\nis queued, and the change applies to the next stage that runs.",
+        "operationId": "set_routing_profile_projects__project_id__routing_profile_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRoutingProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Routing Profile"
       }
     },
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {

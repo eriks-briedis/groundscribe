@@ -55,6 +55,8 @@ from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobStatus, JobType
 from groundscribe.jobs.models import Job
+from groundscribe.llm.generation import StructuredGenerator
+from groundscribe.llm.routing import available_profiles, routing_policy
 from groundscribe.observability.metrics import RunMetrics, collect_metrics
 from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
 from groundscribe.privacy.material import restricted_spans
@@ -119,6 +121,25 @@ class CommandResult:
     available_actions: tuple[str, ...]
     job: Job | None = None
     detail: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RoutingProfiles:
+    """Which routing policy a project runs against, and what else it could.
+
+    ``selected`` is ``None`` for the shipped default, and the default is not in
+    ``available`` — it is what choosing nothing means, and listing it beside the
+    named profiles would present "the default" and "openai" as the same kind of
+    answer when one of them is currently the other.
+
+    ``policy_version`` is the version string of the policy actually in force, so
+    a screen can show what is running without loading the file a second time and
+    reaching a different conclusion.
+    """
+
+    selected: str | None
+    available: tuple[str, ...]
+    policy_version: str
 
 
 @dataclass(frozen=True)
@@ -683,7 +704,74 @@ class ApplicationService:
             self._runtime.session,
             project_id,
             constraints=rehydrate.constraints(self._runtime.session, project_id),
-            routing=self._runtime.generator.routing,
+            # This project's policy, not the process's. The screen exists to
+            # answer "where does my material go", and answering it from the
+            # default file would describe some other project's providers to
+            # whoever had just moved theirs.
+            routing=generator_for(self._runtime, project_id).routing,
+        )
+
+    def set_routing_profile(
+        self, project_id: str, *, profile: str | None, chosen_by: str
+    ) -> CommandResult:
+        """Point this project's stages at a routing profile, or back at the default.
+
+        The situation this exists for: a policy that suits the installation does
+        not suit one project. A source too long for a local model's context
+        window is the usual way to find out, and before this the options were to
+        edit the shipped config — moving every project — or to leave the run
+        stranded on a stage that cannot fit its own input.
+
+        Takes effect on the next stage to run, and deliberately not on the ones
+        already recorded. Each ``StageExecution`` names the ``policy_version`` it
+        ran under, so a run that changes profile half way through stays
+        readable — it says so, per stage, which is what a mixed run actually was.
+
+        Attributed, because it decides what this project's material is sent to
+        and what its calls cost. Refused for a profile with no file, so the
+        failure lands here, on the person who can fix it, rather than on the
+        worker three stages later.
+
+        Not a transition: the run does not move, and a project with no run at all
+        can still be pointed somewhere. What comes back is where the run already
+        was.
+        """
+        if not chosen_by:
+            raise AttributionRequired("a routing profile decides where material is sent")
+
+        project = self._runtime.session.get(domain_models.Project, project_id)
+        if project is None:
+            raise UnknownProject(f"no project {project_id}")
+
+        chosen = profile or None
+        if chosen is not None:
+            # Loaded, not merely looked for: a file that exists and does not
+            # parse is the same problem to the person choosing, and finding out
+            # at the next model call would be finding out somewhere else.
+            routing_policy(chosen)
+
+        previous = project.routing_profile
+        project.routing_profile = chosen
+        self._runtime.session.flush()
+
+        resumed = self._resume(project_id)
+        self._runtime.recorder.record_user_intervention(
+            resumed.engine.execution,
+            user_id=chosen_by,
+            intervention_type=InterventionType.OVERRIDE,
+            payload={"routing_profile": chosen or "", "previous_routing_profile": previous or ""},
+        )
+        return self._settle(resumed)
+
+    def routing_profiles(self, project_id: str) -> RoutingProfiles:
+        """What this project runs against, and what else it could."""
+        project = self._runtime.session.get(domain_models.Project, project_id)
+        if project is None:
+            raise UnknownProject(f"no project {project_id}")
+        return RoutingProfiles(
+            selected=project.routing_profile,
+            available=available_profiles(),
+            policy_version=generator_for(self._runtime, project_id).routing.version,
         )
 
     def export_traces(
@@ -1150,7 +1238,7 @@ def resume_run(runtime: Runtime, run: models.PipelineRun) -> Resumed:
         engine=engine,
         recorder=runtime.recorder,
         snapshots=runtime.snapshots,
-        generator=runtime.generator,
+        generator=generator_for(runtime, run.project_id),
         session=runtime.session,
         project_id=run.project_id,
         constraints=constraints,
@@ -1159,10 +1247,32 @@ def resume_run(runtime: Runtime, run: models.PipelineRun) -> Resumed:
     return Resumed(run=run, position=position, engine=engine, context=context)
 
 
+def generator_for(runtime: Runtime, project_id: str) -> StructuredGenerator:
+    """The generator this project's stages call through (phase 15).
+
+    Rebound here, on the way into the pipeline context, because this is the last
+    point that knows both the process's clients and whose run is about to use
+    them — and the first point at which "which policy" has an answer. A project
+    that has chosen no profile gets the runtime's own generator unchanged, which
+    is the shipped default and the case for almost every project.
+
+    A profile naming a file that is no longer there raises rather than falling
+    back. The fall-back would run the project on the provider it was moved off,
+    and record a success for having done so.
+    """
+    profile = runtime.session.get(domain_models.Project, project_id)
+    chosen = profile.routing_profile if profile is not None else None
+    if not chosen:
+        return runtime.generator
+    return runtime.generator.with_routing(routing_policy(chosen))
+
+
 __all__ = [
     "ApplicationService",
     "CommandResult",
     "Resumed",
+    "RoutingProfiles",
     "UnknownProject",
+    "generator_for",
     "resume_run",
 ]

@@ -137,6 +137,17 @@ class Project(EntityMixin, Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # Which routing policy this project's stages run against (phase 15). NULL is
+    # "the shipped default", not "unset pending a value" — a project that has
+    # never chosen is the overwhelming majority and should not need a row edit to
+    # say so.
+    #
+    # Here rather than on ProjectConstraints, which is versioned: the question
+    # constraints exist to answer — "what was in force when this artefact was
+    # made?" — is already answered for routing by the policy_version every
+    # StageExecution records. Versioning it twice would give two answers that can
+    # disagree, and the execution's is the one that actually ran.
+    routing_profile: Mapped[str | None] = mapped_column(String, nullable=True)
 
     user: Mapped[User] = relationship()
 

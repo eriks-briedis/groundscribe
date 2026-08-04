@@ -24,6 +24,7 @@ import { fetchDashboard, subscribeToJob, type Dashboard } from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
 import { ActionBar, PendingCommand, Stranded } from '@/components/ActionBar';
 import { JourneyStrip, NowCard } from '@/components/Journey';
+import { RoutingProfilePanel } from '@/components/RoutingProfile';
 
 function money(value: number | null | undefined): string {
   return value === null || value === undefined ? 'not reported' : `$${value}`;
@@ -191,6 +192,11 @@ export function DashboardScreen({ projectId, actor = 'ada' }: DashboardScreenPro
               )}
             </section>
 
+            {/* Below the failures deliberately. This is where a person looks
+                *after* something went wrong in a way the pipeline cannot fix for
+                them — a stage that will not fit its input — and putting it above
+                the record would present a configuration knob as part of the
+                normal reading order. */}
             <section className="panel">
               <h2>Recent failures</h2>
               {(dashboard.recent_failures ?? []).length ? (
@@ -206,6 +212,8 @@ export function DashboardScreen({ projectId, actor = 'ada' }: DashboardScreenPro
                 <p className="empty">Nothing has failed.</p>
               )}
             </section>
+
+            <RoutingProfilePanel profiles={dashboard.routing} actor={actor} onChanged={reload} />
           </section>
         );
       }}

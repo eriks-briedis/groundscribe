@@ -81,6 +81,7 @@ export type QuestionView = Schemas['QuestionView'];
 export type ArticleCard = Schemas['ArticleCard'];
 export type SessionState = Schemas['SessionState'];
 export type ProjectIndex = Schemas['ProjectIndex'];
+export type RoutingProfiles = Schemas['RoutingProfilesView'];
 
 /**
  * Told when the backend says the session is gone.

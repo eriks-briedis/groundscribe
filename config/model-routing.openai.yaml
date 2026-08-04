@@ -1,0 +1,408 @@
+# Per-stage model routing — the `openai` profile (plan/04, phase 15).
+#
+# A *profile*: a whole policy file, named beside the default, that a project
+# selects with `PUT /projects/{id}/routing-profile` or
+# `writer project routing --profile openai`. Projects that choose nothing run
+# `model-routing.yaml`, which is local. Nothing here takes effect for a project
+# that has not asked for it.
+#
+# Derived from version 11's structure — the same stages, in the same order, with
+# the same per-stage reasoning about which need judgement and which need prose.
+# What changed is everything that was sized around a local model, and there is
+# more of that than a provider field.
+#
+# ---------------------------------------------------------------------------
+# What is different from the local default, and why
+# ---------------------------------------------------------------------------
+#
+# **No `context_window`, anywhere.** The field exists because Ollama allocates a
+# window per call and silently truncates the prompt above it, so a stage that did
+# not name one lost the middle of its own input. OpenAI allocates its own; naming
+# a window here would be describing a decision this provider does not let you
+# make. This is the field the local profile calls a memory decision, and it is
+# the reason a project whose source outgrew the local window has somewhere to go.
+#
+# **No `temperature`, and no `top_p`.** Not an oversight and not a downgrade:
+# the reasoning models reject both outright, and the adapter sends only what the
+# policy sets (`_sampling` in `adapters/openai.py`), so a temperature here is a
+# 400 at the first call rather than a knob. Version 9 set them and predates the
+# probe that would have caught it. The gradient version 11 expresses as
+# temperature — determinism for judging, breadth for prose — is expressed here as
+# `reasoning_effort`, which is the same intent in this provider's own terms.
+#
+# **The fallback changes the model, not the call.** Locally there is one model
+# and no second to escalate to, so each fallback re-issues the same request with
+# a smaller window: a real second chance at the two things that actually go wrong
+# on a 16 GB GPU. Neither goes wrong here. On a metered API the rung means what
+# it originally meant — try something cheaper and steadier — so it drops to
+# `gpt-5-mini`. One stage opts out, for the same reason it opts out locally; see
+# the note above `extract_source_truth`.
+#
+# **`json_mode`, not `native_schema`.** The adapter does implement strict
+# `json_schema` for `native_schema`, and it would be the better constraint. It is
+# not set here because OpenAI's strict mode accepts a *subset* of JSON Schema —
+# every property required, `additionalProperties: false` — and this pipeline's
+# schemas are Pydantic's own output, which satisfies neither by construction. A
+# stage set to `native_schema` against a schema strict mode refuses fails at the
+# provider with a 400, on every call, which reads as an outage rather than a
+# configuration mistake. Worth revisiting behind a schema-compatibility pass;
+# not worth guessing at.
+#
+# **Output budgets are version 11's, not version 9's.** How long an answer this
+# pipeline asks for is a property of the work, not of the model that does it —
+# `extract_source_truth` needs 16384 because a 60-page source produced that much
+# evidence, and it needed it on Ollama for the same reason it needs it here.
+# Version 9's 8192 predates the measurement.
+#
+# ---------------------------------------------------------------------------
+# Before your first run on this profile
+# ---------------------------------------------------------------------------
+#
+#   export OPENAI_API_KEY=sk-...
+#   uv run writer llm probe --profile openai   # calls each model, once
+#
+# `probe` answers the two things this file cannot state about itself: whether
+# these model ids exist for that key, and whether they accept the parameters set
+# below. Both of its failure modes are one edit away from fixed.
+#
+# Two gates, not one. A key on the machine makes OpenAI *reachable*; a project
+# must still name `openai` in `allowed_providers` (phase 13) before any of its
+# material moves. Selecting this profile is a third, separate statement — where
+# the calls go — and it does not imply either of the other two. A project that
+# selects `openai` without permitting it fails at the stage, loudly, saying so.
+#
+# Costs money, unlike the default. `config/model-pricing.yaml` ships empty on
+# purpose: nobody preparing this repository can know what an account pays, and a
+# guessed price is a cost metric that is confidently wrong. Fill it in and
+# `writer llm probe` will report which of the models below are priced.
+version: "11-openai"
+description: >
+  OpenAI, split flagship/mini: gpt-5 for the stages that judge or write, gpt-5-mini
+  for the cheap deterministic checks and every fallback rung. Version 11's stage
+  reasoning, with the local sizing removed.
+
+# Unrouted stages land here. Deliberately conservative — a stage nobody has
+# thought about yet should be cheap and deterministic, not creative.
+default:
+  primary:
+    provider: openai
+    model: gpt-5-mini
+    reasoning_effort: low
+    structured_output_mode: json_mode
+    timeout_seconds: 120.0
+
+stages:
+  # Structure matters more than style here, and a schema violation costs a repair
+  # round-trip. A fixed seed: extraction should be reproducible across re-runs of
+  # the same source.
+  extract_claims:
+    rationale: >
+      Structured fidelity dominates; reproducibility matters for re-runs of the
+      same source.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 180.0
+
+  # The phase-06 editorial stages. Extraction is the one place a mistake is
+  # permanent — everything downstream is checked against the source model, so a
+  # claim misclassified here is wrong in every article that follows. The highest
+  # reasoning effort in the file, and the largest output budget: a source model
+  # cut off mid-answer is a source the pipeline never finished reading.
+  #
+  # 16384 is version 11's measured number, not version 9's estimate. A 60-page
+  # source produced an answer that ran past 8192 output tokens — the bulk of it
+  # evidence, one claim carrying a list of segment ids, and there were 532
+  # segments. That is a fact about the source, so it survives the move here.
+  extract_source_truth:
+    rationale: >
+      Source truth is the one artefact that is not disposable; structured
+      fidelity and reproducibility dominate everything else. Its answer is also
+      the longest this pipeline asks for, so the output budget is sized against a
+      measured run rather than a guess.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+    # The one fallback in this file that does not drop to the mini, which is a
+    # decision rather than an oversight. Escalating *down* is only useful when the
+    # model was the problem, and here it is the artefact nothing downstream can
+    # correct: a cheaper second opinion on source truth is a worse source model,
+    # kept. So this rung is a genuine second attempt at the same call — which is
+    # what helps against the transient failure that actually reaches it — and the
+    # budget does not shrink, because shrinking it is what produced the failure
+    # being retried in the first place.
+    fallback:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+
+  # Gap analysis is a judgement about *absence*, which is harder than extraction
+  # and much cheaper to get wrong in the safe direction: an unnecessary question
+  # costs the author a moment, a missed blocking gap costs the article's honesty.
+  generate_gap_questions:
+    rationale: >
+      Judging what is missing needs the model's full attention; the cost of a
+      false positive is one ignored question, of a false negative a misleading
+      article.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 2048
+      timeout_seconds: 180.0
+
+  # Architecture is where breadth earns its keep: the point is to surface
+  # *alternatives*, and the decision record is only worth reading if the
+  # alternatives were real. Locally that is bought with temperature; here it is
+  # bought with reasoning effort, the sampling knobs being unavailable.
+  propose_content_architecture:
+    rationale: >
+      Comparing competing shapes needs some exploration; the decision record is
+      only worth reading if the alternatives were real.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 6144
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 3072
+      timeout_seconds: 180.0
+
+  # The brief is a contract the drafter is bound by and the validator checks
+  # against, so it takes a fixed seed: a brief that varied between runs would make
+  # two drafts of the same article incomparable for reasons that have nothing to
+  # do with the drafting.
+  generate_article_brief:
+    rationale: >
+      A contract must be reproducible; the creativity belongs in the draft, not
+      in the specification the draft is judged against.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 2048
+      timeout_seconds: 180.0
+
+  # The phase-06 placeholder for what phase 07 now routes as
+  # `generate_initial_draft`; kept so a run recorded under it can still be
+  # explained. No fallback, as in versions 8, 9 and 11 — nothing routes here.
+  draft_article:
+    rationale: Voice and readability dominate; the draft is disposable.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: medium
+      structured_output_mode: prompted
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+
+  # The draft is the one stage whose output is mostly prose, and the only one that
+  # writes thousands of words in a single call — hence the largest budget and the
+  # longest timeout. The prose arrives inside a structured envelope carrying the
+  # claims, qualifications and markers that make it checkable, which is what the
+  # pipeline actually validates.
+  generate_initial_draft:
+    rationale: >
+      Readability dominates and the draft is disposable; the declarations around
+      the prose are what the pipeline actually checks.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+
+  # Review judges rather than creates, and reads the draft *and* the source model
+  # it is checked against. A fixed seed: two reviews of the same draft that
+  # disagree with each other would make the revision loop's progress unmeasurable.
+  review_substantively:
+    rationale: >
+      Judging fidelity is the hardest thing asked of the model; determinism is
+      what makes round-to-round improvement measurable rather than noise.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 180.0
+
+  # Planning is a judgement about *other* judgements — which feedback wins when
+  # two disagree. A planner that reconciled the same contradiction differently on
+  # two runs would make the revision loop impossible to reason about, and this is
+  # the reasoning read most often afterwards.
+  create_revision_plan:
+    rationale: >
+      Reconciling contradictory feedback is the hardest judgement in the loop and
+      the one whose reasoning is read most often afterwards.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 2048
+      timeout_seconds: 180.0
+
+  # The rewrite is prose again, and bound by a plan and a previous version.
+  rewrite_substantively:
+    rationale: >
+      Prose quality matters, but the rewrite is constrained by a plan; less
+      latitude than the first draft, for the same reason.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+
+  # The voice pass is the one stage whose whole job is how the prose sounds. No
+  # seed, because the same prose read twice should be allowed to suggest
+  # different phrasings — and every edit it makes is quoted back and checked
+  # against the text it claims to have replaced, so latitude costs a refused pass
+  # rather than a silent rewrite.
+  align_voice:
+    rationale: >
+      Style judgement wants range; the edit-level checks are what make that safe
+      here, not determinism.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 16384
+      timeout_seconds: 600.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+
+  # Scoring is the most consequential judging call in the pipeline: it decides
+  # whether the loop runs again. A fixed seed, because a score that moved between
+  # two runs of the same article would make every trend the product shows a person
+  # meaningless — including the stagnation detection that decides when to stop.
+  score_article:
+    rationale: >
+      Determinism is the requirement here, not creativity: scores are compared
+      against each other, and a noisy scorer makes the comparison worthless.
+    primary:
+      provider: openai
+      model: gpt-5
+      seed: 20260725
+      reasoning_effort: high
+      structured_output_mode: json_mode
+      max_output_tokens: 8192
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: medium
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 180.0
+
+  # Validation must be boring and repeatable. It judges, it does not create, and
+  # it runs on every loop — so it is the one judging stage that starts on the mini
+  # and the only one at low effort.
+  validate_article:
+    rationale: Deterministic judging; it runs on every loop, so it stays cheap.
+    primary:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: low
+      structured_output_mode: json_mode
+      max_output_tokens: 4096
+      timeout_seconds: 240.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      seed: 20260725
+      reasoning_effort: low
+      structured_output_mode: json_mode
+      max_output_tokens: 2048
+      timeout_seconds: 180.0

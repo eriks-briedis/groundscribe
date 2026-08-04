@@ -40,7 +40,7 @@ from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV
 from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV
 from groundscribe.llm.pricing import default_pricing
 from groundscribe.llm.probe import probe_models
-from groundscribe.llm.routing import default_routing_policy
+from groundscribe.llm.routing import profile_path, routing_policy
 from groundscribe.observability.logging import configure_logging
 from groundscribe.paths import repo_root
 from groundscribe.privacy.export import ExportFormat
@@ -286,6 +286,43 @@ def project_retry(
     """Queue the work that failed under this run, again."""
     with _command() as service:
         _emit(service.retry_failed_job(project, requested_by=by))
+
+
+@project_app.command("routing")
+def project_routing(
+    project: str,
+    profile: Annotated[
+        str | None,
+        typer.Option(
+            help="Profile to run against. Omit to see the current one; "
+            "pass 'default' to go back to the shipped policy.",
+        ),
+    ] = None,
+    by: Annotated[
+        str | None, typer.Option(help="Who is choosing it. Required when setting.")
+    ] = None,
+) -> None:
+    """Show or set which routing policy this project's stages run against.
+
+    Reading and writing in one command because the useful thing to know before
+    choosing is what the alternatives are, and a person who has to run a second
+    command to find out will guess instead.
+    """
+    with _command() as service:
+        if profile is None:
+            profiles = service.routing_profiles(project)
+            selected = profiles.selected or "default"
+            typer.echo(f"routing profile: {selected} (policy v{profiles.policy_version})")
+            typer.echo(f"available: {', '.join(('default', *profiles.available))}")
+            return
+        if not by:
+            typer.echo("--by is required when setting a profile: an anonymous choice about "
+                       "where material is sent is unreviewable")
+            raise typer.Exit(code=1)
+        # "default" spelled out, because a shell cannot pass a null and an empty
+        # string is what a person types by accident.
+        chosen = None if profile == "default" else profile
+        _emit(service.set_routing_profile(project, profile=chosen, chosen_by=by))
 
 
 @source_app.command("submit-answers")
@@ -684,7 +721,12 @@ def worker_run(
 
 
 @llm_app.command("probe")
-def llm_probe() -> None:
+def llm_probe(
+    profile: Annotated[
+        str | None,
+        typer.Option(help="Routing profile to probe. Omit for the shipped default."),
+    ] = None,
+) -> None:
     """Call every model the routing config names, once, and report what happened.
 
     The pre-flight for a provider configuration. Two things a routing file cannot
@@ -693,12 +735,17 @@ def llm_probe() -> None:
     than halfway through a run, where the failure arrives attached to an editorial
     stage and reads as a pipeline problem.
 
+    ``--profile`` is what makes that true of a profile nobody is running yet: the
+    point of checking a configuration is to check it *before* a project is moved
+    onto it, and probing the default would answer for the file the project is
+    leaving.
+
     Outside ``_command`` because it opens no transaction and writes nothing: a
     probe is a configuration check, not a run, and recording an execution for a
     call no article asked for would put fiction in the trace.
     """
     configure_logging()
-    routing = default_routing_policy()
+    routing = routing_policy(profile)
     clients = provider_clients()
     if not clients:
         typer.echo(
@@ -726,7 +773,7 @@ def llm_probe() -> None:
         typer.echo("")
         typer.echo(
             f"{len(broken)} of {len(results)} model(s) did not answer. If a parameter was "
-            "rejected, delete it from that stage in config/model-routing.yaml — the "
+            f"rejected, delete it from that stage in {profile_path(profile).name} — the "
             "adapter sends only what the file sets."
         )
         raise typer.Exit(code=1)

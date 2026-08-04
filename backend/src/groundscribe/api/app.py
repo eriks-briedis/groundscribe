@@ -37,6 +37,7 @@ from groundscribe.app.services import NothingToRetry, UnknownProject
 from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
+from groundscribe.llm.routing import RoutingConfigError
 from groundscribe.privacy.export import ExportIntegrityError
 from groundscribe.privacy.traces import ConfidentialExportRefused
 from groundscribe.workflow.errors import (
@@ -103,6 +104,11 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (ExportIntegrityError, 409),
     (SensitiveProject, 422),
     (UnknownArm, 404),
+    # Phase 15. A routing profile that is not a name, or names no file on this
+    # installation. 422 rather than 404: what is missing is not the thing the URL
+    # addressed — the project exists — but the value in the body, and the fix is
+    # to send a different one or to add the file.
+    (RoutingConfigError, 422),
 )
 
 #: What a database says when it is *held*, rather than broken.

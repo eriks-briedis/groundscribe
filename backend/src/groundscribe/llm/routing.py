@@ -12,10 +12,20 @@ version files (as prompts use). The difference is deliberate: a run can pin an
 run always resolves routing once, at the start, and records the version it got.
 Superseded routing configs therefore live in git history, and the execution
 record names the version it ran under.
+
+*Profiles* (phase 15) are the same file, more than once. A machine that has both
+a local model and a hosted key has two coherent sets of routing choices, not one
+with a provider field to flip: the models differ, and so does everything sized
+around them — ``context_window`` exists because Ollama allocates one per call,
+and the "degrade the window" fallback is a local memory decision that means
+nothing on a metered API. So a profile is a whole policy file, named beside the
+default, and a project picks one by name. Flipping a provider on a route built
+for another provider produces a config that is valid, wrong, and quiet about it.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Self
 
@@ -28,6 +38,20 @@ from groundscribe.paths import config_root
 
 #: Filename of the shipped routing configuration under the config root.
 ROUTING_CONFIG_FILENAME = "model-routing.yaml"
+
+#: A named profile's filename, beside the default rather than under it. Siblings
+#: because they are alternatives of equal standing — the default is the one a
+#: project gets for not choosing, not the one the others derive from.
+ROUTING_PROFILE_TEMPLATE = "model-routing.{profile}.yaml"
+
+#: What a profile name may be.
+#:
+#: A profile name arrives from a person and becomes a path, so it is validated as
+#: a *name* rather than sanitised as a path: lowercase, digits and dashes, and
+#: nothing else. ``../`` and an absolute path both fail the pattern instead of
+#: being stripped, which is the difference between refusing a bad name and
+#: quietly accepting a corrected one.
+PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 class RoutingConfigError(Exception):
@@ -213,6 +237,61 @@ class RoutingPolicy(BaseModel):
         )
 
 
+def profile_path(profile: str | None, *, root: Path | None = None) -> Path:
+    """Where ``profile``'s policy file lives. ``None`` is the default file.
+
+    Raises :class:`RoutingConfigError` for a name that is not a name. The check
+    is here, at the one place a profile becomes a path, so every caller that
+    reaches the filesystem is behind it.
+    """
+    base = root if root is not None else config_root()
+    if profile is None:
+        return base / ROUTING_CONFIG_FILENAME
+    if not PROFILE_NAME.match(profile):
+        raise RoutingConfigError(
+            f"invalid routing profile name {profile!r}: "
+            "lowercase letters, digits and dashes only"
+        )
+    return base / ROUTING_PROFILE_TEMPLATE.format(profile=profile)
+
+
+def available_profiles(*, root: Path | None = None) -> tuple[str, ...]:
+    """Every profile this installation ships a file for, sorted.
+
+    Discovered by listing rather than declared in a registry, for the reason the
+    policies themselves are files: adding a profile should be adding a file. The
+    default is not in the list — it is what "no profile" means, and offering it
+    as a choice alongside the others would make "openai" and "the default, which
+    is currently ollama" look like the same kind of answer.
+    """
+    base = root if root is not None else config_root()
+    if not base.is_dir():
+        return ()
+    prefix, suffix = ROUTING_PROFILE_TEMPLATE.split("{profile}")
+    found = {
+        name
+        for path in base.glob(ROUTING_PROFILE_TEMPLATE.format(profile="*"))
+        if PROFILE_NAME.match(name := path.name[len(prefix) : -len(suffix)])
+    }
+    return tuple(sorted(found))
+
+
+def routing_policy(profile: str | None = None, *, root: Path | None = None) -> RoutingPolicy:
+    """The routing policy for ``profile``, or the shipped default for ``None``.
+
+    A named profile whose file is absent is an error rather than a fall-through
+    to the default. Falling through would run the project on the provider it had
+    just been moved off, and report success for having done so.
+    """
+    path = profile_path(profile, root=root)
+    if profile is not None and not path.is_file():
+        known = ", ".join(available_profiles(root=root)) or "none"
+        raise RoutingConfigError(
+            f"no routing profile {profile!r} at {path} (available: {known})"
+        )
+    return RoutingPolicy.from_yaml(path)
+
+
 def default_routing_policy() -> RoutingPolicy:
     """The shipped routing policy from the config root."""
-    return RoutingPolicy.from_yaml(config_root() / ROUTING_CONFIG_FILENAME)
+    return routing_policy(None)

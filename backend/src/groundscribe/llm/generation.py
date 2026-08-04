@@ -242,6 +242,25 @@ class StructuredGenerator:
         """
         return self._routing
 
+    def with_routing(self, routing: RoutingPolicy) -> StructuredGenerator:
+        """The same generator, routing through ``routing`` instead.
+
+        How a project's routing profile (phase 15) reaches the call: the runtime
+        builds one generator for the process, and a run rebinds it to its own
+        project's policy on the way into the pipeline context. Everything else is
+        shared deliberately — the clients are connection pools and the prompt
+        store is a cache, and duplicating either per run would make choosing a
+        profile cost a reconnect.
+
+        Returns a new generator rather than mutating: two runs of different
+        projects are in flight in the same process the moment there is a second
+        worker, and a policy swapped in place would be swapped under both.
+        """
+        clone = object.__new__(type(self))
+        clone.__dict__.update(self.__dict__)
+        clone._routing = routing
+        return clone
+
     async def generate[T: BaseModel](
         self,
         execution: models.StageExecution,
