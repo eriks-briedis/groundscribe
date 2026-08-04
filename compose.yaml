@@ -42,9 +42,21 @@ services:
       GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
       # Passed through, never defaulted. Absent, no provider is registered and a
       # stage that needs one fails saying so — which is the honest state for an
-      # installation nobody has given a key.
+      # installation nobody has configured.
+      #
+      # `localhost` inside this container is this container, so an Ollama server
+      # on the host is reached at `host.docker.internal` (mapped below) rather
+      # than at the address that works from a shell. A server in another compose
+      # stack is reachable by its service name once the networks are joined.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+    # So `host.docker.internal` resolves on Linux too, where it is not built in.
+    # Without it a stack configured for a host-side Ollama fails at the first
+    # model call with a connection error, which reads as "the provider is down"
+    # rather than "this container cannot see the host".
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - storage:/var/lib/groundscribe
     depends_on:
@@ -82,11 +94,21 @@ services:
       GROUNDSCRIBE_ENCRYPT_TRACES: ${GROUNDSCRIBE_ENCRYPT_TRACES:-}
       # Passed through, never defaulted. Absent, no provider is registered and a
       # stage that needs one fails saying so — which is the honest state for an
-      # installation nobody has given a key.
+      # installation nobody has configured.
+      #
+      # `localhost` inside this container is this container, so an Ollama server
+      # on the host is reached at `host.docker.internal` (mapped below) rather
+      # than at the address that works from a shell. A server in another compose
+      # stack is reachable by its service name once the networks are joined.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       GROUNDSCRIBE_WORKER_ID: ${GROUNDSCRIBE_WORKER_ID:-worker-1}
       GROUNDSCRIBE_WORKER_POLL: ${GROUNDSCRIBE_WORKER_POLL:-2}
+    # The worker is the container that actually makes the model calls, so if only
+    # one service needed this it would be this one.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # The same directory as the API, because the artefact store is
       # content-addressed bytes both of them read and write.

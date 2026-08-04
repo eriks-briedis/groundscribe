@@ -67,11 +67,17 @@ class InvocationOutcome(StrEnum):
     ``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can
     be useful yet unparseable, or parseable yet non-conforming; both are
     preserved alongside their repaired successor rather than discarded.
+
+    ``TRUNCATED`` is separate from both for the same reason and a sharper one: a
+    body the provider stopped mid-value parses as neither, and it is the only
+    content outcome no retry can fix. The model did not answer badly — it was cut
+    off — so the remedy is the stage's output budget, not another attempt.
     """
 
     ACCEPTED = "accepted"
     INVALID_JSON = "invalid_json"
     INVALID_SCHEMA = "invalid_schema"
+    TRUNCATED = "truncated"
     REFUSED = "refused"
     TIMEOUT = "timeout"
     PROVIDER_ERROR = "provider_error"
@@ -114,3 +120,5 @@ class InterventionType(StrEnum):
     OVERRIDE = "override"
     ANSWER = "answer"
     CANCELLATION = "cancellation"
+    #: A person asked for failed work to be run again, spending another call.
+    RETRY = "retry"

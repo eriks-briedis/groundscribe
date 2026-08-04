@@ -34,12 +34,31 @@ describe('the action bar', () => {
 
   it('shows an action the API cannot perform without offering to perform it', () => {
     fakeBackend({});
-    const withPipelineEdge = [...links, { action: 'fail', method: null, path: null, requires_actor: false }];
+    const withPipelineEdge = [
+      ...links,
+      { action: 'fail', method: null, path: null, requires_actor: false, taken_by: 'pipeline' },
+    ];
 
     render(<ActionBar links={withPipelineEdge} actor="ada" />);
 
     expect(screen.getByText(/fail/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /fail/i })).not.toBeInTheDocument();
+  });
+
+  it("says a human edge is yours rather than calling it the pipeline's", () => {
+    // `answer_questions` is the case this exists for: the author's own edge, with
+    // no endpoint a dashboard can offer, on a run that is parked waiting for it.
+    // Rendered as "the pipeline is on it", it would tell a person to wait for
+    // themselves.
+    fakeBackend({});
+    const parked = [
+      { action: 'answer_questions', method: null, path: null, requires_actor: false, taken_by: 'you' },
+    ];
+
+    render(<ActionBar links={parked} actor="ada" />);
+
+    expect(screen.getByText(/answer questions/i)).toHaveTextContent(/on its own screen/i);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('posts exactly where the backend said, and attributes the person', async () => {

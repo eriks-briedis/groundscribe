@@ -46,6 +46,10 @@ class ModelChoice(BaseModel):
     top_p: float | None = None
     seed: int | None = None
     max_output_tokens: int | None = None
+    #: Context window to allocate for the call, for providers that allocate one
+    #: per request. Locally hosted models default it low and truncate the prompt
+    #: silently above it, so a stage whose input is large has to say so here.
+    context_window: int | None = None
     reasoning_effort: str | None = None
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.NATIVE_SCHEMA
     tool_choice: str | None = None
@@ -85,6 +89,7 @@ class RouteOverride(BaseModel):
     top_p: float | None = None
     seed: int | None = None
     max_output_tokens: int | None = None
+    context_window: int | None = None
     reasoning_effort: str | None = None
     structured_output_mode: StructuredOutputMode | None = None
     tool_choice: str | None = None
@@ -154,6 +159,7 @@ class ResolvedRoute(BaseModel):
             top_p=choice.top_p,
             seed=choice.seed,
             max_output_tokens=choice.max_output_tokens,
+            context_window=choice.context_window,
             reasoning_effort=choice.reasoning_effort,
             structured_output_mode=choice.structured_output_mode,
             tool_choice=choice.tool_choice,

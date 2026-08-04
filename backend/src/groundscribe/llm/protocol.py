@@ -34,6 +34,7 @@ from groundscribe.llm.enums import StructuredOutputMode
 from groundscribe.provenance.schemas import Message, TokenUsage, ToolDefinition
 
 __all__ = [
+    "LENGTH_STOP",
     "LLMClient",
     "LLMRequest",
     "LLMResponse",
@@ -99,6 +100,14 @@ class RuntimeConfig(BaseModel):
     top_p: float | None = None
     seed: int | None = None
     max_output_tokens: int | None = None
+    #: How much of the model's context window this call may use.
+    #:
+    #: Recorded because on a locally hosted model it is a *decision*, not a
+    #: property of the model: the window is allocated per call, it costs memory,
+    #: and a provider that truncates silently above it (Ollama does) produces an
+    #: answer about material the model was never shown. A replay that reproduced
+    #: the prompt but not the window it was read through is not a replay.
+    context_window: int | None = None
     reasoning_effort: str | None = None
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.NATIVE_SCHEMA
     tool_choice: str | None = None
@@ -111,6 +120,14 @@ class RuntimeConfig(BaseModel):
     def as_provider_config(self) -> dict[str, Any]:
         """The JSON-safe form stored in an effective request's provider config."""
         return self.model_dump(mode="json")
+
+
+#: What both supported providers call "I stopped because the budget ran out".
+#:
+#: Ollama reports it as ``done_reason``, OpenAI as ``finish_reason``, and the two
+#: happen to agree on this value. Named once so the agreement is a stated fact
+#: rather than a coincidence repeated in two adapters.
+LENGTH_STOP = "length"
 
 
 class ToolCall(BaseModel):
@@ -169,6 +186,14 @@ class LLMResponse(BaseModel):
     tool_calls: tuple[ToolCall, ...] = ()
     refusal: str | None = None
     usage: TokenUsage = Field(default_factory=TokenUsage)
+    #: Why the provider stopped generating, in the provider's own word.
+    #:
+    #: Kept verbatim rather than normalised to a flag, because it is evidence: a
+    #: record that said "truncated: true" could not later answer *what the
+    #: provider actually claimed*. Both providers here spell the one case that
+    #: matters the same way — ``"length"`` — which is what :attr:`truncated`
+    #: reads. Anything else is passed through unread.
+    stop_reason: str | None = None
 
     @property
     def raw_text(self) -> str:
@@ -178,6 +203,16 @@ class LLMResponse(BaseModel):
         if self.output:
             return json.dumps(self.output, sort_keys=True, separators=(",", ":"))
         return ""
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the provider stopped because the output budget ran out.
+
+        The difference between a model that answered badly and a model that was
+        cut off mid-sentence. Only the second is fixed by a number in a config
+        file, and only the first is worth another attempt.
+        """
+        return self.stop_reason == LENGTH_STOP
 
 
 class StreamChunk(BaseModel):

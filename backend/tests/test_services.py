@@ -19,21 +19,25 @@ The service is exercised together with a real worker over the same rows, because
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
+from groundscribe.app.services import NothingToRetry
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
 from groundscribe.jobs.enums import JobStatus, JobType
+from groundscribe.llm import InjectableFailure
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.errors import AttributionRequired, IllegalTransition
 from groundscribe.workflow.states import WorkflowState
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
-from test_gap_questions import GAPS
+from test_gap_questions import GAPS, SIX_GAPS
 
 S = WorkflowState
 
@@ -185,6 +189,198 @@ async def test_the_run_advances_to_where_the_stage_left_it(harness: Harness) -> 
 
 
 # ----------------------------------------------------------------------
+# The question queue is a queue
+# ----------------------------------------------------------------------
+
+
+async def parked_on_questions(harness: Harness) -> tuple[str, list[domain_models.SourceGap]]:
+    """A run waiting on the author, with more than one question surfaced.
+
+    More than one because that is the case the single-answer shape could not
+    express: with one question, "answer" and "submit the round" are the same
+    click and the difference between them is invisible.
+    """
+    project_id = await with_source(harness)
+    script_extraction(harness, gaps=SIX_GAPS)
+    await harness.service.extract_source_model(project_id)
+    await harness.drain()
+    gaps = list(
+        harness.runtime.session.scalars(
+            select(domain_models.SourceGap)
+            .where(domain_models.SourceGap.surfaced.is_(True))
+            .order_by(domain_models.SourceGap.ordinal)
+        )
+    )
+    return project_id, gaps
+
+
+async def test_recording_an_answer_leaves_the_run_waiting_for_the_others(
+    harness: Harness,
+) -> None:
+    """plan/06 → *a queue*. An author answers what they can, then hands the round back.
+
+    Recording an answer is not a transition. A run that moved on the first one
+    would make every later answer illegal in the state the first one caused, so
+    the author would be told their own second answer was out of order — which is
+    not a queue, it is a form with one field.
+    """
+    project_id, gaps = await parked_on_questions(harness)
+
+    first = harness.service.answer_gap(
+        project_id, gap_id=gaps[0].id, text="640ms.", answered_by=AUTHOR
+    )
+    second = harness.service.answer_gap(
+        project_id, gap_id=gaps[1].id, text="Seven locales.", answered_by=AUTHOR
+    )
+
+    assert first.state is S.SOURCE_QUESTIONS_REQUIRED
+    assert second.state is S.SOURCE_QUESTIONS_REQUIRED
+    assert first.job is None and second.job is None
+    assert harness.runtime.queue.pending_count() == 0
+
+
+async def test_submitting_the_round_is_what_rebuilds_the_source_model(harness: Harness) -> None:
+    """The edge the author takes, once, for however many answers they gave.
+
+    ``answer_questions`` re-enters extraction (plan/05's table), so this is the
+    command that spends a model call — which is the other half of why recording
+    an answer must not: five answers would have been five rebuilds, four of them
+    already contradicted by the time they ran.
+    """
+    project_id, gaps = await parked_on_questions(harness)
+    harness.service.answer_gap(project_id, gap_id=gaps[0].id, text="640ms.", answered_by=AUTHOR)
+    harness.service.answer_gap(project_id, gap_id=gaps[1].id, text="Seven.", answered_by=AUTHOR)
+
+    submitted = harness.service.submit_answers(project_id, submitted_by=AUTHOR)
+
+    assert submitted.state is S.SOURCE_MODEL_EXTRACTING
+    assert submitted.job is not None
+    assert submitted.job.job_type == JobType.EXTRACT_SOURCE_MODEL
+
+
+async def test_every_answer_reaches_the_rebuild_not_only_the_last(harness: Harness) -> None:
+    """The point of collecting a round: the model is asked again knowing all of it."""
+    project_id, gaps = await parked_on_questions(harness)
+    harness.service.answer_gap(project_id, gap_id=gaps[0].id, text="640ms.", answered_by=AUTHOR)
+    harness.service.answer_gap(project_id, gap_id=gaps[1].id, text="Seven.", answered_by=AUTHOR)
+    script_extraction(harness)
+
+    harness.service.submit_answers(project_id, submitted_by=AUTHOR)
+    await harness.drain()
+
+    sent = "\n".join(str(request) for request in harness.client.received_requests)
+    assert "640ms." in sent
+    assert "Seven." in sent
+
+
+async def test_an_answer_is_refused_once_the_run_has_left_the_queue(harness: Harness) -> None:
+    """Recording is not a transition, so it needs a gate of its own — the same one.
+
+    Without it, dropping the transition from ``answer_gap`` would make answering
+    legal everywhere, including in a finished run: an answer nothing will ever
+    read, recorded as though it counted.
+    """
+    project_id, gaps = await parked_on_questions(harness)
+    harness.service.cancel(project_id, cancelled_by=AUTHOR)
+
+    with pytest.raises(IllegalTransition):
+        harness.service.answer_gap(
+            project_id, gap_id=gaps[0].id, text="Too late.", answered_by=AUTHOR
+        )
+
+
+async def test_an_unattributed_answer_is_refused(harness: Harness) -> None:
+    """plan/03: an intervention nobody can be identified as is not reviewable."""
+    project_id, gaps = await parked_on_questions(harness)
+
+    with pytest.raises(ValueError):
+        harness.service.answer_gap(project_id, gap_id=gaps[0].id, text="640ms.", answered_by="")
+
+
+# ----------------------------------------------------------------------
+# A run whose job failed
+# ----------------------------------------------------------------------
+
+
+async def failed_extraction(harness: Harness) -> str:
+    """A run parked in an ``-ing`` state by a job that failed under it.
+
+    The situation a real installation reaches and cannot leave: the entry
+    transition was taken in the request, the worker took the job, the job failed,
+    and the state it was carrying the run *out* of is the state the run is now
+    stuck in. Nothing is queued, and every edge out of an ``-ing`` state belongs
+    to the pipeline.
+    """
+    project_id = await with_source(harness)
+    harness.client.script_failure("extract_source_truth", InjectableFailure.PROVIDER_ERROR)
+    await harness.service.extract_source_model(project_id)
+    (job,) = await harness.drain()
+    assert job.status is JobStatus.FAILED
+    return project_id
+
+
+async def test_a_failed_job_can_be_run_again_without_moving_the_run(
+    harness: Harness,
+) -> None:
+    """The recovery a stranded run needs, and the smallest one that is honest.
+
+    No transition: the run is already in the state the job was meant to carry it
+    out of, so retrying queues the same work again rather than negotiating with
+    the transition table. A person asks for it — it spends a model call — and the
+    failed attempt stays on the record beside the new one.
+    """
+    project_id = await failed_extraction(harness)
+    script_extraction(harness)
+
+    retried = harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+
+    assert retried.state is S.SOURCE_MODEL_EXTRACTING
+    assert retried.job is not None
+    assert retried.job.status is JobStatus.PENDING
+    assert retried.job.job_type == JobType.EXTRACT_SOURCE_MODEL
+
+
+async def test_the_retried_job_actually_carries_the_run_on(harness: Harness) -> None:
+    """Queued is only useful if running it finishes what the first attempt started."""
+    project_id = await failed_extraction(harness)
+    script_extraction(harness)
+
+    harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+    (job,) = await harness.drain()
+
+    assert job.status is JobStatus.SUCCEEDED
+    assert harness.service.project_state(project_id).state is S.SOURCE_QUESTIONS_REQUIRED
+
+
+async def test_nothing_is_retried_while_the_queue_still_has_the_work(
+    harness: Harness,
+) -> None:
+    """A second copy of a job that is still coming is not a recovery, it is a duplicate."""
+    project_id = await with_source(harness)
+    script_extraction(harness)
+    await harness.service.extract_source_model(project_id)
+
+    with pytest.raises(NothingToRetry):
+        harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+
+
+async def test_a_run_that_has_not_failed_has_nothing_to_retry(harness: Harness) -> None:
+    """Said plainly rather than by queueing something nobody asked for."""
+    project_id = await with_source(harness)
+
+    with pytest.raises(NothingToRetry):
+        harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+
+
+async def test_a_retry_is_attributed(harness: Harness) -> None:
+    """It spends a model call, so somebody has to be accountable for asking."""
+    project_id = await failed_extraction(harness)
+
+    with pytest.raises(AttributionRequired):
+        harness.service.retry_failed_job(project_id, requested_by="")
+
+
+# ----------------------------------------------------------------------
 # Rules stay in the engine
 # ----------------------------------------------------------------------
 
@@ -279,12 +475,16 @@ def _an_article_addressed_before_its_time(harness: Harness, project_id: str) -> 
     return "premature"
 
 
-def script_extraction(harness: Harness) -> None:
+def script_extraction(harness: Harness, *, gaps: dict[str, Any] = GAPS) -> None:
     """Queue what the extraction job will ask for: a source model and its gaps.
 
     Both, because one job runs both stages — the workflow has no state between
     them, and "extract the source model" that could not say what was missing
     would answer half a question.
+
+    ``gaps`` is a parameter because how many questions surface is the variable
+    some tests are about: one is the ordinary case, several is the case the
+    queue exists for.
 
     The segment labels are mapped from the stored rows rather than from an
     ``IngestedSource``, because that is the position a worker is in: it has rows,
@@ -300,4 +500,4 @@ def script_extraction(harness: Harness) -> None:
             {f"S{segment.ordinal}": segment.id for segment in segments},
         ),
     )
-    harness.client.script_response("generate_gap_questions", GAPS)
+    harness.client.script_response("generate_gap_questions", gaps)

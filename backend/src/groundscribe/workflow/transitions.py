@@ -222,6 +222,25 @@ def transition_for(
     return None
 
 
+def is_taken_by_user(state: WorkflowState, action: WorkflowAction) -> bool:
+    """Whether a *person* is the one who may take ``action`` from ``state``.
+
+    Asked per edge rather than per action because the same name is a person's
+    decision in one place and the engine's in another — ``REOPEN_ARCHITECTURE``
+    is the machine's routing nowhere and an author's escalation from ``STALLED``.
+
+    An interface needs this to stop describing a human edge as something the
+    pipeline will get to on its own: ``answer_questions`` has no endpoint that a
+    dashboard can offer, and "waiting for the pipeline" is the one thing it is
+    not.
+    """
+    return any(
+        transition.actor is ActorType.USER
+        for transition in transitions_from(state)
+        if transition.action is action
+    )
+
+
 def is_human_pause(state: WorkflowState) -> bool:
     """Whether the engine must park in ``state`` and wait for a person."""
     real = [t for t in transitions_from(state) if t.action not in UNIVERSAL_ACTIONS]
@@ -241,6 +260,7 @@ __all__ = [
     "available_actions",
     "human_pause_states",
     "is_human_pause",
+    "is_taken_by_user",
     "targets_for",
     "transition_for",
     "transitions_from",

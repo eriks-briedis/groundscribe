@@ -27,23 +27,26 @@ from groundscribe.llm import (
     StructuredOutputMode,
     TokenUsage,
 )
-from groundscribe.llm.adapters import AnthropicAdapter, OllamaAdapter, OpenAIClient
+from groundscribe.llm.adapters import AnthropicAdapter, OllamaClient, OpenAIClient
 
-#: Still stubs. OpenAI left this list when it was wired; the two that remain are
-#: the ones nobody has needed yet, and they stay stubs for the reason phase 04
-#: gave — a stub that answered plausibly would let the suite pass on fiction.
-STUB_ADAPTERS = [
-    AnthropicAdapter(model="claude-x"),
-    OllamaAdapter(model="llama"),
-]
-ADAPTER_IDS = ["anthropic", "ollama"]
+#: Still a stub. OpenAI left this list when it was wired and Ollama followed it;
+#: Anthropic is the one nobody has needed yet, and it stays a stub for the reason
+#: phase 04 gave — a stub that answered plausibly would let the suite pass on
+#: fiction.
+STUB_ADAPTERS = [AnthropicAdapter(model="claude-x")]
+ADAPTER_IDS = ["anthropic"]
 
-#: Every client the protocol has to hold for, stubs and the real one alike.
+#: Every client the protocol has to hold for, the stub and the real ones alike.
 #: The point of listing them together is that wiring a provider must not need a
 #: wider interface — the moment it does is the moment provider concepts start
-#: leaking into the callers.
-ALL_CLIENTS = [*STUB_ADAPTERS, OpenAIClient(model="gpt-x", api_key="sk-not-used-here")]
-ALL_IDS = [*ADAPTER_IDS, "openai"]
+#: leaking into the callers. Two providers now answer through this one interface,
+#: over two entirely different wire formats.
+ALL_CLIENTS = [
+    *STUB_ADAPTERS,
+    OpenAIClient(model="gpt-x", api_key="sk-not-used-here"),
+    OllamaClient(model="qwen3.6:35b"),
+]
+ALL_IDS = [*ADAPTER_IDS, "openai", "ollama"]
 
 
 def _protocol_typed(client: LLMClient) -> LLMClient:
@@ -72,6 +75,13 @@ def test_runtime_config_captures_every_setting_the_spec_names() -> None:
     Asserted as an exact set: a replay is only trustworthy if the record names
     every knob that could have changed the output, so a silently dropped field
     is a defect even though nothing would fail without this test.
+
+    ``context_window`` joined the list when the Ollama adapter was wired, and it
+    is the only field a hosted provider made look unnecessary. A hosted API
+    allocates the window for you; a locally hosted model allocates it per call,
+    charges memory for it, and truncates the prompt silently above it. Two runs of
+    one prompt through one model at two window sizes are two different calls, so
+    the record has to say which one happened.
     """
     assert set(RuntimeConfig.model_fields) == {
         "provider",
@@ -81,6 +91,7 @@ def test_runtime_config_captures_every_setting_the_spec_names() -> None:
         "top_p",
         "seed",
         "max_output_tokens",
+        "context_window",
         "reasoning_effort",
         "structured_output_mode",
         "tool_choice",
@@ -141,11 +152,12 @@ def test_the_fake_client_implements_the_protocol() -> None:
 
 @pytest.mark.parametrize("adapter", ALL_CLIENTS, ids=ALL_IDS)
 def test_every_adapter_satisfies_the_protocol(adapter: LLMClient) -> None:
-    """Two stubs and one real client, held to one interface.
+    """One stub and two real clients, held to one interface.
 
-    The shape was fixed before anything was wired in, and OpenAI being here
-    unchanged is the evidence it was the right shape: making that adapter real
-    needed no addition to the protocol, the generator, or any caller.
+    The shape was fixed before anything was wired in, and both real adapters being
+    here unchanged is the evidence it was the right shape: making either real
+    needed no addition to the protocol, the generator, or any caller — despite the
+    two speaking wire formats with almost nothing in common.
     """
     assert isinstance(adapter, LLMClient)
     assert _protocol_typed(adapter) is adapter
@@ -161,7 +173,7 @@ async def test_the_remaining_stubs_refuse_to_pretend_they_called_a_provider(
     adapter: LLMClient,
 ) -> None:
     """A stub that returned a plausible answer would be worse than one that
-    raises — the tests would then pass on fiction. Anthropic and Ollama are still
-    stubs, and must still say so rather than answering."""
+    raises — the tests would then pass on fiction. Anthropic is still a stub, and
+    must still say so rather than answering."""
     with pytest.raises(NotImplementedError):
         await adapter.complete(LLMRequest(call_key="anything"))

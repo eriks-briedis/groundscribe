@@ -82,6 +82,32 @@ class UTCDateTime(TypeDecorator[datetime]):
 BUSY_TIMEOUT_MS = 15_000
 
 
+#: Execution option marking a transaction that will only ever read.
+#:
+#: A string key rather than a subclass or a second engine factory because that is
+#: what SQLAlchemy already carries down to the connection the ``begin`` handler
+#: is given, and the handler is the only place that can act on it.
+READ_ONLY = "groundscribe_read_only"
+
+
+def read_only(engine: Engine) -> Engine:
+    """The same engine and the same pool, for transactions that only read.
+
+    Reads get a *deferred* transaction, which under write-ahead logging is the
+    difference between an application that works while a stage runs and one that
+    does not: a deferred reader proceeds against the last committed snapshot, and
+    an immediate one waits for a write lock it will never use.
+
+    The promise is one-way and unenforced by SQLite: a transaction that takes
+    this option and then writes gets the snapshot-upgrade refusal that
+    ``BEGIN IMMEDIATE`` exists to avoid. That is the right failure — loud, at the
+    write, in the code that broke the promise — and it is what makes it safe to
+    hand this to the projection layer, whose whole contract is that a read
+    changes nothing (plan/11).
+    """
+    return engine.execution_options(**{READ_ONLY: True})
+
+
 def _is_sqlite(url: str) -> bool:
     return url.startswith("sqlite")
 
@@ -151,21 +177,27 @@ def _install_sqlite_transaction_control(engine: Engine, *, on_disk: bool) -> Non
 
     @event.listens_for(engine, "begin")
     def _on_begin(conn: Any) -> None:
-        # ``IMMEDIATE`` on disk, and this is the setting that makes two processes
-        # work at all. A deferred transaction begins as a reader; a reader that
-        # later writes must upgrade its snapshot, and if anything committed in
-        # between SQLite refuses *immediately* — the one busy case where the
-        # timeout is not consulted, because waiting cannot refresh a stale
-        # snapshot. Every command here reads before it writes (resume the run,
+        # ``IMMEDIATE`` on disk, and this is the setting that makes two writing
+        # processes work at all. A deferred transaction begins as a reader; a
+        # reader that later writes must upgrade its snapshot, and if anything
+        # committed in between SQLite refuses *immediately* — the one busy case
+        # where the timeout is not consulted, because waiting cannot refresh a
+        # stale snapshot. Every command reads before it writes (resume the run,
         # load its position, then record what happened), so under contention with
-        # the worker that refusal is the common case rather than a rare one.
+        # the worker that refusal would be the common case rather than a rare one.
         #
-        # The cost is that a read-only transaction also takes the write lock for
-        # its duration, serialising transactions on one file. For a local-first
-        # tool with one author and one worker that is a fair trade: the
-        # transactions are milliseconds long, and the alternative is a person
-        # being told the database is locked for doing two things at once.
-        conn.exec_driver_sql("BEGIN IMMEDIATE" if on_disk else "BEGIN")
+        # Its cost was paid by every read as well, and that was the wrong trade.
+        # The assumption underneath it — "the transactions are milliseconds long"
+        # — is false for the one transaction that matters: a job holds its own for
+        # the length of a model call (KNOWN-ISSUES §1), and every screen in the
+        # application went dead for the duration. A transaction that says it will
+        # only read gets ``BEGIN`` and proceeds against the last committed
+        # snapshot, which is what write-ahead logging is for.
+        if not on_disk:
+            conn.exec_driver_sql("BEGIN")
+            return
+        reading = bool(conn.get_execution_options().get(READ_ONLY, False))
+        conn.exec_driver_sql("BEGIN" if reading else "BEGIN IMMEDIATE")
 
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:

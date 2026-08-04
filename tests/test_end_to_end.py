@@ -171,15 +171,24 @@ async def test_a_project_walks_the_pipeline_over_http_with_a_worker_behind_it(
     assert extracted["state"] == "source_questions_required"
     assert "answer_questions" in extracted["available_actions"]
 
-    # The author answers, and the source model is rebuilt rather than patched.
-    pipeline.script("extract_source_truth", pipeline.source_model())
-    pipeline.script("generate_gap_questions", SETTLED_GAPS)
+    # The author answers. The run stays in the queue: a round may be several
+    # answers, and one rebuild that reads all of them beats one rebuild each.
     answered = await pipeline.command(
         "POST",
         f"/projects/{pipeline.project_id}/source-gaps/{pipeline.surfaced_gap()}/answer",
         json={"text": "Cold-cache p99 was 640ms.", "answered_by": AUTHOR},
     )
-    assert answered["state"] == "source_model_ready"
+    assert answered["state"] == "source_questions_required"
+
+    # Submitting is the edge, and the source model is rebuilt rather than patched.
+    pipeline.script("extract_source_truth", pipeline.source_model())
+    pipeline.script("generate_gap_questions", SETTLED_GAPS)
+    submitted = await pipeline.command(
+        "POST",
+        f"/projects/{pipeline.project_id}/source-questions/submit",
+        json={"actor_id": AUTHOR},
+    )
+    assert submitted["state"] == "source_model_ready"
 
     pipeline.script("propose_content_architecture", golden_json("architecture.json"))
     proposed = await pipeline.command(

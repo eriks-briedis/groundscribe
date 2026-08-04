@@ -358,7 +358,35 @@ class StructuredGenerator:
                     attempts=tuple(attempts),
                 )
 
-            attempted = _evaluate(raw, schema)
+            attempted = _evaluate(raw, schema, truncated=response.truncated)
+            if attempted.outcome is InvocationOutcome.TRUNCATED:
+                # Recorded, then escalated — never repaired. Every rung asks the
+                # same model for the same answer under the same ceiling: feedback
+                # cannot help because the model made no mistake, and the fallback
+                # rung is designed to *degrade* the call, so it retries with less
+                # room than the budget that already proved too small. Climbing the
+                # ladder here spends the wall-clock of a whole generation, three
+                # more times, to arrive at the same sentence.
+                invocation = self._record(
+                    execution,
+                    request,
+                    runtime,
+                    InvocationOutcome.TRUNCATED,
+                    raw,
+                    parent,
+                    retry_type,
+                    "; ".join(attempted.errors),
+                    usage=usage,
+                )
+                attempts.append(invocation)
+                raise self._escalate(
+                    execution,
+                    stage,
+                    InvocationOutcome.TRUNCATED.value,
+                    "; ".join(attempted.errors),
+                    tuple(attempts),
+                )
+
             if attempted.value is not None:
                 invocation = self._record(
                     execution,
@@ -660,6 +688,21 @@ def _classify_transport(exc: LLMError) -> _Transport:
     return _Transport(InvocationOutcome.PROVIDER_ERROR, RetryType.PROVIDER_ERROR)
 
 
+#: What a person is told when a stage's answer did not fit in its budget.
+#:
+#: It names the file and the setting because that is the whole fix, and because
+#: the message it replaces — "response is not valid JSON: unterminated string" —
+#: sends a reader to the prompt, the schema and the model before they think to
+#: look at a number. Nothing about the JSON was wrong; there was simply less of it
+#: than the answer needed.
+_TRUNCATED_MESSAGE = (
+    "the model stopped because it reached this stage's output budget, so the "
+    "answer is cut off mid-value and cannot be parsed. Raise max_output_tokens "
+    "for this stage in config/model-routing.yaml (keeping it inside the "
+    "context_window, which the prompt shares), or give the stage less to produce."
+)
+
+
 @dataclass(frozen=True)
 class _Attempted[T: BaseModel]:
     """What one response turned out to be, before anything is recorded.
@@ -675,10 +718,18 @@ class _Attempted[T: BaseModel]:
     errors: list[str]
 
 
-def _evaluate[T: BaseModel](raw: str, schema: type[T]) -> _Attempted[T]:
-    """Parse and validate one response body, keeping every failure as data."""
+def _evaluate[T: BaseModel](raw: str, schema: type[T], *, truncated: bool = False) -> _Attempted[T]:
+    """Parse and validate one response body, keeping every failure as data.
+
+    ``truncated`` is the provider's own account of why it stopped, and it only
+    changes the reading of a body that failed to parse: a model that closed its
+    object before running out of room produced a usable answer, whatever the stop
+    reason said, and rejecting it over a flag would throw away finished work.
+    """
     parsed, parse_error = _parse(raw)
     if parsed is None:
+        if truncated:
+            return _Attempted(InvocationOutcome.TRUNCATED, None, None, [_TRUNCATED_MESSAGE])
         return _Attempted(
             InvocationOutcome.INVALID_JSON, None, None, [parse_error or "unparseable response"]
         )

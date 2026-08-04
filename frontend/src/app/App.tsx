@@ -8,13 +8,19 @@
  * redirecting to be had, and a router that could express those would invite
  * someone to write them.
  *
- * The mode toggle lives here because it is the one control that belongs to the
- * whole app: editorial by default, debugging when a person is looking for what
- * went wrong (plan/11 → trace overload).
+ * What the router does not decide, the header does: a project has five screens
+ * and they used to be reachable only by typing the URL or by finding a link at
+ * the bottom of the dashboard. Screens are the interface's own idea — the
+ * backend has artefacts, not tabs — so the list of them lives here, and each one
+ * still shows only what the backend gave it.
+ *
+ * Two controls belong to the whole app rather than to any screen: the editorial/
+ * debugging mode (plan/11 → trace overload) and the colour theme.
  */
 import { useCallback, useEffect, useState } from 'react';
 
 import { ModeProvider, useMode } from './mode';
+import { ThemeProvider, ThemeToggle } from './theme';
 import { fetchSession, onUnauthorized, signOut } from '@/api/client';
 import { SignInScreen } from '@/screens/SignInScreen';
 import { ArchitectureBoardScreen } from '@/screens/ArchitectureBoardScreen';
@@ -37,6 +43,15 @@ import { StageInspectorScreen } from '@/screens/StageInspectorScreen';
  */
 const ACTOR = 'ada';
 
+/** A project's screens, in the order the work moves through them. */
+const PROJECT_SCREENS: readonly { tail: string; label: string }[] = [
+  { tail: '', label: 'Overview' },
+  { tail: 'source', label: 'Source' },
+  { tail: 'questions', label: 'Questions' },
+  { tail: 'architecture', label: 'Architecture' },
+  { tail: 'trace', label: 'Timeline' },
+];
+
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
@@ -47,9 +62,14 @@ function useHash(): string {
   return hash;
 }
 
-function Screen({ hash }: { hash: string }) {
-  const [route, ...rest] = hash.replace(/^#\/?/, '').split('/');
+function parse(hash: string): { route: string; id?: string; tail?: string } {
+  const [route = '', ...rest] = hash.replace(/^#\/?/, '').split('/');
   const [id, tail] = rest;
+  return { route, id, tail: (tail ?? '').split('?')[0] ?? '' };
+}
+
+function Screen({ hash }: { hash: string }) {
+  const { route, id, tail } = parse(hash);
 
   if (route === 'projects' && id) {
     if (tail === 'source') return <SourceWorkspaceScreen projectId={id} />;
@@ -79,10 +99,32 @@ function Screen({ hash }: { hash: string }) {
   return (
     <section className="screen">
       <h1>Nothing here</h1>
-      <p>
-        Open a project at <code>#/projects/&lt;id&gt;</code>.
+      <p className="muted">
+        Open a project at <code>#/projects/&lt;id&gt;</code>, or start one from{' '}
+        <a href="#/">the project list</a>.
       </p>
     </section>
+  );
+}
+
+/** The project's screens, when a project is what is on screen. */
+function ProjectNav({ hash }: { hash: string }) {
+  const { route, id, tail } = parse(hash);
+  if (route !== 'projects' || !id) return null;
+
+  return (
+    <nav className="projectnav" aria-label="Project screens">
+      {PROJECT_SCREENS.map((screen) => (
+        <a
+          key={screen.tail || 'overview'}
+          className="projectnav__link"
+          aria-current={(tail ?? '') === screen.tail ? 'page' : undefined}
+          href={`#/projects/${id}${screen.tail ? `/${screen.tail}` : ''}`}
+        >
+          {screen.label}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -129,25 +171,30 @@ function Chrome() {
         <a className="app__brand" href="#/">
           groundscribe
         </a>
-        <span className="app__mode" data-testid="mode">
-          {mode}
-        </span>
-        <button
-          type="button"
-          onClick={() => setMode(mode === 'editorial' ? 'debugging' : 'editorial')}
-        >
-          {mode === 'editorial' ? 'switch to debugging' : 'switch to editorial'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            void signOut().finally(() => session.setAuthenticated(false));
-          }}
-        >
-          sign out
-        </button>
+        <span className="app__spacer" />
+        <div className="app__tools">
+          <ThemeToggle />
+          <span className="app__mode" data-testid="mode">
+            {mode}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'editorial' ? 'debugging' : 'editorial')}
+          >
+            {mode === 'editorial' ? 'Switch to debugging' : 'Switch to editorial'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void signOut().finally(() => session.setAuthenticated(false));
+            }}
+          >
+            Sign out
+          </button>
+        </div>
       </header>
       <main className="app__main">
+        <ProjectNav hash={hash} />
         <Screen hash={hash} />
       </main>
     </div>
@@ -156,8 +203,10 @@ function Chrome() {
 
 export function App() {
   return (
-    <ModeProvider>
-      <Chrome />
-    </ModeProvider>
+    <ThemeProvider>
+      <ModeProvider>
+        <Chrome />
+      </ModeProvider>
+    </ThemeProvider>
   );
 }

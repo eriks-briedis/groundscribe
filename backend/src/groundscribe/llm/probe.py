@@ -25,7 +25,7 @@ precisely what somebody configuring an installation needs to see.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -76,18 +76,26 @@ class ModelProbe:
 
 
 async def probe_models(
-    routing: RoutingPolicy, *, client: Completer, pricing: PricingTable
+    routing: RoutingPolicy, *, clients: Mapping[str, Completer], pricing: PricingTable
 ) -> tuple[ModelProbe, ...]:
     """Call every model the policy routes to, once, and report what happened.
 
+    Clients are supplied per provider name, the same shape the generator takes and
+    for the same reason: a policy may route different stages to different
+    providers, and probing a local model through a hosted client would answer a
+    question nobody asked. A model whose provider has no client is *reported* as
+    unconfigured rather than skipped — silence would read as "fine".
+
     Sequentially, not concurrently. A dozen simultaneous calls is the fastest way
     to be rate-limited by the very account this is checking, and the answer would
-    then be about the burst rather than about the configuration.
+    then be about the burst rather than about the configuration. It also matters
+    for a local provider, where concurrent calls to one machine measure contention
+    rather than whether the configuration works.
     """
     results: list[ModelProbe] = []
     for model, (stages, choices) in sorted(_models(routing).items()):
         results.append(
-            await _probe(model, stages=stages, choices=choices, client=client, pricing=pricing)
+            await _probe(model, stages=stages, choices=choices, clients=clients, pricing=pricing)
         )
     return tuple(results)
 
@@ -143,9 +151,27 @@ async def _probe(
     *,
     stages: list[str],
     choices: list[ModelChoice],
-    client: Completer,
+    clients: Mapping[str, Completer],
     pricing: PricingTable,
 ) -> ModelProbe:
+    provider = choices[0].provider
+    priced_here = pricing.entry_for(model) is not None
+    client = clients.get(provider)
+    if client is None:
+        # Not an exception: this is the single commonest thing a pre-flight has to
+        # report, and it is a configuration fact rather than a provider failure.
+        return ModelProbe(
+            model=model,
+            stages=tuple(sorted(stages)),
+            ok=False,
+            detail=(
+                f"routing wants provider {provider!r} but this machine has no client "
+                f"for it (configured: {', '.join(sorted(clients)) or 'none'})"
+            ),
+            priced=priced_here,
+            usage=TokenUsage(),
+        )
+
     request = LLMRequest(
         call_key=f"probe:{model}",
         # Plain text, whatever the stages ask for: a structured-output mode that
@@ -155,7 +181,7 @@ async def _probe(
         prompt=PROBE_PROMPT,
         runtime=_demanding(model, choices),
     )
-    priced = pricing.entry_for(model) is not None
+    priced = priced_here
     try:
         answer = await client.complete(request)
     except LLMError as exc:

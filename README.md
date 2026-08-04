@@ -104,56 +104,78 @@ rather than seconds, and a suite nobody runs is worse than a narrow one; see
 ## Connecting a model provider
 
 Every editorial stage runs against a model, so nothing works until one is
-configured. The shipped routing (`config/model-routing.yaml`, v9) points all
-twelve stages at **OpenAI**.
+configured. The shipped routing (`config/model-routing.yaml`, v10) points all
+twelve stages at **one local model** served by [Ollama](https://ollama.com) —
+`qwen3.6:35b`, a 36B mixture-of-experts with roughly 3B active parameters.
 
 ```bash
-export OPENAI_API_KEY=sk-...       # an API key from platform.openai.com
-uv run writer llm probe            # one tiny call per routed model
+ollama pull qwen3.6:35b                      # ~24 GB
+export OLLAMA_BASE_URL=http://localhost:11434
+uv run writer llm probe                      # one tiny call per routed model
 ```
 
-`probe` is the pre-flight, and it exists because two things in a routing file
-can only be confirmed against a live account:
+The address is required even though localhost is the obvious default. Plenty of
+machines run Ollama for something else, and one that happens to be listening has
+not thereby volunteered it to this application — the same decision plan/00 makes
+about silent network calls, applied to a provider that happens to be local.
 
-- **whether these model ids exist for your key** — names change and access
-  differs per account;
+`probe` is the pre-flight, and it exists because two things in a routing file can
+only be confirmed against a live installation:
+
+- **whether these model ids are actually available** — pulled, on a local server;
+  permitted, on a hosted account;
 - **whether those models accept the sampling parameters the file sets** —
   reasoning models reject `temperature` and `top_p` outright.
 
 ```
-routing policy v9 · pricing table v1
-  [FAIL] gpt-5: openai returned 400: Unsupported parameter: 'temperature'
+routing policy v10 · pricing table v1 · providers: ollama
+  [ok  ] qwen3.6:35b: ready.
          used by: align_voice, create_revision_plan, extract_source_truth, …
-  [ok  ] gpt-5-mini: ready.
+         no price configured — cost will report as n/a
 ```
 
-Both fixes are one edit to `config/model-routing.yaml`: change the model id, or
-delete the parameter it rejected. The adapter sends **only** what that file sets,
-so a deleted parameter is genuinely not sent — it never supplies a default of its
-own, because a default nobody chose would make the recorded runtime config a lie
-about the call.
+Fixes are one edit to `config/model-routing.yaml`: change the model id, or delete
+the parameter it rejected. The adapter sends **only** what that file sets, so a
+deleted parameter is genuinely not sent — it never supplies a default of its own,
+because a default nobody chose would make the recorded runtime config a lie about
+the call.
 
-> **An OpenAI API key is not a ChatGPT subscription.** They are separate products
-> with separate billing: the API is pay-as-you-go from `platform.openai.com`, and
-> a Plus/Pro/Team subscription does not carry a key. There is no supported way to
-> drive subscription entitlements from a third-party application.
+#### Why one model, and why that size
 
-### A key is permission to reach, not permission to send
+The split into a strong model and a cheap one — which versions 8 and 9 both had —
+exists to control a bill. Locally there is no bill, and the split costs something
+real instead: two models of this size do not fit in a 16 GB GPU at once, so every
+stage transition would evict one and reload the other.
+
+The mixture-of-experts architecture is what makes 36B practical on consumer
+hardware. A dense model that spills past VRAM pays for the spilled weights on
+*every* token, at system-memory bandwidth; an MoE touches only its active experts,
+so the same spill costs almost nothing. If you are choosing a different model,
+that distinction will matter more than the parameter count.
+
+> **Two settings in the routing file are not decoration.** `context_window`
+> becomes Ollama's `num_ctx`, which it defaults low and above which it truncates
+> the prompt **silently** — a stage without one answers confidently about material
+> it never saw. And the timeouts are an order of magnitude larger than the hosted
+> config's, because a 16k-token draft on a local model is tens of minutes.
+
+### Configuration is permission to reach, not permission to send
 
 Two gates, and they answer different questions for different people:
 
 | | who decides | how |
 |---|---|---|
-| is a provider **reachable**? | the operator | `OPENAI_API_KEY` on the machine |
+| is a provider **reachable**? | the operator | `OLLAMA_BASE_URL` (or `OPENAI_API_KEY`) on the machine |
 | may **this project's** material go there? | the author | `allowed_providers` on the project |
 
 `allowed_providers` defaults to empty, and `require_permitted_provider` refuses
-before any material moves. So an installation configured entirely for OpenAI
-still sends nothing until a project names it:
+before any material moves. So a fully configured installation still sends nothing
+until a project names the provider — and that holds for the local provider too,
+because being local is not consent:
 
 ```bash
 uv run writer project create --title "…" --author me --audience "…" \
-    --platform "…" --depth practitioner --provider openai
+    --platform "…" --depth practitioner --provider ollama
 ```
 
 `writer privacy visibility <project>` shows the resulting data flow per stage:
@@ -172,13 +194,20 @@ So `writer project metrics` reports `cost: n/a` until you paste your own two
 figures per model into that file. `writer llm probe` tells you which models are
 unpriced, once, rather than leaving you to notice on a dashboard weeks later.
 
-### Running local models instead
+### Running hosted models instead
 
-Routing v8 in git history points every stage at a local Ollama installation;
-restoring it is this one file. The Ollama and Anthropic adapters are still
-phase-04 stubs that raise rather than answer — wiring either is the same shape of
-work as `llm/adapters/openai.py`, which is about 200 lines against the provider's
-wire format.
+Routing v9 in git history points every stage at OpenAI; restoring it is this one
+file plus an `OPENAI_API_KEY`. The Anthropic adapter is still a phase-04 stub that
+raises rather than answers — wiring it is the same shape of work as
+`llm/adapters/ollama.py` or `llm/adapters/openai.py`, each about 200 lines against
+that provider's own wire format.
+
+The two real adapters deliberately share no HTTP base class, and that is worth
+knowing before you write a third. Ollama serves an OpenAI-compatible endpoint, so
+reusing `OpenAIClient` against it looks like the obvious economy — but that
+endpoint ignores `max_completion_tokens`, the key `OpenAIClient` sends, so every
+`max_output_tokens` in the routing policy would silently stop applying. Two wire
+formats, written twice, on purpose.
 
 ## Running it
 
@@ -210,12 +239,12 @@ uv run writer architecture approve <project> --by me
 uv run writer article draft <article>
 uv run writer execution inspect <execution>
 uv run writer execution replay <execution> --by me
-uv run writer execution fork <execution> --by me --model llama3.1:8b-instruct
+uv run writer execution fork <execution> --by me --model qwen3.6:27b
 uv run writer experiment compare <left> <right>
 uv run writer experiment reproducibility
 uv run writer experiment dataset "approved work" --created-by me
 uv run writer experiment create "cheaper model?" --dataset <id> --created-by me \
-    --arm baseline --arm "small=model=llama3.1:8b-instruct"
+    --arm baseline --arm "small=model=qwen3.6:27b"
 uv run writer experiment start <experiment>
 uv run writer experiment report <experiment>
 ```
@@ -409,9 +438,16 @@ be separate, or model calls happen inside HTTP requests.
 
 SQLite is the default everywhere — local runs, the container stack, and the test
 suite — because a first run should need no server and no credentials beyond the
-one password. Move to PostgreSQL when two things want to write at once: a real
-provider makes a stage take as long as the model does, and a job holds the SQLite
-write lock for its whole run ([KNOWN-ISSUES §1](./KNOWN-ISSUES.md)).
+one password. Move to PostgreSQL when two things want to **write** at once: a
+real provider makes a stage take as long as the model does, and a job holds the
+SQLite write lock for its whole run ([KNOWN-ISSUES §1](./KNOWN-ISSUES.md)).
+
+Reading is not affected either way. Every screen, and the job event stream, take
+a transaction that only reads, so the interface keeps answering out of the last
+committed snapshot for as long as a stage takes. What waits on SQLite is issuing
+a *command* during a run — cancelling mid-stage, or driving a second project
+while the first is generating — and a command that waits too long is answered
+with `503` and `Retry-After`, not a failure.
 
 ```bash
 # containers: adds the database service and points the app at it

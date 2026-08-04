@@ -15,11 +15,17 @@ writer waits out the busy timeout instead of failing at once. Both are things
 Postgres already does, which is the point — nothing above the engine has to know
 which database it is on.
 
-Three of these are configuration tests and say so. The fourth stages the actual
-failure with two threads, because it turned out to be deterministic once named:
-a transaction that reads before it writes cannot upgrade its snapshot if anyone
-committed in between, and SQLite refuses that upgrade without consulting the
-busy timeout at all.
+Three of these are configuration tests and say so. The rest stage real
+contention, because both facts underneath it turned out to be deterministic once
+named:
+
+- A transaction that reads before it writes cannot upgrade its snapshot if
+  anyone committed in between, and SQLite refuses that upgrade without
+  consulting the busy timeout at all. That is why commands begin ``IMMEDIATE``.
+- A transaction that only reads never upgrades anything, so it never needed the
+  write lock it was taking. That is why reads do not (KNOWN-ISSUES §1) — and it
+  is the difference between an application that works while a stage runs and one
+  that goes dark for the length of a model call.
 """
 
 from __future__ import annotations
@@ -30,8 +36,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
 
-from groundscribe.db import BUSY_TIMEOUT_MS, create_engine
+from groundscribe.db import BUSY_TIMEOUT_MS, create_engine, read_only
 
 
 def pragma(engine: Engine, name: str) -> str:
@@ -134,6 +141,73 @@ def test_a_transaction_that_reads_then_writes_is_not_refused(file_url: str) -> N
 
     assert failures == [], f"both writes should have happened, in some order: {failures}"
     assert rows == 2
+
+
+def test_a_read_is_not_held_up_by_a_job_that_is_still_running(
+    file_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The property the interface rests on for as long as a stage takes.
+
+    A job commits once, at the end (KNOWN-ISSUES §1), which with a real provider
+    is minutes away. Every screen in the application is a read, and write-ahead
+    logging entitles a reader to proceed against the last committed snapshot for
+    all of it — SQLite is not what stops them.
+
+    What stops them is this project's own ``BEGIN IMMEDIATE``, which takes the
+    write lock whether or not the transaction ever writes. So a read has to be
+    able to say that it is one, and get a deferred transaction for saying so.
+
+    The timeout is shortened because the failure mode under test is *waiting*: at
+    the real fifteen seconds a broken build would look like a hung suite.
+    """
+    monkeypatch.setattr("groundscribe.db.BUSY_TIMEOUT_MS", 500)
+    engine = create_engine(file_url)
+    with engine.begin() as setup:
+        setup.exec_driver_sql("CREATE TABLE note (id INTEGER PRIMARY KEY, body TEXT)")
+        setup.exec_driver_sql("INSERT INTO note (id, body) VALUES (1, 'committed')")
+
+    running_job = engine.connect()
+    running_job.begin()
+    running_job.exec_driver_sql("INSERT INTO note (id, body) VALUES (2, 'mid-stage')")
+
+    try:
+        with read_only(engine).connect() as screen:
+            visible = screen.exec_driver_sql("SELECT body FROM note ORDER BY id").scalars().all()
+    finally:
+        running_job.rollback()
+        running_job.close()
+        engine.dispose()
+
+    # The committed row, and not the one the job has not finished writing.
+    assert visible == ["committed"]
+
+
+def test_a_read_only_connection_still_reports_a_writer_it_collides_with(
+    file_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deferred is not permission to write; it is a promise not to.
+
+    A transaction that took the read-only option and then wrote anyway would be
+    the case ``BEGIN IMMEDIATE`` exists to prevent — a snapshot upgrade under
+    contention, refused without consulting the timeout. It must fail loudly here
+    rather than corrupt the reasoning that made reads deferred.
+    """
+    monkeypatch.setattr("groundscribe.db.BUSY_TIMEOUT_MS", 500)
+    engine = create_engine(file_url)
+    with engine.begin() as setup:
+        setup.exec_driver_sql("CREATE TABLE note (id INTEGER PRIMARY KEY)")
+
+    holder = engine.connect()
+    holder.begin()
+    holder.exec_driver_sql("INSERT INTO note (id) VALUES (1)")
+
+    try:
+        with pytest.raises(OperationalError), read_only(engine).begin() as pretending:
+            pretending.exec_driver_sql("INSERT INTO note (id) VALUES (2)")
+    finally:
+        holder.rollback()
+        holder.close()
+        engine.dispose()
 
 
 def test_the_configuration_survives_a_second_connection(file_url: str) -> None:

@@ -15,9 +15,9 @@ in the workflow engine, and a route that formed a second opinion would be the
 transition is 409: the request is fine and the *run* is in the wrong state, so a
 client that fixes its JSON gets the same answer while one that waits may not. An
 unattributed human action is 422 — the payload is what is wrong. A missing
-project, article or execution is 404 wherever it was noticed. Letting any of
-these reach the client as a 500 would turn a precise refusal into "something
-broke".
+project, article or execution is 404 wherever it was noticed. A database held by
+a running job is 503, because waiting is the whole remedy. Letting any of these
+reach the client as a 500 would turn a precise refusal into "something broke".
 """
 
 from __future__ import annotations
@@ -26,13 +26,14 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from groundscribe.api import auth
 from groundscribe.api.routes import router
 from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
-from groundscribe.app.services import UnknownProject
+from groundscribe.app.services import NothingToRetry, UnknownProject
 from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
@@ -76,6 +77,10 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (ArtifactProvenanceError, 409),
     # The request itself is unusable: nobody is accountable for the action.
     (AttributionRequired, 422),
+    # Asked to run failed work again where there is none, or where it is already
+    # coming. 409 rather than 404: the run exists and the request is well formed,
+    # and what makes it unanswerable is the run's state — which changes.
+    (NothingToRetry, 409),
     # Something named does not exist.
     (UnknownProject, 404),
     (MissingInput, 404),
@@ -100,9 +105,49 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (UnknownArm, 404),
 )
 
+#: What a database says when it is *held*, rather than broken.
+#:
+#: Matched on the driver's own words because both supported databases report
+#: contention through the same exception class they use for everything else:
+#: SQLite as a locked database, PostgreSQL as a lock timeout or a deadlock. The
+#: alternative — treating every ``OperationalError`` as contention — would tell
+#: someone whose schema is missing to try again, forever.
+CONTENTION_MARKERS: tuple[str, ...] = (
+    "database is locked",
+    "database table is locked",
+    "lock timeout",
+    "deadlock detected",
+)
 
-def create_app(*, runtime_factory: RuntimeFactory, password: str | None = None) -> FastAPI:
+#: How long a client is asked to wait. Shorter than the busy timeout it just sat
+#: through, because the holder is a job that may take minutes and a person who
+#: retries early learns that sooner than one who is told to wait for a number
+#: nobody can predict.
+RETRY_AFTER_SECONDS = 5
+
+#: Written here rather than taken from the exception. SQLAlchemy's message is a
+#: SQL statement and a link to its own documentation; the person reading this is
+#: looking at a dashboard that just refused them.
+BUSY_DETAIL = (
+    "the database is busy — a pipeline job is holding it while it runs. Nothing "
+    "was changed; issue the command again once the job finishes."
+)
+
+
+def create_app(
+    *,
+    runtime_factory: RuntimeFactory,
+    reader_factory: RuntimeFactory | None = None,
+    password: str | None = None,
+) -> FastAPI:
     """Build the API around a way of getting a runtime.
+
+    ``reader_factory`` is how a deployment hands the read side a runtime that
+    will not take a write lock (see :func:`~groundscribe.app.bootstrap.build_runtime`).
+    It defaults to ``runtime_factory``, so a caller with one session — every test
+    in the suite — keeps the behaviour it has: the distinction is a property of
+    the *database*, and one shared in-memory connection has no contention to
+    protect anyone from.
 
     ``password`` locks it. Given one, every request outside ``/auth`` must carry
     a session cookie issued by :mod:`groundscribe.api.auth`; given ``None``, the
@@ -117,6 +162,7 @@ def create_app(*, runtime_factory: RuntimeFactory, password: str | None = None) 
     """
     app = FastAPI(title=TITLE, version=VERSION, description=DESCRIPTION)
     app.state.runtime_factory = runtime_factory
+    app.state.reader_factory = reader_factory or runtime_factory
     app.state.password = password
     app.include_router(auth.router)
     app.include_router(router)
@@ -126,6 +172,7 @@ def create_app(*, runtime_factory: RuntimeFactory, password: str | None = None) 
 
     for exception_type, status in _STATUS_FOR:
         app.add_exception_handler(exception_type, _handler(status))
+    app.add_exception_handler(OperationalError, _contention_handler)
     return app
 
 
@@ -165,4 +212,36 @@ def _handler(status: int) -> Callable[[Request, Exception], JSONResponse]:
     return handle
 
 
-__all__ = ["DESCRIPTION", "TITLE", "VERSION", "RuntimeFactory", "create_app"]
+def _contention_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """Report a database somebody else is holding as busy, and nothing else.
+
+    A worker holds SQLite's write lock for the length of the job it is running
+    (KNOWN-ISSUES §1), which with a real provider is the length of a model call.
+    Every command issued during that waits out the busy timeout and then fails —
+    a failure of *timing*, where the request was fine, nothing was written, and
+    the remedy is the one thing a 500 does not suggest.
+
+    Anything else wearing the same exception class is re-raised unchanged. A
+    missing table is not a condition that clears while a person waits, and this
+    handler saying so would hide the only useful thing about it.
+    """
+    origin = getattr(exc, "orig", exc)
+    if not any(marker in str(origin).lower() for marker in CONTENTION_MARKERS):
+        raise exc
+    return JSONResponse(
+        status_code=503,
+        content={"detail": BUSY_DETAIL},
+        headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+    )
+
+
+__all__ = [
+    "BUSY_DETAIL",
+    "CONTENTION_MARKERS",
+    "DESCRIPTION",
+    "RETRY_AFTER_SECONDS",
+    "TITLE",
+    "VERSION",
+    "RuntimeFactory",
+    "create_app",
+]

@@ -32,11 +32,19 @@ from groundscribe.workflow.engine import WorkflowEngine
 from groundscribe.workflow.states import WorkflowState
 from provenance_helpers import make_recorder, seed_project
 
-#: The provider the shipped routing config names for every local-first stage.
-SHIPPED_PROVIDER = "openai"
+#: The provider and model the shipped routing config actually names.
+#:
+#: Read from the config rather than restated here. Every stage test builds a
+#: project whose ``allowed_providers`` has to permit whatever the routing file
+#: routes to, so a literal in this line would mean that changing one provider in
+#: one YAML file broke two hundred tests that have nothing to do with providers —
+#: and the fix each time would be to edit the copy back into agreement, which is
+#: not a test earning anything.
+SHIPPED_PROVIDER = default_routing_policy().default.primary.provider
+SHIPPED_MODEL = default_routing_policy().default.primary.model
 
 
-def fake_clients(model: str = "gpt-5") -> Mapping[str, LLMClient]:
+def fake_clients(model: str = SHIPPED_MODEL) -> Mapping[str, LLMClient]:
     """A client map keyed by the provider the shipped routing config asks for."""
     return {SHIPPED_PROVIDER: FakeLLMClient(provider=SHIPPED_PROVIDER, model=model)}
 

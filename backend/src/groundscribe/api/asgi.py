@@ -45,7 +45,14 @@ def served_app(
             f"anything that can reach the port. Put it in {ENV_FILE} (scripts/dev.sh "
             f"writes one for you) or export it."
         )
-    return create_app(runtime_factory=build_runtime, password=password)
+    return create_app(
+        runtime_factory=build_runtime,
+        # The read side gets a runtime that will not take a write lock, which on
+        # the default SQLite installation is what keeps every screen answering
+        # while a stage is running (KNOWN-ISSUES §1).
+        reader_factory=lambda: build_runtime(reading=True),
+        password=password,
+    )
 
 
 __all__ = ["served_app"]

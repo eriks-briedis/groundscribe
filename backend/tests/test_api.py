@@ -18,14 +18,20 @@ stages; re-asserting it here would test FastAPI.
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from golden import golden_text
 from groundscribe.api.app import create_app
+from groundscribe.app import bootstrap
+from groundscribe.app.runtime import Runtime
+from groundscribe.db import Base
 from groundscribe.storage.snapshot_store import SnapshotStore
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
@@ -162,6 +168,53 @@ def test_an_unknown_project_is_a_404(client: TestClient) -> None:
     assert client.get("/projects/nope").status_code == 404
 
 
+def busy_client(error: Exception) -> TestClient:
+    """A client whose every command collides with something holding the database.
+
+    Raised from the runtime factory rather than from a flush deep inside a
+    command: what is being pinned is how the *application* reports a database it
+    could not write to, and that answer must not depend on which statement was
+    the unlucky one.
+    """
+
+    def runtime_factory() -> Runtime:
+        raise error
+
+    return TestClient(create_app(runtime_factory=runtime_factory), raise_server_exceptions=False)
+
+
+def test_a_database_held_by_a_running_job_is_reported_as_busy_not_broken() -> None:
+    """KNOWN-ISSUES §1: a job holds SQLite's write lock for as long as it runs.
+
+    With a real provider attached that is however long the model takes, and every
+    command issued during it waits out the busy timeout and then fails. That is a
+    *timing* failure: the request was well-formed, nothing was written, and the
+    same request works once the job commits. 503 says exactly that and names when
+    to come back; a 500 tells a person their installation is broken.
+    """
+    locked = OperationalError("BEGIN IMMEDIATE", {}, sqlite3.OperationalError("database is locked"))
+
+    response = busy_client(locked).post("/projects/any/cancel", json={"actor_id": AUTHOR})
+
+    assert response.status_code == 503
+    assert int(response.headers["retry-after"]) > 0
+    assert "busy" in response.json()["detail"]
+
+
+def test_a_database_that_is_actually_broken_is_still_a_500() -> None:
+    """Only contention is a 503.
+
+    The same exception class carries a missing table and a syntax error, and
+    neither of those clears on its own. Reporting them as "try again" would turn
+    a broken installation into an infinite retry loop.
+    """
+    missing = OperationalError("SELECT 1", {}, sqlite3.OperationalError("no such table: projects"))
+
+    response = busy_client(missing).post("/projects/any/cancel", json={"actor_id": AUTHOR})
+
+    assert response.status_code == 500
+
+
 # ----------------------------------------------------------------------
 # Provenance and progress
 # ----------------------------------------------------------------------
@@ -248,6 +301,70 @@ async def test_a_jobs_progress_is_streamed_as_server_sent_events(
     assert "event: job.status" in frames
     assert "event: stage.started" in frames
     assert frames.endswith("\n\n")
+
+
+def test_a_screen_still_answers_while_a_job_holds_the_database(tmp_path: Path) -> None:
+    """The whole interface, during the minutes a stage takes (KNOWN-ISSUES §1).
+
+    Against a real file, because this is a property of two connections and one
+    lock — the suite's shared in-memory database cannot contend with itself, so
+    it can neither show the failure nor prove the fix.
+
+    A worker holding its transaction stands in for the job: it has claimed, it is
+    somewhere inside a model call, and it will not commit for a while. Every
+    ``GET`` in the application has to answer during that, out of the last
+    committed snapshot, without waiting for a lock it does not want.
+    """
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("groundscribe.db.BUSY_TIMEOUT_MS", 500)
+    monkeypatch.setenv("GROUNDSCRIBE_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'gs.db'}")
+    monkeypatch.setenv("GROUNDSCRIBE_BLOB_ROOT", str(tmp_path / "blobs"))
+    # The engines are cached per process, so a test that points the environment
+    # somewhere else has to say so — and put it back, or every later test inherits
+    # this file.
+    bootstrap.engine.cache_clear()
+    bootstrap.reading_engine.cache_clear()
+    writing = bootstrap.engine()
+    Base.metadata.create_all(writing)
+
+    # Wired exactly as `asgi.served_app` wires it: the point is the production
+    # arrangement, not that two factories can be passed.
+    client = TestClient(
+        create_app(
+            runtime_factory=bootstrap.build_runtime,
+            reader_factory=lambda: bootstrap.build_runtime(reading=True),
+        ),
+        raise_server_exceptions=False,
+    )
+    created = client.post(
+        "/projects",
+        json={
+            "title": "Read-through caching",
+            "author_id": AUTHOR,
+            "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+        },
+    )
+    assert created.status_code == 201, created.text
+    project_id = created.json()["project_id"]
+
+    job = writing.connect()
+    job.begin()
+    job.exec_driver_sql("UPDATE projects SET title = 'mid-stage'")
+    try:
+        dashboard = client.get(f"/projects/{project_id}/dashboard")
+        questions = client.get(f"/projects/{project_id}/questions")
+    finally:
+        job.rollback()
+        job.close()
+        writing.dispose()
+        monkeypatch.undo()
+        bootstrap.engine.cache_clear()
+        bootstrap.reading_engine.cache_clear()
+
+    assert dashboard.status_code == 200, dashboard.text
+    assert questions.status_code == 200, questions.text
+    # The committed title, not the one the job has not finished writing.
+    assert dashboard.json()["project"]["title"] == "Read-through caching"
 
 
 def test_the_servable_application_is_wired_to_the_local_installation() -> None:

@@ -48,7 +48,13 @@ from test_drafting import VOICE, Drafted, draft
 #: the routing config already chose for scoring — the information a repeat pass
 #: carries is in two models disagreeing, not in either of their names, so this
 #: follows the config rather than restating a string.
-SECOND_OPINION_MODEL = default_routing_policy().default.primary.model
+#:
+#: Derived from the scoring model rather than read from another route, because
+#: "some other route's model" is only reliably different while the config happens
+#: to spread stages across several models. Version 10 routes every stage to one
+#: local model, at which point that assumption silently stopped holding and this
+#: test started asserting a model differed from itself.
+SECOND_OPINION_MODEL = f"{default_routing_policy().stages[SCORE_STAGE].primary.model}-alt"
 
 
 def golden_score(**overrides: Any) -> dict[str, Any]:

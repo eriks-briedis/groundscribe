@@ -38,7 +38,7 @@ from groundscribe.domain.enums import ArticleDepth, SegmentKind
 from groundscribe.domain.retention import RetentionMode
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.llm.routing import RoutingPolicy, default_routing_policy
-from groundscribe.privacy.visibility import provider_visibility
+from groundscribe.privacy.visibility import LOCAL_PROVIDERS, provider_visibility
 
 LOCAL = "ollama"
 
@@ -113,10 +113,10 @@ def test_a_local_provider_is_reported_as_local(db_session: Session) -> None:
     it to whoever reads the name.
 
     Asserted against a routing policy pointed at a local provider rather than
-    against the shipped one. The shipped policy is OpenAI now, and a test that
-    read "local" off whatever happened to be configured would be testing the
-    configuration instead of the surface — and would have flipped its own meaning
-    the moment routing changed, which is exactly what it did.
+    against the shipped one. A test that read "local" off whatever happened to be
+    configured would be testing the configuration instead of the surface — and
+    would flip its own meaning every time routing changed, which by now it has
+    done twice in both directions.
     """
     project_id = _seed(db_session)
 
@@ -131,25 +131,55 @@ def test_a_local_provider_is_reported_as_local(db_session: Session) -> None:
     assert not surface.leaves_this_machine
 
 
-def test_the_shipped_routing_is_honest_about_leaving_the_machine(
+def test_a_hosted_provider_is_reported_as_leaving_the_machine(
     db_session: Session,
 ) -> None:
-    """The shipped policy sends material to OpenAI, and the surface says so.
+    """The other half of the pair, and the one with consequences.
 
-    This is the pairing that matters: the config may point anywhere, and the
-    question a person actually asks — *does my material leave this machine?* —
-    has to be answered from the config rather than from a promise made when the
-    default was different.
+    Held against an explicitly hosted policy rather than the shipped one for the
+    same reason its local twin is: the assertion has to keep meaning what it says
+    whichever way the shipped config happens to point this month.
     """
     project_id = _seed(db_session)
 
     surface = provider_visibility(
-        db_session, project_id, constraints=CONSTRAINTS, routing=default_routing_policy()
+        db_session, project_id, constraints=CONSTRAINTS, routing=_routed_to("openai")
     )
 
     assert surface.leaves_this_machine
     assert all(not stage.local for stage in surface.stages)
-    assert {stage.provider for stage in surface.stages} == {"openai"}
+
+
+def test_the_shipped_routing_is_reported_as_whatever_it_actually_is(
+    db_session: Session,
+) -> None:
+    """The config may point anywhere; the surface has to agree with it.
+
+    This is the property that survives a routing change, and the previous version
+    of this test is why it is written this way. It pinned the shipped policy's
+    provider as a literal, and said in its own docstring that the shipped policy
+    "is OpenAI now" — so when routing moved back to local models it failed, having
+    tested the configuration rather than the surface that reports it.
+
+    What a person actually asks is *does my material leave this machine?* The
+    answer must be derived from the routing file every time, never from a promise
+    made when the default was something else.
+    """
+    project_id = _seed(db_session)
+    routing = default_routing_policy()
+
+    surface = provider_visibility(db_session, project_id, constraints=CONSTRAINTS, routing=routing)
+
+    routed = {
+        choice.provider
+        for route in [routing.default, *routing.stages.values()]
+        for choice in (route.primary, route.fallback)
+        if choice is not None
+    }
+    assert {stage.provider for stage in surface.stages} <= routed
+    for stage in surface.stages:
+        assert stage.local is (stage.provider in LOCAL_PROVIDERS)
+    assert surface.leaves_this_machine is any(not stage.local for stage in surface.stages)
 
 
 def _routed_to(provider: str) -> RoutingPolicy:

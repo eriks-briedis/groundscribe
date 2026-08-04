@@ -99,19 +99,42 @@ Service = Annotated[ApplicationService, Depends(get_service)]
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 
 
+def get_reader_runtime(request: Request) -> Iterator[Runtime]:
+    """A runtime for a request that will not write, closed when the request ends.
+
+    Its own factory, and therefore on SQLite its own kind of transaction: a
+    deferred one, which proceeds against the last committed snapshot instead of
+    queueing behind whatever the worker is in the middle of. A screen that took
+    the command path's transaction would go dark for the length of a model call
+    (KNOWN-ISSUES §1) while asking for nothing it could not already have.
+    """
+    runtime = request.app.state.reader_factory()
+    try:
+        yield runtime
+    finally:
+        runtime.release()
+
+
 def get_reader(
-    runtime: Annotated[Runtime, Depends(get_runtime)],
+    runtime: Annotated[Runtime, Depends(get_reader_runtime)],
 ) -> ProjectionReader:
-    """The read side, over the same session and outside the command's transaction.
+    """The read side, on a read-only runtime, outside the command's transaction.
 
     Deliberately not built from :func:`get_service`: a read commits nothing
     because it writes nothing, and taking the commit-on-return dependency would
-    imply otherwise (phase 11 → *a read changes nothing*).
+    imply otherwise (phase 11 → *a read changes nothing*). That contract is what
+    makes the deferred transaction above safe to give it.
     """
     return ProjectionReader(runtime)
 
 
 Reader = Annotated[ProjectionReader, Depends(get_reader)]
+
+#: A runtime for a route that reads without going through the projections — the
+#: event stream, which needs the session itself. On the read side because it is a
+#: read, and because a stream that took the write lock between polls would be
+#: unable to follow the very job that was holding it.
+ReadingRuntimeDep = Annotated[Runtime, Depends(get_reader_runtime)]
 
 #: The trace filters, as repeated ``?filter=`` values. Typed as the enum so a
 #: name the system does not know is refused by the schema rather than dropped —
@@ -213,7 +236,6 @@ async def extract_source_model(
 @router.post(
     "/projects/{project_id}/source-gaps/{gap_id}/answer",
     response_model=schemas.CommandResponse,
-    status_code=202,
 )
 def answer_gap(
     project_id: str,
@@ -221,7 +243,7 @@ def answer_gap(
     body: schemas.AnswerGap,
     service: Service,
 ) -> schemas.CommandResponse:
-    """Record an answer and rebuild the source model from it."""
+    """Record one answer. The run stays in the queue until the round is submitted."""
     return render(
         service.answer_gap(
             project_id,
@@ -231,6 +253,30 @@ def answer_gap(
             response=body.response,
         )
     )
+
+
+@router.post(
+    "/projects/{project_id}/retry", response_model=schemas.CommandResponse, status_code=202
+)
+def retry_failed_job(
+    project_id: str, body: schemas.ActorAction, service: Service
+) -> schemas.CommandResponse:
+    """Queue the work that failed under this run, again. Moves the run nowhere."""
+    return render(service.retry_failed_job(project_id, requested_by=body.actor_id))
+
+
+@router.post(
+    "/projects/{project_id}/source-questions/submit",
+    response_model=schemas.CommandResponse,
+    status_code=202,
+)
+def submit_answers(
+    project_id: str,
+    body: schemas.ActorAction,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Hand the answered round back, rebuilding the source model from all of it."""
+    return render(service.submit_answers(project_id, submitted_by=body.actor_id))
 
 
 # ----------------------------------------------------------------------
@@ -784,7 +830,7 @@ def read_job(job_id: str, service: Service) -> Job:
 @router.get("/jobs/{job_id}/events")
 def stream_job_events(
     job_id: str,
-    runtime: RuntimeDep,
+    runtime: ReadingRuntimeDep,
     after: Annotated[int, Query(description="Last event sequence already seen.")] = -1,
 ) -> StreamingResponse:
     """Stream a job's progress until it finishes.

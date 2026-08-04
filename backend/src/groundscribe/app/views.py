@@ -85,12 +85,20 @@ class ActionLink(BaseModel):
     edges, and article actions seen from a project screen where no article is in
     view. Reported rather than filtered out, so the interface can show the true
     set of transitions and offer buttons only for what a person can actually do.
+
+    ``taken_by`` is the other half of that, and the two are independent: an edge
+    with no path may still be a person's to take, somewhere else in the
+    application. Without it an interface has to guess, and the natural guess —
+    "no button, so the pipeline must be doing it" — is wrong exactly where it
+    matters, on the edges a run is parked waiting for.
     """
 
     action: str
     method: str | None = None
     path: str | None = None
     requires_actor: bool = False
+    #: ``"you"`` or ``"pipeline"``, from the transition table's own actor.
+    taken_by: str = "pipeline"
 
 
 class UsageSummary(BaseModel):
@@ -289,15 +297,46 @@ class ArticleCard(BaseModel):
     validated: bool | None = None
 
 
+class JourneyStep(BaseModel):
+    """One phase of the pipeline, seen from where the run currently is."""
+
+    id: str
+    title: str
+    blurb: str
+    #: ``"done"``, ``"current"`` or ``"upcoming"``.
+    status: str
+
+
+class ProjectJourney(BaseModel):
+    """How far the work has got, at the size a person follows it.
+
+    Published rather than left to the interface: which phase a state belongs to,
+    and who a run is waiting for, are facts about the machine (plan/05). A screen
+    that grouped twenty-three states into eight phases of its own would be the
+    second opinion plan/11 forbids — and would be wrong the day a state is added.
+    """
+
+    steps: list[JourneyStep] = Field(default_factory=list)
+    #: What is happening now, in a sentence written for a person.
+    headline: str = ""
+    #: ``"you"``, ``"pipeline"`` or ``"nobody"``.
+    waiting_on: str = "pipeline"
+
+
 class ProjectDashboard(BaseModel):
     """plan/11 → *Project dashboard*, assembled from rows and nothing else."""
 
     project: ProjectSummary
     run_id: str
     state: WorkflowState
+    journey: ProjectJourney
     available_actions: list[str] = Field(default_factory=list)
     action_links: list[ActionLink] = Field(default_factory=list)
     pending_command: ActionLink | None = None
+    #: Present only when a job failed and nothing is queued in its place — which
+    #: is the one situation a run cannot leave on its own. Absent the rest of the
+    #: time, so an interface never offers to re-run work that is already coming.
+    retry_command: ActionLink | None = None
     constraints: ConstraintsView
     source: SourceCompleteness
     articles: list[ArticleCard] = Field(default_factory=list)
@@ -369,6 +408,11 @@ class QuestionQueue(BaseModel):
     """plan/11 → *Question queue*."""
 
     questions: list[QuestionView] = Field(default_factory=list)
+    #: Where the answered round is handed back, and ``None`` when the run is not
+    #: taking answers. One command for the round rather than one per answer: the
+    #: rebuild reads every answer on record, so it is worth exactly one model
+    #: call however many questions the author got through.
+    submit: ActionLink | None = None
 
 
 # ----------------------------------------------------------------------

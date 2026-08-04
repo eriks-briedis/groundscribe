@@ -37,10 +37,10 @@ describe('the project dashboard', () => {
 
     render(<DashboardScreen projectId={PROJECT_ID} />);
 
-    expect(await screen.findByTestId('source-completeness')).toHaveTextContent('7 claims');
+    expect(await screen.findByTestId('stat-claims')).toHaveTextContent('7');
     expect(screen.getByText(/what was the cold-cache p99\?/i)).toBeInTheDocument();
-    expect(screen.getByTestId('usage')).toHaveTextContent('9 calls');
-    expect(screen.getByTestId('usage')).toHaveTextContent('$0.108');
+    expect(screen.getByTestId('stat-calls')).toHaveTextContent('9');
+    expect(screen.getByTestId('stat-cost')).toHaveTextContent('$0.108');
   });
 
   it('shows the failure the run has already had', async () => {
@@ -76,8 +76,67 @@ describe('the project dashboard', () => {
     await screen.findByTestId('run-state');
 
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
-    expect(buttons).toContain('cancel');
-    expect(buttons).not.toContain('approve final'); // offered, but not from here
+    expect(buttons).toContain('Cancel');
+    expect(buttons).not.toContain('Approve final'); // offered, but not from here
+  });
+
+  it('survives a backend that has not been restarted into the new payload', async () => {
+    // What a person actually hits: the frontend reloads on save, the API process
+    // does not, and one missing field used to take the whole screen down with a
+    // stack trace instead of showing the artefacts it had.
+    const stale: Record<string, unknown> = { ...dashboard };
+    delete stale.journey;
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: stale });
+
+    render(<DashboardScreen projectId={PROJECT_ID} />);
+
+    expect(await screen.findByTestId('run-state')).toBeInTheDocument();
+    expect(screen.queryByTestId('journey')).not.toBeInTheDocument();
+    expect(screen.getByTestId('now')).toHaveTextContent(/older build/i);
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+  });
+
+  it('offers the way out of a run whose job failed under it', async () => {
+    // The situation that has no other exit: the state's own edges belong to the
+    // pipeline, and the pipeline's job is the thing that failed. The backend
+    // sends the command only when the run is actually stuck, so the screen shows
+    // it whenever it arrives and never decides for itself.
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/dashboard`]: {
+        ...dashboard,
+        retry_command: {
+          action: 'retry_failed_job',
+          method: 'POST',
+          path: `/projects/${PROJECT_ID}/retry`,
+          requires_actor: true,
+          taken_by: 'you',
+        },
+      },
+      [`/projects/${PROJECT_ID}/retry`]: {
+        project_id: PROJECT_ID,
+        run_id: 'r1',
+        state: 'source_model_extracting',
+        available_actions: [],
+      },
+    });
+
+    render(<DashboardScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /run that step again/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]).toMatchObject({
+      path: `/projects/${PROJECT_ID}/retry`,
+      body: { actor_id: 'ada' },
+    });
+  });
+
+  it('says nothing about retrying a run that is not stuck', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+
+    render(<DashboardScreen projectId={PROJECT_ID} />);
+
+    await screen.findByTestId('run-state');
+    expect(screen.queryByTestId('stranded')).not.toBeInTheDocument();
   });
 
   it('says what went wrong instead of rendering an empty page', async () => {
@@ -132,8 +191,56 @@ describe('the question queue', () => {
 
     const items = await screen.findAllByRole('article');
     expect(items[0]).toHaveTextContent('What was the cold-cache p99?');
-    expect(items[0]).toHaveTextContent('blocking');
+    expect(items[0]).toHaveTextContent(/blocks the run/i);
     expect(items[0]).toHaveTextContent('The headline number is meaningless without it.');
+  });
+
+  it('collects a round rather than rebuilding on every answer', async () => {
+    // The queue is an interview: several answers, then one hand-back. The count
+    // is what tells the author how much of the round they have done, and the
+    // note is what tells them which button costs a model call.
+    fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: questionQueue });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+
+    const round = await screen.findByTestId('round');
+    expect(round).toHaveTextContent(/1 answered/i);
+    expect(round).toHaveTextContent(/2 still open/i);
+    expect(screen.getByRole('button', { name: /rebuild with these answers/i })).toBeEnabled();
+  });
+
+  it('hands the round back where the backend said, and says who did', async () => {
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/questions`]: questionQueue,
+      [`/projects/${PROJECT_ID}/source-questions/submit`]: {
+        project_id: PROJECT_ID,
+        run_id: 'r1',
+        state: 'source_model_extracting',
+        available_actions: [],
+      },
+    });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /rebuild with these answers/i }),
+    );
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]).toMatchObject({
+      path: `/projects/${PROJECT_ID}/source-questions/submit`,
+      body: { actor_id: 'ada' },
+    });
+  });
+
+  it('offers no hand-back once the run has left the queue', async () => {
+    fakeBackend({
+      [`/projects/${PROJECT_ID}/questions`]: { ...questionQueue, submit: null },
+    });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+
+    await screen.findByTestId('question-g1');
+    expect(screen.queryByTestId('round')).not.toBeInTheDocument();
   });
 
   it('keeps an answered question, with the answer that settled it', async () => {
@@ -159,7 +266,7 @@ describe('the question queue', () => {
 
     render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
     await userEvent.type(await screen.findByLabelText(/your answer/i), 'Cold-cache p99 was 640ms.');
-    await userEvent.click(screen.getByRole('button', { name: /^answer$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /record answer/i }));
 
     await waitFor(() => expect(backend.commands).toHaveLength(1));
     expect(backend.commands[0]).toMatchObject({
@@ -168,13 +275,24 @@ describe('the question queue', () => {
     });
   });
 
+  it('shows no form for a question the backend will not take an answer for', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: questionQueue });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+
+    const closed = await screen.findByTestId('question-g3');
+    expect(closed).toHaveTextContent('Which cache size was measured?');
+    expect(closed).toHaveTextContent(/closed to answers/i);
+    expect(closed.querySelector('form')).toBeNull();
+  });
+
   it('offers the two honest non-answers the source model needs', async () => {
     fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: questionQueue });
 
     render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
 
     const options = await screen.findByLabelText(/how you are answering/i);
-    expect(options).toHaveTextContent(/unknown/i);
+    expect(options).toHaveTextContent(/don't know/i);
     expect(options).toHaveTextContent(/confidential/i);
   });
 });

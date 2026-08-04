@@ -247,6 +247,10 @@ class OpenAIClient:
             refusal=message.get("refusal") or None,
             tool_calls=tuple(_tool_calls(message.get("tool_calls") or ())),
             usage=self._priced(_usage(body.get("usage")), body),
+            # Why it stopped, kept because "the answer was cut off" and "the
+            # answer was wrong" are different problems with different fixes, and
+            # a body that ends mid-string cannot tell them apart on its own.
+            stop_reason=choices[0].get("finish_reason") or None,
         )
 
     def _priced(self, usage: TokenUsage, body: Mapping[str, Any]) -> TokenUsage:

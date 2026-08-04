@@ -36,7 +36,9 @@ from sqlalchemy.orm import Session
 from groundscribe.app import rehydrate
 from groundscribe.app.actions import (
     ACTION_ENDPOINTS,
+    RETRY_FAILED,
     STATE_COMMANDS,
+    SUBMIT_ANSWERS,
     available_actions,
     resolve,
 )
@@ -72,6 +74,7 @@ from groundscribe.app.views import (
     InterventionView,
     InvocationView,
     JobView,
+    JourneyStep,
     Lifecycle,
     LineageEdge,
     LineageGraph,
@@ -80,6 +83,7 @@ from groundscribe.app.views import (
     ProjectCard,
     ProjectDashboard,
     ProjectIndex,
+    ProjectJourney,
     ProjectSummary,
     QuestionQueue,
     QuestionView,
@@ -118,8 +122,10 @@ from groundscribe.scoring.scoring import SCORE_STAGE
 from groundscribe.stages.override import OverrideOperation
 from groundscribe.stages.rewriting import REWRITE_STAGE
 from groundscribe.voice.store import VoiceStore
+from groundscribe.workflow.journey import STATE_HEADLINES, journey_of, waiting_on
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
+from groundscribe.workflow.transitions import is_taken_by_user
 
 #: What counts as an expensive call, in dollars. A threshold has to be a number
 #: somewhere; it is here, named, rather than inside the filter that uses it, so a
@@ -222,11 +228,13 @@ class ProjectionReader:
             ),
             run_id=run.id,
             state=position.state,
+            journey=_journey(position.state),
             available_actions=list(available_actions(position.state)),
             action_links=_action_links(position.state, project_id=project_id, article_id=None),
             pending_command=_pending_command(
                 position.state, project_id=project_id, article_id=None
             ),
+            retry_command=self._retry_command(run, project_id),
             constraints=_constraints_view(constraints),
             source=self._completeness(project_id, questions),
             articles=[self._card(article) for article in self._articles(project_id)],
@@ -309,7 +317,21 @@ class ProjectionReader:
         would hide the reasoning behind the source model it produced.
         """
         self._project(project_id)
-        return QuestionQueue(questions=self._questions(project_id))
+        state = self._position(self._run(project_id)).state
+        return QuestionQueue(
+            questions=self._questions(project_id),
+            submit=(
+                ActionLink(
+                    action=WorkflowAction.ANSWER_QUESTIONS.value,
+                    method=SUBMIT_ANSWERS.method,
+                    path=resolve(SUBMIT_ANSWERS, project_id=project_id, article_id=None),
+                    requires_actor=SUBMIT_ANSWERS.requires_actor,
+                    taken_by="you",
+                )
+                if WorkflowAction.ANSWER_QUESTIONS.value in available_actions(state)
+                else None
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Architecture board
@@ -809,6 +831,28 @@ class ProjectionReader:
             raise UnknownArtefact(f"no pipeline run for project {project_id}")
         return run
 
+    def _retry_command(self, run: models.PipelineRun, project_id: str) -> ActionLink | None:
+        """Offered only where a run cannot get itself moving again.
+
+        That is a job that failed with nothing queued behind it. While work is
+        pending or running the run is fine and the offer would be a duplicate;
+        with nothing failed there is nothing to run again. Both conditions are
+        read from the queue rather than from the state, because "stuck" is a
+        fact about the *work*, not about the position.
+        """
+        statuses = set(
+            self._session.scalars(select(Job.status).where(Job.pipeline_run_id == run.id))
+        )
+        if JobStatus.FAILED not in statuses or statuses & {JobStatus.PENDING, JobStatus.RUNNING}:
+            return None
+        return ActionLink(
+            action="retry_failed_job",
+            method=RETRY_FAILED.method,
+            path=resolve(RETRY_FAILED, project_id=project_id, article_id=None),
+            requires_actor=RETRY_FAILED.requires_actor,
+            taken_by="you",
+        )
+
     def _position(self, run: models.PipelineRun) -> WorkflowPosition:
         """Where the run is, read from its row.
 
@@ -1089,6 +1133,13 @@ class ProjectionReader:
         answers = {
             answer.gap_id: answer for answer in rehydrate.open_answers(self._session, project_id)
         }
+        # Whether an answer can be taken at all belongs to the run, not to the
+        # question: answering re-enters extraction, and a run that has since left
+        # the pause has no such edge. Read from the transition table so the queue
+        # cannot offer what a POST would refuse (rule 2 above).
+        open_for_answers = WorkflowAction.ANSWER_QUESTIONS.value in available_actions(
+            self._position(self._run(project_id)).state
+        )
         return [
             QuestionView(
                 id=gap.id,
@@ -1101,7 +1152,13 @@ class ProjectionReader:
                 surfaced=gap.surfaced,
                 resolved=gap.resolved,
                 answer=_answer_view(answers.get(gap.id)),
-                answer_path=f"/projects/{project_id}/source-gaps/{gap.id}/answer",
+                # Gone once the gap is closed, whether this question's own answer
+                # closed it or another one did: a settled question is a record.
+                answer_path=(
+                    f"/projects/{project_id}/source-gaps/{gap.id}/answer"
+                    if open_for_answers and not gap.resolved
+                    else None
+                ),
             )
             for gap in gaps
         ]
@@ -1299,9 +1356,24 @@ def _action_links(
                 method=endpoint.method if endpoint and path else None,
                 path=path,
                 requires_actor=bool(endpoint and endpoint.requires_actor and path),
+                taken_by=(
+                    "you" if action is not None and is_taken_by_user(state, action) else "pipeline"
+                ),
             )
         )
     return links
+
+
+def _journey(state: WorkflowState) -> ProjectJourney:
+    """The pipeline at the size a person follows it, from the workflow's own map."""
+    return ProjectJourney(
+        steps=[
+            JourneyStep(id=step.id, title=step.title, blurb=step.blurb, status=step.status)
+            for step in journey_of(state)
+        ],
+        headline=STATE_HEADLINES[state],
+        waiting_on=waiting_on(state),
+    )
 
 
 def _pending_command(

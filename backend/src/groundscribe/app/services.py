@@ -53,7 +53,7 @@ from groundscribe.experiments.replay import Rerun as ExperimentRerun
 from groundscribe.experiments.replay import plan_rerun
 from groundscribe.experiments.runs import ArmSpec, ExperimentRunner, UnknownArm
 from groundscribe.experiments.variables import ForkVariables
-from groundscribe.jobs.enums import JobType
+from groundscribe.jobs.enums import JobStatus, JobType
 from groundscribe.jobs.models import Job
 from groundscribe.observability.metrics import RunMetrics, collect_metrics
 from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
@@ -63,7 +63,7 @@ from groundscribe.privacy.storage import StorageReport, storage_report
 from groundscribe.privacy.traces import TraceDeletion, TraceExport, delete_traces, export_traces
 from groundscribe.privacy.visibility import ProviderVisibility, provider_visibility
 from groundscribe.provenance import models
-from groundscribe.provenance.enums import ActorType
+from groundscribe.provenance.enums import ActorType, InterventionType
 from groundscribe.stages.base import PipelineContext, StageRunner
 from groundscribe.stages.ingestion import IngestSource
 from groundscribe.stages.override import (
@@ -84,6 +84,7 @@ from groundscribe.voice.precedence import ResolvedVoice
 from groundscribe.voice.schemas import VoiceProfileDocument
 from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.engine import WorkflowEngine
+from groundscribe.workflow.errors import AttributionRequired, IllegalTransition
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 
@@ -92,6 +93,16 @@ A = WorkflowAction
 
 class UnknownProject(LookupError):
     """Asked about a project that does not exist, or has no run."""
+
+
+class NothingToRetry(LookupError):
+    """Asked to run the failed work again on a run that has none.
+
+    Its own type because the two ways to get here are different situations and
+    both are ordinary: nothing has failed, or the work is already queued and
+    coming. Neither is an error in the caller's request, and neither should read
+    as one.
+    """
 
 
 @dataclass(frozen=True)
@@ -280,21 +291,111 @@ class ApplicationService:
         answered_by: str,
         response: AnswerResponse = AnswerResponse.ANSWERED,
     ) -> CommandResult:
-        """Record one answer and rebuild the source model from it.
+        """Record one answer, and leave the run where it is.
 
-        The rebuild *supersedes* any extraction still queued rather than joining
-        it: a second answer makes the first round's extraction wrong, not
-        redundant, and running it anyway would spend a model call producing a
-        model the author has already contradicted.
+        An author works through the questions the way they were asked — several
+        at a sitting, in whatever order the material comes back to them — and
+        :meth:`submit_answers` is what hands the round back. Recording here took
+        the ``answer_questions`` edge once, which meant the first answer left the
+        state its own successors needed: the second was refused as out of order,
+        by the run the author's own first answer had moved.
+
+        Not a transition, so it carries its own gate. The question is still the
+        engine's — *does this run offer* ``answer_questions`` — and asking it
+        that way keeps a cancelled or finished run from accepting answers nothing
+        will ever read.
         """
         resumed = self._resume(project_id)
+        self._require_offered(resumed, A.ANSWER_QUESTIONS)
         gap = resumed.context.session.get(domain_models.SourceGap, gap_id)
         if gap is None:
             raise UnknownProject(f"no gap {gap_id} in project {project_id}")
 
         queue = open_question_queue(resumed.context)
         queue.respond(gap, response=response, text=text, answered_by=answered_by)
-        queue.submit(submitted_by=answered_by)
+        self._runtime.recorder.complete_stage(queue.execution)
+        return self._settle(resumed)
+
+    # ------------------------------------------------------------------
+    # Recovery
+    # ------------------------------------------------------------------
+
+    def retry_failed_job(self, project_id: str, *, requested_by: str) -> CommandResult:
+        """Queue the work that failed under this run, again.
+
+        The situation this exists for: a job fails, and the run is left in the
+        ``-ing`` state whose *only* remaining edges belong to the pipeline. The
+        pipeline is not coming — its job is the thing that failed — so without
+        this the run is stranded, and the author's options are to cancel it and
+        re-ingest, or to edit the database.
+
+        Deliberately not a transition. The run is already in the state the failed
+        job was carrying it out of, so recovery is *re-queueing the same work*,
+        not negotiating a new position with the transition table. That keeps this
+        one of the few commands that cannot leave the machine somewhere the table
+        does not describe.
+
+        Attributed, because it spends a model call. Refused while anything is
+        still queued, because a second copy of work that is already coming is a
+        duplicate, not a recovery.
+        """
+        if not requested_by:
+            raise AttributionRequired("a retry is a person's decision to spend another call")
+
+        resumed = self._resume(project_id)
+        session = self._runtime.session
+        outstanding = session.scalars(
+            select(Job)
+            .where(
+                Job.pipeline_run_id == resumed.run.id,
+                Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+            )
+            .limit(1)
+        ).first()
+        if outstanding is not None:
+            raise NothingToRetry(
+                f"{outstanding.job_type} is already {outstanding.status.value} for this run"
+            )
+
+        failed = session.scalars(
+            select(Job)
+            .where(Job.pipeline_run_id == resumed.run.id, Job.status == JobStatus.FAILED)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+        ).first()
+        if failed is None:
+            raise NothingToRetry(f"no failed job to run again in project {project_id}")
+
+        # The payload as well as the type: a job re-queued without the budget or
+        # the options it was given is a different job wearing the same name.
+        job = self._runtime.queue.enqueue(
+            job_type=JobType(failed.job_type),
+            run=resumed.run,
+            payload=dict(failed.payload or {}),
+            supersede=True,
+        )
+        self._runtime.recorder.record_user_intervention(
+            resumed.engine.execution,
+            user_id=requested_by,
+            intervention_type=InterventionType.RETRY,
+            payload={"job_id": job.id, "retried_job_id": failed.id, "job_type": failed.job_type},
+        )
+        return self._settle(resumed, job=job)
+
+    def submit_answers(self, project_id: str, *, submitted_by: str) -> CommandResult:
+        """Hand the answered round back to the pipeline, rebuilding the source model.
+
+        One edge for however many answers were recorded, because the rebuild
+        reads all of them (:func:`~groundscribe.app.rehydrate.open_answers`).
+        Rebuilding per answer would have spent a model call on each, and every
+        one but the last on a source model the author's next answer contradicted.
+
+        The rebuild *supersedes* any extraction still queued rather than joining
+        it, for the same reason: an extraction queued before this round was
+        submitted is answering an older question.
+        """
+        resumed = self._resume(project_id)
+        queue = open_question_queue(resumed.context)
+        queue.submit(submitted_by=submitted_by)
         self._runtime.recorder.complete_stage(queue.execution)
 
         job = self._runtime.queue.enqueue(
@@ -929,6 +1030,24 @@ class ApplicationService:
     def _resume(self, project_id: str) -> Resumed:
         """Rebuild the engine and the stage context from stored rows."""
         return resume_run(self._runtime, self._run_for(project_id))
+
+    def _require_offered(self, resumed: Resumed, action: WorkflowAction) -> None:
+        """Refuse a command the run does not currently offer.
+
+        For commands that *record* rather than move: answering a question writes
+        provenance and takes no edge, so nothing else would ask the engine
+        whether it is allowed. The refusal is the machine's own — its list of
+        offered actions — rather than a state name compared here, so a command
+        cannot go on being accepted after the transition table stops offering it.
+        """
+        if action not in resumed.engine.machine.available_actions():
+            offered = ", ".join(
+                sorted(offer.value for offer in resumed.engine.machine.available_actions())
+            )
+            raise IllegalTransition(
+                f"{action.value} is not available in {resumed.engine.state.value} "
+                f"(offered: {offered})"
+            )
 
     def _run_for(self, project_id: str) -> models.PipelineRun:
         run = self._runtime.session.scalars(

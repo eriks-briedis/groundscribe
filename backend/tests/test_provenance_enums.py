@@ -88,11 +88,17 @@ def test_invocation_outcomes_distinguish_useful_but_invalid_responses() -> None:
 
     Keeping these distinct is what lets a useful-but-invalid response be preserved
     alongside its repaired successor.
+
+    ``truncated`` is the third content outcome and the odd one out: the body is
+    neither malformed nor non-conforming, it is *unfinished*, and it is the only
+    one no repair can address — the model was cut off, so the fix is the stage's
+    output budget rather than another attempt.
     """
     assert _values(enums.InvocationOutcome) == {
         "accepted",
         "invalid_json",
         "invalid_schema",
+        "truncated",
         "refused",
         "timeout",
         "provider_error",
@@ -139,6 +145,9 @@ def test_intervention_types_cover_the_human_control_points() -> None:
         "override",
         "answer",
         "cancellation",
+        # A person asking for failed work to run again is a control point like the
+        # others: it spends a model call, and somebody chose to spend it.
+        "retry",
     }
 
 

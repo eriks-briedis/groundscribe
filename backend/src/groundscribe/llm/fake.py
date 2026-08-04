@@ -22,6 +22,7 @@ from typing import Any
 
 from groundscribe.llm.errors import LLMProviderError, LLMRateLimitError, LLMTimeoutError
 from groundscribe.llm.protocol import (
+    LENGTH_STOP,
     LLMRequest,
     LLMResponse,
     ProviderMetadata,
@@ -148,6 +149,16 @@ class FakeLLMClient:
         has to survive verbatim into the record.
         """
         self._queue(call_key, LLMResponse(text=text, usage=usage or TokenUsage()))
+
+    def script_truncated(self, call_key: str, text: str) -> None:
+        """Queue a body the provider stopped emitting when the budget ran out.
+
+        Its own scripting method because it is its own outcome: the text alone
+        cannot express it — a half-written object and a badly-written one are the
+        same string to a parser — and the difference is exactly what the ladder
+        has to act on.
+        """
+        self._queue(call_key, LLMResponse(text=text, stop_reason=LENGTH_STOP))
 
     def script_refusal(self, call_key: str, reason: str) -> None:
         """Queue a provider refusal — a response, never an exception."""

@@ -35,12 +35,32 @@ export const dashboard: Dashboard = {
   },
   run_id: 'r1',
   state: 'human_approval_required',
+  journey: {
+    headline: 'Your turn: the last word on publishing is yours.',
+    waiting_on: 'you',
+    steps: [
+      { id: 'source', title: 'Source', blurb: 'Turn the material into checked facts.', status: 'done' },
+      { id: 'architecture', title: 'Architecture', blurb: 'Decide what to write.', status: 'done' },
+      { id: 'brief', title: 'Brief', blurb: 'Fix the angle and the length.', status: 'done' },
+      { id: 'draft', title: 'Draft', blurb: 'Write the first version.', status: 'done' },
+      { id: 'review', title: 'Review', blurb: 'Find what is wrong with the argument.', status: 'done' },
+      { id: 'voice', title: 'Voice', blurb: 'Make it sound like you.', status: 'done' },
+      { id: 'score', title: 'Score', blurb: 'Grade it against the rubric.', status: 'done' },
+      { id: 'publish', title: 'Publish', blurb: 'Check every claim, then approve.', status: 'current' },
+    ],
+  },
   available_actions: ['approve_final', 'cancel', 'fork_execution', 'reject_final'],
   action_links: [
-    { action: 'approve_final', method: null, path: null, requires_actor: false },
-    { action: 'cancel', method: 'POST', path: `/projects/${PROJECT_ID}/cancel`, requires_actor: true },
-    { action: 'fork_execution', method: null, path: null, requires_actor: false },
-    { action: 'reject_final', method: null, path: null, requires_actor: false },
+    { action: 'approve_final', method: null, path: null, requires_actor: false, taken_by: 'you' },
+    {
+      action: 'cancel',
+      method: 'POST',
+      path: `/projects/${PROJECT_ID}/cancel`,
+      requires_actor: true,
+      taken_by: 'you',
+    },
+    { action: 'fork_execution', method: null, path: null, requires_actor: false, taken_by: 'pipeline' },
+    { action: 'reject_final', method: null, path: null, requires_actor: false, taken_by: 'you' },
   ],
   pending_command: null,
   constraints: {
@@ -159,6 +179,7 @@ export const sourceWorkspace: SourceWorkspace = {
     method: 'POST',
     path: `/projects/${PROJECT_ID}/sources`,
     requires_actor: false,
+    taken_by: 'you',
   },
   provenance: {
     source_model_execution_id: 'e2',
@@ -168,6 +189,13 @@ export const sourceWorkspace: SourceWorkspace = {
 };
 
 export const questionQueue: QuestionQueue = {
+  submit: {
+    action: 'answer_questions',
+    method: 'POST',
+    path: `/projects/${PROJECT_ID}/source-questions/submit`,
+    requires_actor: true,
+    taken_by: 'you',
+  },
   questions: [
     {
       id: 'g1',
@@ -201,6 +229,21 @@ export const questionQueue: QuestionQueue = {
         diff_snapshot_id: 'snap-3',
       },
       answer_path: `/projects/${PROJECT_ID}/source-gaps/g2/answer`,
+    },
+    {
+      // Raised by a round the run has since moved past: still worth reading, no
+      // longer answerable, and the backend says so by withholding the path.
+      id: 'g3',
+      question: 'Which cache size was measured?',
+      why_it_matters: 'The number moves with it.',
+      description: '',
+      priority: 'high_value',
+      group: 'latency',
+      ordinal: 2,
+      surfaced: false,
+      resolved: false,
+      answer: null,
+      answer_path: null,
     },
   ],
 };
@@ -239,12 +282,14 @@ export const architecture: ArchitectureBoard = {
     method: 'PUT',
     path: `/projects/${PROJECT_ID}/architecture/arch-2`,
     requires_actor: false,
+    taken_by: 'you',
   },
   approve_command: {
     action: 'approve_architecture',
     method: 'POST',
     path: `/projects/${PROJECT_ID}/architecture/arch-2/approve`,
     requires_actor: true,
+    taken_by: 'you',
   },
 };
 
@@ -259,10 +304,17 @@ export const articleWorkspace: ArticleWorkspace = {
       method: 'POST',
       path: `/articles/${ARTICLE_ID}/approve`,
       requires_actor: true,
+      taken_by: 'you',
     },
-    { action: 'cancel', method: 'POST', path: `/projects/${PROJECT_ID}/cancel`, requires_actor: true },
-    { action: 'fork_execution', method: null, path: null, requires_actor: false },
-    { action: 'reject_final', method: null, path: null, requires_actor: false },
+    {
+      action: 'cancel',
+      method: 'POST',
+      path: `/projects/${PROJECT_ID}/cancel`,
+      requires_actor: true,
+      taken_by: 'you',
+    },
+    { action: 'fork_execution', method: null, path: null, requires_actor: false, taken_by: 'pipeline' },
+    { action: 'reject_final', method: null, path: null, requires_actor: false, taken_by: 'you' },
   ],
   pending_command: null,
   brief: { thesis: 'Caching bought the latency, invalidation cost it back.', target_length_words: 400 },

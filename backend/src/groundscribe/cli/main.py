@@ -26,20 +26,23 @@ from typing import Annotated, Any
 import typer
 
 from groundscribe.api.openapi import contract_app, export_schema
-from groundscribe.app.bootstrap import build_runtime, openai_clients
+from groundscribe.app.bootstrap import build_runtime, provider_clients
 from groundscribe.app.handlers import stage_handlers
 from groundscribe.app.services import ApplicationService
+from groundscribe.config import ENV_FILE, load_env_file
 from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.experiments.reproducibility import contract
 from groundscribe.experiments.runs import ArmSpec
 from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.worker import Worker
-from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
+from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV
+from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV
 from groundscribe.llm.pricing import default_pricing
 from groundscribe.llm.probe import probe_models
 from groundscribe.llm.routing import default_routing_policy
 from groundscribe.observability.logging import configure_logging
+from groundscribe.paths import repo_root
 from groundscribe.privacy.export import ExportFormat
 from groundscribe.voice.schemas import VoiceProfileDocument
 
@@ -67,6 +70,25 @@ app.add_typer(worker_app, name="worker")
 app.add_typer(privacy_app, name="privacy")
 app.add_typer(contracts_app, name="contracts")
 app.add_typer(llm_app, name="llm")
+
+
+@app.callback()
+def _configure() -> None:
+    """Read ``.env`` before any command runs, as the served application does.
+
+    Both front doors have to answer to the same configuration file, and the one
+    that most needs to is this one: ``writer worker`` is a CLI command, and the
+    worker is the process that makes every model call. While only the API loaded
+    the file, an installation that configured its provider in ``.env`` got an API
+    that could see it and a worker that could not — and the failure did not
+    surface at start-up where the mistake was, but halfway through a run as "no
+    client for ollama" on a machine that plainly had one.
+
+    The environment still wins over the file: :func:`load_env_file` fills gaps and
+    never overrides, so a deployment runs on what it was given rather than on a
+    stale file beside the checkout.
+    """
+    load_env_file(repo_root() / ENV_FILE)
 
 
 def default_service() -> ApplicationService:
@@ -251,9 +273,29 @@ def source_answer(
     text: Annotated[str, typer.Option()] = "",
     response: Annotated[AnswerResponse, typer.Option()] = AnswerResponse.ANSWERED,
 ) -> None:
-    """Answer a surfaced question and rebuild the source model."""
+    """Record an answer. The run keeps waiting until the round is submitted."""
     with _command() as service:
         _emit(service.answer_gap(project, gap_id=gap, text=text, answered_by=by, response=response))
+
+
+@project_app.command("retry")
+def project_retry(
+    project: str,
+    by: Annotated[str, typer.Option(help="Who is asking for it to run again.")],
+) -> None:
+    """Queue the work that failed under this run, again."""
+    with _command() as service:
+        _emit(service.retry_failed_job(project, requested_by=by))
+
+
+@source_app.command("submit-answers")
+def source_submit_answers(
+    project: str,
+    by: Annotated[str, typer.Option(help="Who is submitting the round.")],
+) -> None:
+    """Hand the answers back and rebuild the source model from all of them."""
+    with _command() as service:
+        _emit(service.submit_answers(project, submitted_by=by))
 
 
 # ----------------------------------------------------------------------
@@ -657,16 +699,20 @@ def llm_probe() -> None:
     """
     configure_logging()
     routing = default_routing_policy()
-    clients = openai_clients()
+    clients = provider_clients()
     if not clients:
-        typer.echo(f"no provider is configured: set {OPENAI_API_KEY_ENV} and try again")
+        typer.echo(
+            f"no provider is configured: set {OPENAI_API_KEY_ENV} for OpenAI, or "
+            f"{OLLAMA_BASE_URL_ENV} for a local Ollama server, and try again"
+        )
         raise typer.Exit(code=1)
 
     pricing = default_pricing()
-    typer.echo(f"routing policy v{routing.version} · pricing table v{pricing.version}")
-    results = asyncio.run(
-        probe_models(routing, client=clients[OpenAIClient.provider], pricing=pricing)
+    typer.echo(
+        f"routing policy v{routing.version} · pricing table v{pricing.version} · "
+        f"providers: {', '.join(sorted(clients))}"
     )
+    results = asyncio.run(probe_models(routing, clients=clients, pricing=pricing))
 
     for result in results:
         mark = "ok  " if result.ok else ("wait" if result.retryable else "FAIL")

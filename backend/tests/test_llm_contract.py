@@ -325,6 +325,7 @@ async def test_the_full_runtime_configuration_is_captured_on_the_invocation(
         "top_p",
         "seed",
         "max_output_tokens",
+        "context_window",
         "reasoning_effort",
         "structured_output_mode",
         "tool_choice",

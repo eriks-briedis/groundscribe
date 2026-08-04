@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "ActionLink": {
-        "description": "One offered action, and how a client performs it.\n\n``path`` is ``None`` where no endpoint takes the action \u2014 the machine's own\nedges, and article actions seen from a project screen where no article is in\nview. Reported rather than filtered out, so the interface can show the true\nset of transitions and offer buttons only for what a person can actually do.",
+        "description": "One offered action, and how a client performs it.\n\n``path`` is ``None`` where no endpoint takes the action \u2014 the machine's own\nedges, and article actions seen from a project screen where no article is in\nview. Reported rather than filtered out, so the interface can show the true\nset of transitions and offer buttons only for what a person can actually do.\n\n``taken_by`` is the other half of that, and the two are independent: an edge\nwith no path may still be a person's to take, somewhere else in the\napplication. Without it an interface has to guess, and the natural guess \u2014\n\"no button, so the pipeline must be doing it\" \u2014 is wrong exactly where it\nmatters, on the edges a run is parked waiting for.",
         "properties": {
           "action": {
             "title": "Action",
@@ -34,6 +34,11 @@
             "default": false,
             "title": "Requires Actor",
             "type": "boolean"
+          },
+          "taken_by": {
+            "default": "pipeline",
+            "title": "Taken By",
+            "type": "string"
           }
         },
         "required": [
@@ -2666,11 +2671,12 @@
         "type": "object"
       },
       "InvocationOutcome": {
-        "description": "How a single model invocation ended.\n\n``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can\nbe useful yet unparseable, or parseable yet non-conforming; both are\npreserved alongside their repaired successor rather than discarded.",
+        "description": "How a single model invocation ended.\n\n``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can\nbe useful yet unparseable, or parseable yet non-conforming; both are\npreserved alongside their repaired successor rather than discarded.\n\n``TRUNCATED`` is separate from both for the same reason and a sharper one: a\nbody the provider stopped mid-value parses as neither, and it is the only\ncontent outcome no retry can fix. The model did not answer badly \u2014 it was cut\noff \u2014 so the remedy is the stage's output budget, not another attempt.",
         "enum": [
           "accepted",
           "invalid_json",
           "invalid_schema",
+          "truncated",
           "refused",
           "timeout",
           "provider_error",
@@ -3058,6 +3064,35 @@
         "title": "JobView",
         "type": "object"
       },
+      "JourneyStep": {
+        "description": "One phase of the pipeline, seen from where the run currently is.",
+        "properties": {
+          "blurb": {
+            "title": "Blurb",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "blurb",
+          "status"
+        ],
+        "title": "JourneyStep",
+        "type": "object"
+      },
       "Lifecycle": {
         "description": "What became of one review finding across rounds (plan/11 \u2192 *Review history*).",
         "enum": [
@@ -3420,6 +3455,9 @@
           "constraints": {
             "$ref": "#/components/schemas/ConstraintsView"
           },
+          "journey": {
+            "$ref": "#/components/schemas/ProjectJourney"
+          },
           "pending_command": {
             "anyOf": [
               {
@@ -3447,6 +3485,16 @@
             "title": "Recent Failures",
             "type": "array"
           },
+          "retry_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -3465,6 +3513,7 @@
           "project",
           "run_id",
           "state",
+          "journey",
           "constraints",
           "source",
           "usage"
@@ -3484,6 +3533,30 @@
           }
         },
         "title": "ProjectIndex",
+        "type": "object"
+      },
+      "ProjectJourney": {
+        "description": "How far the work has got, at the size a person follows it.\n\nPublished rather than left to the interface: which phase a state belongs to,\nand who a run is waiting for, are facts about the machine (plan/05). A screen\nthat grouped twenty-three states into eight phases of its own would be the\nsecond opinion plan/11 forbids \u2014 and would be wrong the day a state is added.",
+        "properties": {
+          "headline": {
+            "default": "",
+            "title": "Headline",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/JourneyStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "waiting_on": {
+            "default": "pipeline",
+            "title": "Waiting On",
+            "type": "string"
+          }
+        },
+        "title": "ProjectJourney",
         "type": "object"
       },
       "ProjectSummary": {
@@ -3593,6 +3666,16 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "submit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "QuestionQueue",
@@ -7336,9 +7419,59 @@
         "summary": "Read Questions"
       }
     },
+    "/projects/{project_id}/retry": {
+      "post": {
+        "description": "Queue the work that failed under this run, again. Moves the run nowhere.",
+        "operationId": "retry_failed_job_projects__project_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Job"
+      }
+    },
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {
       "post": {
-        "description": "Record an answer and rebuild the source model from it.",
+        "description": "Record one answer. The run stays in the queue until the round is submitted.",
         "operationId": "answer_gap_projects__project_id__source_gaps__gap_id__answer_post",
         "parameters": [
           {
@@ -7371,7 +7504,7 @@
           "required": true
         },
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -7443,6 +7576,56 @@
           }
         },
         "summary": "Extract Source Model"
+      }
+    },
+    "/projects/{project_id}/source-questions/submit": {
+      "post": {
+        "description": "Hand the answered round back, rebuilding the source model from all of it.",
+        "operationId": "submit_answers_projects__project_id__source_questions_submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Answers"
       }
     },
     "/projects/{project_id}/source-workspace": {

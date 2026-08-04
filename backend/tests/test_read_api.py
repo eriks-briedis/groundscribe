@@ -262,6 +262,129 @@ async def test_a_question_carries_the_endpoint_that_answers_it(
     )
 
 
+async def test_the_dashboard_says_where_the_work_has_got_to_and_who_it_waits_on(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → the interface displays backend state; the strip is backend state.
+
+    A run parked on questions is a person's turn, three phases from where it
+    started and five from the end. Every part of that sentence comes from the
+    workflow's own map, so a screen can render a progress strip without knowing
+    that a pipeline has phases at all.
+    """
+    await walk.open_project()
+    await walk.extract(blocking=True)
+
+    journey = read(client, f"/projects/{walk.project_id}/dashboard")["journey"]
+
+    assert journey["waiting_on"] == "you"
+    assert journey["headline"] == "Your turn: answer what the source could not."
+    assert [step["status"] for step in journey["steps"]][:2] == ["current", "upcoming"]
+    assert [step["title"] for step in journey["steps"]] == [
+        "Source",
+        "Architecture",
+        "Brief",
+        "Draft",
+        "Review",
+        "Voice",
+        "Score",
+        "Publish",
+    ]
+
+
+async def test_a_human_edge_with_no_button_is_not_reported_as_the_pipelines(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """``answer_questions`` is the author's, and is taken on the question screen.
+
+    No endpoint on the dashboard performs it, and the natural reading of a
+    pathless link — "the pipeline will get to it" — is exactly wrong for the one
+    kind of link a run is parked waiting for.
+    """
+    await walk.open_project()
+    await walk.extract(blocking=True)
+
+    links = {
+        link["action"]: link
+        for link in read(client, f"/projects/{walk.project_id}/dashboard")["action_links"]
+    }
+
+    assert links["answer_questions"]["path"] is None
+    assert links["answer_questions"]["taken_by"] == "you"
+    # `fail` is the machine's, and is pathless for a different reason: nobody is
+    # offered a button that fails their own run.
+    assert links["fail"]["taken_by"] == "pipeline"
+    assert links["cancel"]["taken_by"] == "you"
+
+
+async def test_the_question_queue_carries_the_one_command_that_ends_the_round(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Answering collects; submitting spends the model call. Two commands, one round."""
+    await walk.open_project()
+    await walk.extract(blocking=True)
+
+    queue = read(client, f"/projects/{walk.project_id}/questions")
+
+    assert queue["submit"]["path"] == f"/projects/{walk.project_id}/source-questions/submit"
+    assert queue["submit"]["requires_actor"] is True
+
+
+async def test_the_queue_offers_no_submit_once_the_round_is_over(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """The same rule as the answer links, from the same place: what the run offers."""
+    await walk.open_project()
+    await walk.extract(blocking=True)
+    await walk.answer()
+
+    assert read(client, f"/projects/{walk.project_id}/questions")["submit"] is None
+
+
+async def test_a_question_the_run_has_moved_past_offers_no_way_to_answer_it(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """A queue outlives the pause it was raised in, and its answer links do not.
+
+    Answering re-enters extraction, which asks again — and a round that surfaces
+    nothing blocking completes the source model. The earlier round's questions
+    stay on screen, because plan/11 keeps settled work visible, but the run has
+    left the only state ``answer_questions`` is legal in. Offering a path that
+    every client can only discover is closed by posting to it would make the
+    interface hold an opinion the transition table already contradicts.
+    """
+    await walk.open_project()
+    await walk.extract(blocking=True)
+    await walk.answer()
+
+    queue = read(client, f"/projects/{walk.project_id}/questions")["questions"]
+    unresolved = [question for question in queue if not question["resolved"]]
+
+    assert read(client, f"/projects/{walk.project_id}")["state"] == "source_model_ready"
+    assert unresolved, "the walk left questions nobody answered; without them this proves nothing"
+    assert [question["answer_path"] for question in unresolved] == [None] * len(unresolved)
+
+
+async def test_an_answered_question_offers_no_way_to_answer_it_again(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """A closed question is a record, not a form.
+
+    The gap it closed may have been one of several — an answer may close others
+    with it — so "already answered" is read from the gap rather than from whether
+    this particular question has an answer of its own attached.
+    """
+    await walk.open_project()
+    await walk.extract(blocking=True)
+    await walk.answer()
+
+    queue = read(client, f"/projects/{walk.project_id}/questions")["questions"]
+    resolved = [question for question in queue if question["resolved"]]
+
+    assert [question["answer_path"] for question in resolved] == [None] * len(resolved)
+    assert resolved and all(question["answer"] for question in resolved)
+
+
 # ----------------------------------------------------------------------
 # Source workspace
 # ----------------------------------------------------------------------

@@ -20,8 +20,9 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 
 from groundscribe.app.runtime import Runtime
-from groundscribe.db import create_engine, session_factory
+from groundscribe.db import create_engine, read_only, session_factory
 from groundscribe.jobs.queue import JobQueue
+from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV, OllamaClient
 from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
 from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.pricing import PricingTable, default_pricing
@@ -79,43 +80,69 @@ def engine() -> Engine:
     return create_engine(os.environ.get(DATABASE_URL_ENV, DEFAULT_DATABASE_URL))
 
 
-def openai_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMClient]:
-    """An OpenAI client, if this machine has been given a key. Otherwise nothing.
+def provider_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMClient]:
+    """Every provider this machine has been configured for. Possibly none.
 
     Configuration is what makes a provider *reachable*; it is not what makes it
     permitted. A project's ``allowed_providers`` allow-list (phase 13) still
     decides whether its material may go there, and it defaults to empty — so an
-    installation configured entirely for OpenAI still sends nothing until an
-    author names it. Two gates, two decisions, two people.
+    installation configured for every provider here still sends nothing until an
+    author names one. Two gates, two decisions, two people.
 
-    Keyed by the provider string the routing config uses, because that is what
-    the generator looks a client up by; registered under any other spelling it
-    would never be found, and the failure would read as "no client for openai" on
-    a machine that had configured one.
+    Keyed by the provider string the routing config uses, because that is what the
+    generator looks a client up by; registered under any other spelling it would
+    never be found, and the failure would read as "no client for ollama" on a
+    machine that had configured one.
+
+    The two providers are configured by different *kinds* of fact, which is not an
+    inconsistency but the difference between them: OpenAI needs a credential, and
+    Ollama needs an address. Neither is registered by default. Requiring
+    ``OLLAMA_BASE_URL`` even though the adapter would default to localhost is the
+    same decision plan/00 made about silent network calls — a machine that happens
+    to be running Ollama for something else has not thereby volunteered it to this
+    application.
     """
-    if not os.environ.get(OPENAI_API_KEY_ENV, "").strip():
-        return {}
-    return {
-        OpenAIClient.provider: OpenAIClient(
-            # A label, not a decision: the model each call uses comes from the
-            # stage's route, and is what the invocation records. One client per
-            # provider is the shape that keeps a single answer to "which model".
-            model=default_routing_policy().default.primary.model,
-            pricing=pricing if pricing is not None else default_pricing(),
-        )
-    }
+    table = pricing if pricing is not None else default_pricing()
+    # A label, not a decision: the model each call uses comes from the stage's
+    # route, and is what the invocation records. One client per provider is the
+    # shape that keeps a single answer to "which model".
+    fallback_model = default_routing_policy().default.primary.model
+    clients: dict[str, LLMClient] = {}
+
+    if os.environ.get(OPENAI_API_KEY_ENV, "").strip():
+        clients[OpenAIClient.provider] = OpenAIClient(model=fallback_model, pricing=table)
+    if os.environ.get(OLLAMA_BASE_URL_ENV, "").strip():
+        clients[OllamaClient.provider] = OllamaClient(model=fallback_model, pricing=table)
+    return clients
 
 
-def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
+@lru_cache(maxsize=1)
+def reading_engine() -> Engine:
+    """The same engine and pool, for transactions that only read.
+
+    Cached alongside :func:`engine` because ``execution_options`` builds a new
+    façade each call. It shares the pool, so this is a second view of one engine
+    rather than a second set of connections.
+    """
+    return read_only(engine())
+
+
+def build_runtime(*, clients: dict[str, LLMClient] | None = None, reading: bool = False) -> Runtime:
     """Assemble the application layer against the local installation.
 
+    ``reading`` builds it for a request that will not write. On SQLite that is
+    the difference between a screen that renders while a stage is running and one
+    that waits fifteen seconds for a write lock it never wanted (KNOWN-ISSUES
+    §1); on PostgreSQL it changes nothing, which is the point of asking for it
+    here rather than in a dialect-aware branch further in.
+
     Providers are registered only when this machine has been configured for one —
-    today that means an OpenAI key. Nothing is registered by default, because a
-    local-first tool that silently reached an external provider would be the
-    opposite of what plan/00 promises, so a stage that needs a provider nobody
+    an OpenAI key, an Ollama address, or both. Nothing is registered by default,
+    because a local-first tool that silently reached an external provider would be
+    the opposite of what plan/00 promises, so a stage that needs a provider nobody
     configured fails loudly saying which one it wanted.
     """
-    session = session_factory(engine())()
+    session = session_factory(reading_engine() if reading else engine())()
     blob_root = Path(os.environ.get(BLOB_ROOT_ENV) or repo_root() / "var" / "blobs")
     snapshots = SnapshotStore(session, blob_storage(blob_root))
     recorder = ProvenanceRecorder(session, snapshots)
@@ -124,7 +151,7 @@ def build_runtime(*, clients: dict[str, LLMClient] | None = None) -> Runtime:
         snapshots=snapshots,
         recorder=recorder,
         generator=StructuredGenerator(
-            clients=clients if clients is not None else openai_clients(),
+            clients=clients if clients is not None else provider_clients(),
             recorder=recorder,
             prompts=PromptStore(prompts_root()),
             routing=default_routing_policy(),
@@ -139,10 +166,12 @@ __all__ = [
     "DATABASE_URL_ENV",
     "DEFAULT_DATABASE_URL",
     "KEY_ROOT_ENV",
+    "OLLAMA_BASE_URL_ENV",
     "OPENAI_API_KEY_ENV",
     "TRACE_ENCRYPTION_ENV",
     "blob_storage",
     "build_runtime",
     "engine",
-    "openai_clients",
+    "provider_clients",
+    "reading_engine",
 ]

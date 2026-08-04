@@ -216,7 +216,7 @@ function ImportSource({ command, onImported }: ImportSourceProps) {
   };
 
   return (
-    <form className="panel import-source" onSubmit={(event) => void add(event)}>
+    <form className="panel import-source form-grid" onSubmit={(event) => void add(event)}>
       <h2>Add source material</h2>
 
       <label htmlFor="source-file">Choose a file</label>
@@ -267,7 +267,7 @@ function ImportSource({ command, onImported }: ImportSourceProps) {
       </label>
 
       <button type="submit" disabled={busy}>
-        {busy ? 'adding…' : 'add this source'}
+        {busy ? 'Adding…' : 'Add this source'}
       </button>
       {problem ? (
         <p role="alert" className="failure">

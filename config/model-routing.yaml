@@ -7,150 +7,239 @@
 # explained afterwards.
 #
 # ---------------------------------------------------------------------------
-# Version 9 moves this file from local models to OpenAI.
+# Version 11 sizes extraction's budget by measurement.
 # ---------------------------------------------------------------------------
 #
-# Version 8 routed every stage to a local Ollama installation, which is what
-# "local-first" meant while nothing could actually call a provider. It is in git
-# history and switching back is this one file.
+# One stage changed, and one paragraph of policy with it — see *Degrading is not
+# free* below, and the note above `extract_source_truth`. Everything else is
+# version 10's and is described as such.
 #
-# What has *not* changed is the per-stage reasoning: which stages need judgement
-# and which need prose, where determinism matters more than range, and where a
-# mistake is permanent. Only the models underneath moved. Each stage keeps its
-# rationale so the choice can be argued with rather than inherited.
+# ---------------------------------------------------------------------------
+# Version 10 moved this file back to local models, on one model.
+# ---------------------------------------------------------------------------
 #
-# The split is flagship for the work that decides things, mini for the work that
-# is cheap and repetitive — the same shape as the 70b/8b split it replaces, for
-# the same reasons.
+# Version 9 routed every stage to OpenAI, and version 8 to a local Ollama split
+# across a 70b and an 8b. Both are in git history and switching back is this one
+# file.
+#
+# What has *not* changed, across all three, is the per-stage reasoning: which
+# stages need judgement and which need prose, where determinism matters more than
+# range, and where a mistake is permanent. Only the models underneath moved. Each
+# stage keeps its rationale so the choice can be argued with rather than inherited.
+#
+# Four things about version 10 are genuinely different from both predecessors,
+# and version 11 adds a fifth.
+#
+# **One model, not a split.** Versions 8 and 9 both split flagship/mini, because
+# on a metered API the cheap model on the repetitive stages is most of the bill.
+# Locally there is no bill, and the split costs something instead: two models do
+# not fit in this machine's VRAM at once, so every stage transition would evict
+# one and reload the other. A single model is the shape that fits the constraint
+# that actually binds here.
+#
+# **The fallback degrades the call, not the model.** With one model there is no
+# second model to escalate to, but the escalation rung is still worth having —
+# because the failures that actually happen locally are not "the model is bad".
+# They are a generation that ran past its timeout, and a context window that cost
+# more memory than the machine had. So each fallback re-issues the same request
+# against the same model with a smaller window and a smaller budget: a real second
+# chance at exactly the two things that go wrong here. On a hosted provider this
+# rung meant "try something cheaper"; locally it means "try something that fits".
+#
+# **Degrading is not free, and one stage opts out.** A smaller budget is the right
+# second chance only when the budget was not the problem. `extract_source_truth`
+# is where it was: its answer is the longest this pipeline asks for, and retrying
+# a cut-off response with half the room can only fail sooner. Its fallback keeps
+# the primary's numbers; see the note above that stage. Anywhere else, a stage
+# that starts failing this way should be read the same way — the ladder now stops
+# on a truncated response rather than climbing, and says which number to change.
+#
+# **`native_schema`, not `json_mode`.** Ollama constrains *decoding* against a
+# real JSON Schema, so a stage's own Pydantic schema is enforced by the sampler
+# rather than requested in prose. This was verified against `SourceModel` — nested
+# `$defs`/`$ref` and all — and it matters far more here than it did on a hosted
+# model: a 36B local model needs the structural help a frontier model did not.
+#
+# **`context_window` is set on every stage.** Ollama allocates the window per call
+# and silently truncates the prompt above it, so a stage that does not name one
+# gets a small default and quietly loses the middle of its own input. The numbers
+# below are memory decisions as much as editorial ones — the window is allocated
+# in RAM alongside a 24 GB model — so each is set to what that stage plausibly
+# needs and no more. Raise them if you have the memory; do not remove them.
 #
 # ---------------------------------------------------------------------------
 # Before your first run
 # ---------------------------------------------------------------------------
 #
-#   export OPENAI_API_KEY=sk-...          # from platform.openai.com
-#   uv run writer llm probe               # calls each routed model, once
+#   ollama pull qwen3.6:35b               # ~24 GB
+#   export OLLAMA_BASE_URL=http://localhost:11434
+#   uv run writer llm probe               # calls the model, once
 #
 # `probe` sends one real request per distinct model *with the parameters set
-# below*, and reports what came back. It exists because two things here can only
-# be confirmed against a live account:
+# below*, and reports what came back. Locally it answers a different question than
+# it did against a hosted API — there is no key and no account, so what it checks
+# is that the server is reachable and the model is actually pulled.
 #
-#   1. **Whether these model ids exist for your key.** Model names change and
-#      access differs by account. Any id you have access to is a valid edit.
-#   2. **Whether a model accepts these sampling parameters.** Reasoning models
-#      reject `temperature` and `top_p` outright. If probe reports that, delete
-#      those two keys for that stage — the adapter sends only what is set here,
-#      so an absent parameter is genuinely not sent, and the run proceeds on the
-#      provider's own defaults.
+# Nothing is sent anywhere until a *project* also names `ollama` in
+# `allowed_providers` (phase 13). That gate does not relax because the provider is
+# local: it is the author's decision about their material, not a network boundary.
 #
-# Nothing is sent to OpenAI until a *project* also names it in
-# `allowed_providers` (phase 13). Configuring a key makes the provider reachable;
-# the author still decides, per project, whether their material may go there.
-version: "9"
+# ---------------------------------------------------------------------------
+# On the timeouts
+# ---------------------------------------------------------------------------
+#
+# They are an order of magnitude larger than version 9's, and that is not
+# defensive padding. A 36B model that does not fit entirely in VRAM generates at a
+# small fraction of a hosted API's rate, and the drafting stages ask for 16k
+# tokens in one call. A timeout inherited from the hosted config would kill those
+# runs somewhere in the middle and report it as a provider failure.
+version: "11"
 description: >
-  OpenAI, split flagship/mini: the flagship for the stages that judge or write,
-  the mini for the cheap deterministic checks and every fallback rung.
+  Ollama, one model for every stage: qwen3.6:35b, a 36B mixture-of-experts with
+  ~3B active, chosen because MoE is what makes a model this size practical on a
+  16 GB GPU. Schema-constrained decoding throughout.
 
 # Unrouted stages land here. Deliberately conservative — a stage nobody has
 # thought about yet should be cheap and deterministic, not creative.
 default:
   primary:
-    provider: openai
-    model: gpt-5-mini
+    provider: ollama
+    model: qwen3.6:35b
     temperature: 0.0
-    structured_output_mode: json_mode
-    timeout_seconds: 120.0
+    structured_output_mode: native_schema
+    context_window: 16384
+    timeout_seconds: 900.0
 
 stages:
   # Structure matters more than style here, and a schema violation costs a repair
-  # round-trip, so this is where a natively schema-constrained model earns its
-  # price. Temperature 0 with a fixed seed: extraction should be reproducible.
+  # round-trip, so this is where schema-constrained decoding earns its keep.
+  # Temperature 0 with a fixed seed: extraction should be reproducible.
   extract_claims:
     rationale: >
       Structured fidelity dominates; reproducibility matters for re-runs of the
       same source.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 32768
+      timeout_seconds: 1800.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 4096
+      context_window: 16384
+      timeout_seconds: 900.0
 
   # The phase-06 editorial stages. Extraction is the one place a mistake is
   # permanent — everything downstream is checked against the source model, so a
-  # claim misclassified here is wrong in every article that follows. It gets the
-  # flagship, temperature 0 and a fixed seed, and it gets a fallback because a
-  # stage this important should degrade rather than stop.
+  # claim misclassified here is wrong in every article that follows. Temperature
+  # 0, a fixed seed, and the largest window any input stage gets: a source
+  # truncated here is a source the model never saw the end of.
+  #
+  # This is the one stage whose *output* is large, and the numbers below are the
+  # only ones in this file that were set by measurement rather than by estimate.
+  # A 60-page source measured 49k prompt tokens and produced an answer that ran
+  # past 8192 output tokens — the response was cut off mid-string, four attempts
+  # in a row, because every rung of the repair ladder re-issued it under the same
+  # ceiling and the fallback under half of it. The bulk of the output is evidence:
+  # one claim carries a list of segment ids, and there were 532 segments.
+  #
+  # The arithmetic that fixes it, and its limit: the window holds the prompt *and*
+  # the answer. At 65536 with a ~49k prompt there is room for about 16k of output,
+  # so 16384 is the ceiling for this stage until the window grows — and the window
+  # is allocated in RAM beside a 24 GB model, which is why it has not been grown
+  # here. A source large enough to hit this again needs a bigger window, a
+  # `token_budget` on extract, or both.
   extract_source_truth:
     rationale: >
       Source truth is the one artefact that is not disposable; structured
-      fidelity and reproducibility dominate everything else.
+      fidelity and reproducibility dominate everything else. Its answer is also
+      the longest this pipeline asks for, so the output budget is sized against a
+      measured run rather than a guess.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
-      timeout_seconds: 300.0
+      structured_output_mode: native_schema
+      max_output_tokens: 16384
+      context_window: 65536
+      timeout_seconds: 1800.0
+    # The one fallback in this file that degrades *nothing*, which is a decision
+    # rather than an oversight. Degrading is only ever useful against the failure
+    # it is aimed at, and neither of this stage's fits: a smaller window would
+    # silently drop the middle of a source this stage exists to read whole, and a
+    # smaller budget is what produced the failure being retried. A shorter timeout
+    # would be a third way to lose — a measured extraction here takes 13 minutes.
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 16384
+      context_window: 65536
+      timeout_seconds: 1800.0
 
   # Gap analysis is a judgement about *absence*, which is harder than extraction
   # and much cheaper to get wrong in the safe direction: an unnecessary question
   # costs the author a moment, a missed blocking gap costs the article's honesty.
-  # Same flagship, same determinism, smaller output.
+  # Same determinism, smaller output.
   generate_gap_questions:
     rationale: >
-      Judging what is missing needs the stronger model; the cost of a false
-      positive is one ignored question, of a false negative a misleading article.
+      Judging what is missing needs the model's full attention; the cost of a
+      false positive is one ignored question, of a false negative a misleading
+      article.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 4096
-      timeout_seconds: 240.0
+      context_window: 32768
+      timeout_seconds: 1200.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 2048
+      context_window: 16384
+      timeout_seconds: 600.0
 
   # Architecture is the one structured stage where a little sampling breadth
   # earns its keep: the point is to surface *alternatives*, and a temperature-0
-  # model proposes the same obvious shape every time. Still json_mode — the
-  # breadth is wanted in the ideas, not in the field names.
+  # model proposes the same obvious shape every time. Still schema-constrained —
+  # the breadth is wanted in the ideas, not in the field names.
   propose_content_architecture:
     rationale: >
       Comparing competing shapes needs some exploration; the decision record is
       only worth reading if the alternatives were real.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.4
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 6144
-      timeout_seconds: 300.0
+      context_window: 32768
+      timeout_seconds: 1800.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.2
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      structured_output_mode: native_schema
+      max_output_tokens: 3072
+      context_window: 16384
+      timeout_seconds: 900.0
 
   # The brief is a contract the drafter is bound by and the validator checks
   # against, so it goes back to temperature 0: a brief that varied between runs
@@ -161,105 +250,123 @@ stages:
       A contract must be reproducible; the creativity belongs in the draft, not
       in the specification the draft is judged against.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 4096
-      timeout_seconds: 240.0
+      context_window: 32768
+      timeout_seconds: 1200.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 2048
+      context_window: 16384
+      timeout_seconds: 600.0
 
   # Prose, not structure: some sampling breadth is wanted, and the output is
   # disposable by design (plan/00 — generated prose is not source truth). The
   # phase-06 placeholder for what phase 07 now routes as `generate_initial_draft`;
-  # kept so a run recorded under it can still be explained.
+  # kept so a run recorded under it can still be explained. No fallback, as in
+  # versions 8 and 9 — nothing routes here any more.
   draft_article:
     rationale: Voice and readability dominate; the draft is disposable.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.7
       top_p: 0.9
       structured_output_mode: prompted
       max_output_tokens: 16384
-      timeout_seconds: 600.0
+      context_window: 65536
+      timeout_seconds: 3600.0
 
   # The draft is the one stage whose output is mostly prose, so it gets the
-  # sampling breadth a readable article needs — but json_mode, because the prose
-  # arrives inside a structured envelope carrying the claims, qualifications and
-  # markers that make it checkable. A long output budget: this is the only stage
-  # that writes thousands of words in one call.
+  # sampling breadth a readable article needs — but schema-constrained, because
+  # the prose arrives inside a structured envelope carrying the claims,
+  # qualifications and markers that make it checkable. The longest output budget
+  # and the longest timeout: this is the only stage that writes thousands of words
+  # in one call, and locally that is measured in tens of minutes, not seconds.
   generate_initial_draft:
     rationale: >
       Readability dominates and the draft is disposable; the declarations around
       the prose are what the pipeline actually checks.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.7
       top_p: 0.9
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 16384
-      timeout_seconds: 600.0
+      context_window: 65536
+      timeout_seconds: 3600.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.6
-      structured_output_mode: json_mode
+      top_p: 0.9
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 32768
+      timeout_seconds: 1800.0
 
   # Review judges rather than creates, so temperature 0 with a fixed seed: two
   # reviews of the same draft that disagree with each other would make the
-  # revision loop's progress unmeasurable. The flagship, because this is where a
-  # missed factual error becomes a published one.
+  # revision loop's progress unmeasurable. A large window, because this stage
+  # reads the draft *and* the source model it is checked against.
   review_substantively:
     rationale: >
-      Judging fidelity needs the stronger model; determinism is what makes
-      round-to-round improvement measurable rather than noise.
+      Judging fidelity is the hardest thing asked of the model; determinism is
+      what makes round-to-round improvement measurable rather than noise.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 65536
+      timeout_seconds: 1800.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 4096
+      context_window: 32768
+      timeout_seconds: 900.0
 
   # Planning is a judgement about *other* judgements — which feedback wins when
-  # two disagree — so it gets the flagship at temperature 0. A planner that
-  # reconciled the same contradiction differently on two runs would make the
-  # revision loop's behaviour impossible to reason about.
+  # two disagree — so temperature 0. A planner that reconciled the same
+  # contradiction differently on two runs would make the revision loop's behaviour
+  # impossible to reason about.
   create_revision_plan:
     rationale: >
       Reconciling contradictory feedback is the hardest judgement in the loop and
       the one whose reasoning is read most often afterwards.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 4096
-      timeout_seconds: 240.0
+      context_window: 32768
+      timeout_seconds: 1200.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
-      structured_output_mode: json_mode
-      timeout_seconds: 180.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 2048
+      context_window: 16384
+      timeout_seconds: 600.0
 
   # The rewrite is prose again, so the drafting settings — with one difference:
   # a lower temperature, because a rewrite is bound by a plan and by a previous
@@ -269,82 +376,101 @@ stages:
       Prose quality matters, but the rewrite is constrained by a plan; less
       sampling breadth than the first draft, for the same reason.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.5
       top_p: 0.9
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 16384
-      timeout_seconds: 600.0
+      context_window: 65536
+      timeout_seconds: 3600.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.4
-      structured_output_mode: json_mode
+      top_p: 0.9
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 32768
+      timeout_seconds: 1800.0
 
   # The voice pass is the one stage whose whole job is how the prose sounds, so it
-  # keeps the prose model and a middling temperature — an ear needs some range.
-  # But it is bounded on the other side: every edit it makes is quoted back and
-  # checked against the text it claims to have replaced, so sampling breadth costs
-  # a refused pass rather than a silent rewrite. No seed, because the same prose
-  # read twice should be allowed to suggest different phrasings.
+  # keeps a middling temperature — an ear needs some range. But it is bounded on
+  # the other side: every edit it makes is quoted back and checked against the text
+  # it claims to have replaced, so sampling breadth costs a refused pass rather
+  # than a silent rewrite. No seed, because the same prose read twice should be
+  # allowed to suggest different phrasings.
   align_voice:
     rationale: >
-      Style judgement wants the stronger prose model; the edit-level checks are
-      what make temperature safe here, not determinism.
+      Style judgement wants range; the edit-level checks are what make temperature
+      safe here, not determinism.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.6
       top_p: 0.9
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 16384
-      timeout_seconds: 600.0
+      context_window: 65536
+      timeout_seconds: 3600.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.5
-      structured_output_mode: json_mode
+      top_p: 0.9
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 32768
+      timeout_seconds: 1800.0
 
   # Scoring is the most consequential judging call in the pipeline: it decides
   # whether the loop runs again. Temperature 0 with a fixed seed, because a score
   # that moved between two runs of the same article would make every trend the
   # product shows a person meaningless — including the stagnation detection that
-  # decides when to stop. The flagship, for the same reason review gets it.
+  # decides when to stop.
   score_article:
     rationale: >
       Determinism is the requirement here, not creativity: scores are compared
       against each other, and a noisy scorer makes the comparison worthless.
     primary:
-      provider: openai
-      model: gpt-5
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 8192
-      timeout_seconds: 300.0
+      context_window: 65536
+      timeout_seconds: 1800.0
     fallback:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 4096
-      timeout_seconds: 180.0
+      context_window: 32768
+      timeout_seconds: 900.0
 
-  # Validation must be boring and repeatable. The mini at temperature 0 is the
-  # right trade: this stage judges, it does not create, and it runs on every loop.
+  # Validation must be boring and repeatable. It judges, it does not create, and
+  # it runs on every loop — so it gets the smallest budget and window that still
+  # let it see the whole article.
   validate_article:
-    rationale: Deterministic judging; cost matters because it runs on every loop.
+    rationale: Deterministic judging; it runs on every loop, so it stays cheap.
     primary:
-      provider: openai
-      model: gpt-5-mini
+      provider: ollama
+      model: qwen3.6:35b
       temperature: 0.0
       seed: 20260725
-      structured_output_mode: json_mode
+      structured_output_mode: native_schema
       max_output_tokens: 4096
-      timeout_seconds: 180.0
+      context_window: 32768
+      timeout_seconds: 1200.0
+    fallback:
+      provider: ollama
+      model: qwen3.6:35b
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 2048
+      context_window: 16384
+      timeout_seconds: 600.0

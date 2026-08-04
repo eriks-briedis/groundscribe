@@ -100,6 +100,26 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
     ),
 }
 
+#: The command that hands an answered round of questions back to the pipeline.
+#:
+#: Deliberately not in :data:`ACTION_ENDPOINTS`. A dashboard renders that table
+#: as buttons, and a button labelled "answer questions" that submitted the round
+#: would submit whatever happened to be answered so far — including nothing at
+#: all. The command belongs to the queue screen, which is the one place that
+#: shows what is about to be handed over.
+SUBMIT_ANSWERS = Endpoint(
+    "POST", "/projects/{project_id}/source-questions/submit", PROJECT, requires_actor=True
+)
+
+#: The command that runs failed work again.
+#:
+#: Not in :data:`ACTION_ENDPOINTS` either, and for a different reason: it is not
+#: an action the transition table offers, because it takes no edge. A run whose
+#: job failed is already in the state that job was carrying it out of, so the
+#: recovery is to re-queue the work — and a table of *transitions* is the wrong
+#: place to look for it.
+RETRY_FAILED = Endpoint("POST", "/projects/{project_id}/retry", PROJECT, requires_actor=True)
+
 #: The command that starts the work a state is waiting for.
 #:
 #: A state ending in ``-ing`` was entered by the approval before it, so no
@@ -150,7 +170,9 @@ __all__ = [
     "ARTICLE",
     "EXECUTION_ACTIONS",
     "PROJECT",
+    "RETRY_FAILED",
     "STATE_COMMANDS",
+    "SUBMIT_ANSWERS",
     "Endpoint",
     "available_actions",
     "resolve",

@@ -148,13 +148,23 @@ class Walkthrough:
         )
 
     async def answer(self) -> dict[str, Any]:
-        """Answer the surfaced question, which rebuilds the source model."""
+        """Answer the surfaced question and hand the round back.
+
+        Two commands, because answering is not a transition: the queue collects
+        as many answers as the author has, and submitting is the one edge that
+        spends a model call rebuilding the source model from all of them.
+        """
+        await self.command(
+            "POST",
+            f"/projects/{self.project_id}/source-gaps/{self.surfaced_gap()}/answer",
+            json={"text": "Cold-cache p99 was 640ms.", "answered_by": AUTHOR},
+        )
         self.script("extract_source_truth", self.source_model())
         self.script("generate_gap_questions", SETTLED_GAPS)
         return await self.command(
             "POST",
-            f"/projects/{self.project_id}/source-gaps/{self.surfaced_gap()}/answer",
-            json={"text": "Cold-cache p99 was 640ms.", "answered_by": AUTHOR},
+            f"/projects/{self.project_id}/source-questions/submit",
+            json={"actor_id": AUTHOR},
         )
 
     async def architecture(self, *, approve: bool = True) -> dict[str, Any]:

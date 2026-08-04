@@ -12,8 +12,11 @@ file.
 
 ## 1. A running job holds the database for its whole run
 
-**Status:** open. **Found:** phase 11, wiring the one-command dev stack.
-**Severity:** high with a real provider attached; invisible without one.
+**Status:** open **for writes**; reads were fixed in phase 15. **Found:** phase
+11, wiring the one-command dev stack. **Severity:** was high with a real provider
+attached — the whole application went dead for the length of a model call. Now
+low: everything a person *looks at* works while a job runs, and only commands
+queue behind it.
 
 `Worker.run_once` claims the job — a write, so under `BEGIN IMMEDIATE` it takes
 SQLite's write lock — then `await handler(...)` runs the entire stage, model
@@ -28,13 +31,31 @@ after the job commits, another process can write:  True
 
 With the fake LLM client the window is milliseconds, which is why the suite and
 the live smoke tests are all green. With a real provider it is however long the
-model takes, and during it every API write waits out `BUSY_TIMEOUT_MS` (15s) and
-then fails. In practice: the dashboard stops accepting anything exactly while the
-pipeline is doing the interesting work.
+model takes.
 
-`BEGIN IMMEDIATE` (see `backend/src/groundscribe/db.py`) widened the window — the
-lock is now taken at claim rather than at the stage's first write — but the span
-was always the whole job.
+### What was fixed: reads never needed the lock
+
+Write-ahead logging entitles a reader to proceed against the last committed
+snapshot while a writer works. This project was opting out of that: `BEGIN
+IMMEDIATE` was emitted for *every* transaction, so a `GET` that wrote nothing
+still queued behind the worker, waited out `BUSY_TIMEOUT_MS`, and failed. Every
+screen in the application is a `GET`.
+
+A transaction can now say it will only read (`db.read_only`, a
+`groundscribe_read_only` execution option honoured in the `begin` handler), and
+gets a deferred `BEGIN` for saying so. The API's read side and the job event
+stream take it; commands do not, because they read before they write and that is
+the interleaving `IMMEDIATE` exists to protect. The promise is unenforced — a
+"read-only" transaction that writes gets the snapshot-upgrade refusal, loudly, at
+the write — which is why it is given only to the projection layer, whose contract
+already is that a read changes nothing (`backend/tests/test_db_concurrency.py`,
+`backend/tests/test_api.py::test_a_screen_still_answers_while_a_job_holds_the_database`).
+
+### What is still open: two writers, one file
+
+A command issued while a job runs still waits out the busy timeout and then
+fails — as a `503` now (§3), not a `500`. In practice that is cancelling a run
+mid-stage, or working on a second project while the first is generating.
 
 **Why it is not fixed:** the fix contradicts a decision phase 03 made on purpose.
 `Worker._commit` states it: *"one job, one transaction — the unit a worker can
@@ -48,12 +69,14 @@ mid-stage, which is a change to the recovery model, not a tweak.
   the connection, call the model, re-open to record the response. Keeps SQLite
   usable under a slow provider; costs the all-or-nothing property the recovery
   logic relies on, so orphan detection and replay both need re-examining.
-- *Leave it, and treat Postgres as the answer whenever a real provider is
-  attached* — which is what plan/00 already says about concurrency. No risk, but
-  the local-first default stays fragile precisely when it is working hardest.
+- *Treat Postgres as the answer whenever a real provider is attached* — which is
+  what plan/00 already says about concurrency, and what `compose.yaml`'s
+  `postgres` profile is for. No risk, no code, and the local-first default stays
+  as it is: correct, and single-writer.
 
 **Where:** `backend/src/groundscribe/jobs/worker.py` (`run_once`, `_commit`),
-`backend/src/groundscribe/db.py` (`_install_sqlite_transaction_control`).
+`backend/src/groundscribe/db.py` (`_install_sqlite_transaction_control`,
+`read_only`).
 
 ---
 
@@ -80,15 +103,21 @@ ini, and treats whitespace as unset (`backend/tests/test_migration_target.py`).
 
 ## 3. A lock timeout is reported as a 500
 
-**Status:** open. **Found:** phase 11, under concurrent writes.
-**Severity:** low on its own; it is mostly what makes issue 1 unpleasant.
+**Status:** **fixed in phase 15.** **Found:** phase 11, under concurrent writes.
+**Severity when open:** low on its own; it is mostly what made issue 1
+unpleasant.
 
-When a write waits out the busy timeout, SQLAlchemy's `OperationalError` reaches
+When a write waited out the busy timeout, SQLAlchemy's `OperationalError` reached
 the client as a generic `500 Internal Server Error`. "The database is busy, try
 again" is a `503` with a `Retry-After`: a client can act on that, and a person
-reading it learns something true. The status map in
-`backend/src/groundscribe/api/app.py` already draws exactly this kind of
-distinction for domain failures; this one is missing from it.
+reading it learns something true.
+
+`backend/src/groundscribe/api/app.py` now maps contention — matched on the
+driver's own words, so it covers PostgreSQL's lock timeout and deadlock as well
+as SQLite's locked database — to a `503` carrying `Retry-After` and a sentence
+saying nothing was written. Anything else wearing `OperationalError` is re-raised
+unchanged: a missing table does not clear while a person waits, and telling them
+to retry would hide the only useful thing about it.
 
 ---
 

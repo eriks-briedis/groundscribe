@@ -972,6 +972,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Failed Job
+         * @description Queue the work that failed under this run, again. Moves the run nowhere.
+         */
+        post: operations["retry_failed_job_projects__project_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {
         parameters: {
             query?: never;
@@ -983,7 +1003,7 @@ export interface paths {
         put?: never;
         /**
          * Answer Gap
-         * @description Record an answer and rebuild the source model from it.
+         * @description Record one answer. The run stays in the queue until the round is submitted.
          */
         post: operations["answer_gap_projects__project_id__source_gaps__gap_id__answer_post"];
         delete?: never;
@@ -1006,6 +1026,26 @@ export interface paths {
          * @description Queue the source-model build, and the gap analysis that follows it.
          */
         post: operations["extract_source_model_projects__project_id__source_model_extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/source-questions/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Answers
+         * @description Hand the answered round back, rebuilding the source model from all of it.
+         */
+        post: operations["submit_answers_projects__project_id__source_questions_submit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1274,6 +1314,12 @@ export interface components {
          *     edges, and article actions seen from a project screen where no article is in
          *     view. Reported rather than filtered out, so the interface can show the true
          *     set of transitions and offer buttons only for what a person can actually do.
+         *
+         *     ``taken_by`` is the other half of that, and the two are independent: an edge
+         *     with no path may still be a person's to take, somewhere else in the
+         *     application. Without it an interface has to guess, and the natural guess —
+         *     "no button, so the pipeline must be doing it" — is wrong exactly where it
+         *     matters, on the edges a run is parked waiting for.
          */
         ActionLink: {
             /** Action */
@@ -1287,6 +1333,11 @@ export interface components {
              * @default false
              */
             requires_actor: boolean;
+            /**
+             * Taken By
+             * @default pipeline
+             */
+            taken_by: string;
         };
         /**
          * ActiveInstructionOut
@@ -2522,9 +2573,14 @@ export interface components {
          *     ``INVALID_JSON`` and ``INVALID_SCHEMA`` are separate because a response can
          *     be useful yet unparseable, or parseable yet non-conforming; both are
          *     preserved alongside their repaired successor rather than discarded.
+         *
+         *     ``TRUNCATED`` is separate from both for the same reason and a sharper one: a
+         *     body the provider stopped mid-value parses as neither, and it is the only
+         *     content outcome no retry can fix. The model did not answer badly — it was cut
+         *     off — so the remedy is the stage's output budget, not another attempt.
          * @enum {string}
          */
-        InvocationOutcome: "accepted" | "invalid_json" | "invalid_schema" | "refused" | "timeout" | "provider_error" | "rate_limited" | "cancelled";
+        InvocationOutcome: "accepted" | "invalid_json" | "invalid_schema" | "truncated" | "refused" | "timeout" | "provider_error" | "rate_limited" | "cancelled";
         /**
          * InvocationView
          * @description One model call, with every payload phase 03 kept for it.
@@ -2714,6 +2770,20 @@ export interface components {
             status: string;
         };
         /**
+         * JourneyStep
+         * @description One phase of the pipeline, seen from where the run currently is.
+         */
+        JourneyStep: {
+            /** Blurb */
+            blurb: string;
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * Lifecycle
          * @description What became of one review finding across rounds (plan/11 → *Review history*).
          * @enum {string}
@@ -2890,12 +2960,14 @@ export interface components {
             /** Available Actions */
             available_actions?: string[];
             constraints: components["schemas"]["ConstraintsView"];
+            journey: components["schemas"]["ProjectJourney"];
             pending_command?: components["schemas"]["ActionLink"] | null;
             project: components["schemas"]["ProjectSummary"];
             /** Questions */
             questions?: components["schemas"]["QuestionView"][];
             /** Recent Failures */
             recent_failures?: components["schemas"]["FailureView"][];
+            retry_command?: components["schemas"]["ActionLink"] | null;
             /** Run Id */
             run_id: string;
             source: components["schemas"]["SourceCompleteness"];
@@ -2909,6 +2981,29 @@ export interface components {
         ProjectIndex: {
             /** Projects */
             projects?: components["schemas"]["ProjectCard"][];
+        };
+        /**
+         * ProjectJourney
+         * @description How far the work has got, at the size a person follows it.
+         *
+         *     Published rather than left to the interface: which phase a state belongs to,
+         *     and who a run is waiting for, are facts about the machine (plan/05). A screen
+         *     that grouped twenty-three states into eight phases of its own would be the
+         *     second opinion plan/11 forbids — and would be wrong the day a state is added.
+         */
+        ProjectJourney: {
+            /**
+             * Headline
+             * @default
+             */
+            headline: string;
+            /** Steps */
+            steps?: components["schemas"]["JourneyStep"][];
+            /**
+             * Waiting On
+             * @default pipeline
+             */
+            waiting_on: string;
         };
         /** ProjectSummary */
         ProjectSummary: {
@@ -2963,6 +3058,7 @@ export interface components {
         QuestionQueue: {
             /** Questions */
             questions?: components["schemas"]["QuestionView"][];
+            submit?: components["schemas"]["ActionLink"] | null;
         };
         /**
          * QuestionView
@@ -5343,6 +5439,41 @@ export interface operations {
             };
         };
     };
+    retry_failed_job_projects__project_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActorAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     answer_gap_projects__project_id__source_gaps__gap_id__answer_post: {
         parameters: {
             query?: never;
@@ -5360,7 +5491,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5391,6 +5522,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExtractSourceModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_answers_projects__project_id__source_questions_submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActorAction"];
             };
         };
         responses: {

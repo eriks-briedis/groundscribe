@@ -19,6 +19,7 @@ an opinion about it.
 from __future__ import annotations
 
 import inspect
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ from typer.testing import CliRunner
 
 from golden import golden_text
 from groundscribe.api.app import create_app
-from groundscribe.api.routes import get_runtime, get_service
+from groundscribe.api.routes import get_reader_runtime, get_runtime, get_service
 from groundscribe.app.services import ApplicationService, CommandResult
 from groundscribe.cli import main as cli
 from groundscribe.jobs.schemas import Job as JobSchema
@@ -163,7 +164,12 @@ def client(recorder: RecordingService) -> TestClient:
     """
     app = create_app(runtime_factory=lambda: None)  # type: ignore[arg-type,return-value]
     app.dependency_overrides[get_service] = lambda: recorder
+    # Both runtimes, because the read side now takes one of its own: on SQLite it
+    # is a transaction that will not write, and a stub that answered only the
+    # command path would leave every read reaching for a database this app does
+    # not have.
     app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(release=lambda: None)
+    app.dependency_overrides[get_reader_runtime] = lambda: SimpleNamespace(release=lambda: None)
     return TestClient(app)
 
 
@@ -362,3 +368,50 @@ def test_every_command_group_the_plan_names_exists(cli_runner: CliRunner) -> Non
         "voice",
     ):
         assert group in output
+
+
+def test_the_cli_reads_the_env_file_the_api_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner
+) -> None:
+    """Both front doors answer to the same configuration file.
+
+    The API loads `.env` on its way up, because that is where the password lives.
+    The CLI did not — which mattered far more than it looks, because the *worker*
+    is a CLI command and the worker is the process that makes every model call.
+    An installation that configured a provider in `.env` therefore got an API that
+    could see it and a worker that could not, and the failure surfaced halfway
+    through a run as "no client for ollama" on a machine that plainly had one.
+
+    Asserted through a real command rather than by calling the loader directly:
+    the claim is about what the CLI does at start-up, and a test that called the
+    loader itself would pass just as happily with nothing wired to it.
+    """
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("OLLAMA_BASE_URL=http://configured-by-file:11434\n")
+    monkeypatch.setattr(cli, "repo_root", lambda: tmp_path)
+
+    # A real command, not `--help`: help is an eager option that exits before the
+    # callback runs, so asserting against it would pass whatever the callback did.
+    cli_runner.invoke(cli.app, ["contracts", "export", "--path", str(tmp_path / "s.json")])
+
+    assert os.environ.get("OLLAMA_BASE_URL") == "http://configured-by-file:11434"
+
+
+def test_a_real_environment_variable_still_beats_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner
+) -> None:
+    """The file fills gaps; it never overrides what a deployment was given.
+
+    A stale `.env` beside a checkout must not silently replace real configuration,
+    or "what is this process actually using?" stops being answerable — the same
+    precedence `load_env_file` already promises the API.
+    """
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://exported:11434")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("OLLAMA_BASE_URL=http://from-the-file:11434\n")
+    monkeypatch.setattr(cli, "repo_root", lambda: tmp_path)
+
+    cli_runner.invoke(cli.app, ["contracts", "export", "--path", str(tmp_path / "s.json")])
+
+    assert os.environ["OLLAMA_BASE_URL"] == "http://exported:11434"

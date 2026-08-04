@@ -284,6 +284,85 @@ async def test_exhausting_the_ladder_fails_the_stage_and_asks_for_a_human(
     assert "intervention.requested" in {event.event_type for event in events}
 
 
+# ---------------------------------------------------------------------------
+# The failure the ladder cannot repair
+# ---------------------------------------------------------------------------
+
+
+async def test_a_response_cut_off_at_its_budget_is_reported_as_truncated(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: FakeLLMClient,
+) -> None:
+    """A body the provider stopped mid-value is not malformed; it is unfinished.
+
+    The two look identical to a JSON parser and could not be more different to
+    the person reading the error. "Response is not valid JSON: unterminated
+    string" sends them to the prompt or the model; the truth is that the answer
+    did not fit in the budget this stage was given, and the fix is a number in a
+    config file.
+    """
+    _, stage_execution = execution
+    client.script_truncated(STAGE, '{"claim": "p99 fell", "grade": "go')
+
+    with pytest.raises(GenerationFailed) as excinfo:
+        await _generate(generator, stage_execution)
+
+    assert excinfo.value.error_type == "truncated"
+    assert "output budget" in str(excinfo.value)
+    assert "max_output_tokens" in str(excinfo.value)
+
+
+async def test_a_truncated_response_is_not_sent_back_round_the_ladder(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: FakeLLMClient,
+) -> None:
+    """Every rung asks the same model for the same answer under the same ceiling.
+
+    Feedback cannot help — the model did not make a mistake — and the fallback
+    rung is worse than useless here: it exists to *degrade* the call, so it
+    retries with a smaller budget than the one that already proved too small.
+    Observed on a real run: four attempts, forty minutes, each cut off at exactly
+    the cap, the last one sooner than the first.
+    """
+    _, stage_execution = execution
+    for _ in range(5):
+        client.script_truncated(STAGE, '{"claim": "p99 fell", "grade": "go')
+
+    with pytest.raises(GenerationFailed) as excinfo:
+        await _generate(generator, stage_execution)
+
+    assert len(excinfo.value.attempts) == 1, "one attempt, then a person"
+    assert excinfo.value.attempts[0].outcome is InvocationOutcome.TRUNCATED
+
+
+async def test_a_truncated_body_that_happens_to_parse_is_still_accepted(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: FakeLLMClient,
+) -> None:
+    """The stop reason is evidence, not a verdict.
+
+    A model can stop at its ceiling having already closed the object — the
+    schema is satisfied and the work is done. Refusing it because of how the
+    generation ended would throw away a good answer over a flag.
+    """
+    _, stage_execution = execution
+    client.script_truncated(STAGE, '{"claim": "p99 fell", "grade": "good"}')
+
+    result = await generator.generate(
+        stage_execution,
+        stage=STAGE,
+        template_id=STAGE,
+        variables=VARIABLES,
+        schema=ClaimVerdict,
+        template_version="v1",
+    )
+
+    assert result.value == ClaimVerdict.model_validate(VALID_OUTPUT)
+
+
 async def test_invalid_output_is_never_returned_as_a_value(
     generator: StructuredGenerator,
     execution: tuple[ProvenanceRecorder, models.StageExecution],
