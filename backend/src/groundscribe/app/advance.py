@@ -69,12 +69,27 @@ NEXT: dict[WorkflowState, Step] = {
     WorkflowState.SOURCE_INGESTED: Step(
         JobType.EXTRACT_SOURCE_MODEL, entry=WorkflowAction.EXTRACT_SOURCE_MODEL
     ),
+    # The three "-ing" states routing can land a run in.
+    #
+    # They were absent, because a state ending in `-ing` is normally entered by
+    # the same command that queues its job — the entry edge and the enqueue
+    # happen together, so there is nothing left to start. Routing breaks that:
+    # `route_revision` moves the run *into* one of these without queueing
+    # anything, and a run then sits in a state that means "work is in flight"
+    # with no work and no way to ask for any. Observed on a real run, which
+    # parked in `source_model_extracting` with an empty queue and an idle worker.
+    #
+    # `_enqueue` dedupes on the active key, so a state entered the ordinary way —
+    # with its job already queued — is handed that job rather than a second one.
+    WorkflowState.SOURCE_MODEL_EXTRACTING: Step(JobType.EXTRACT_SOURCE_MODEL),
     WorkflowState.SOURCE_MODEL_READY: Step(
         JobType.PROPOSE_ARCHITECTURE, entry=WorkflowAction.PROPOSE_ARCHITECTURE
     ),
+    WorkflowState.ARCHITECTURE_PROPOSING: Step(JobType.PROPOSE_ARCHITECTURE),
     WorkflowState.ARCHITECTURE_APPROVED: Step(
         JobType.GENERATE_BRIEF, entry=WorkflowAction.GENERATE_BRIEF, per_article=True
     ),
+    WorkflowState.BRIEF_GENERATING: Step(JobType.GENERATE_BRIEF, per_article=True),
     WorkflowState.DRAFT_GENERATING: Step(JobType.GENERATE_DRAFT, per_article=True),
     WorkflowState.SUBSTANTIVE_REVIEWING: Step(JobType.REVIEW_ARTICLE, per_article=True),
     WorkflowState.REVISION_PLAN_REQUIRED: Step(JobType.PLAN_REVISION, per_article=True),

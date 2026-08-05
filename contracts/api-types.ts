@@ -1832,6 +1832,19 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * BuildInfo
+         * @description Which build of the API answered, so a stale process is visible.
+         */
+        BuildInfo: {
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Version */
+            version: string;
+        };
         /** ClaimView */
         ClaimView: {
             /** Classification */
@@ -3531,14 +3544,30 @@ export interface components {
         };
         /**
          * SessionState
-         * @description Whether this browser is signed in.
+         * @description Whether this browser is signed in, and which build answered.
          *
-         *     The app cannot answer that for itself: the cookie is ``HttpOnly``, which is
-         *     the point, so the page has to ask the side that can read it.
+         *     The app cannot answer the first for itself: the cookie is ``HttpOnly``, which
+         *     is the point, so the page has to ask the side that can read it.
+         *
+         *     ``build`` rides along because the same request already happens on every load,
+         *     and because "am I looking at the code I just changed?" turned out to be a
+         *     question nobody could answer from the screen. A developer restarts the API,
+         *     reloads, does not see a new control, and cannot tell a missing feature from a
+         *     stale process — which happened three times in one afternoon, twice sending
+         *     somebody to debug the wrong thing.
+         *
+         *     ``started_at`` rather than a version string: the package version is bumped by
+         *     hand and says nothing about whether *this* process predates *that* edit. When
+         *     the process started does, exactly.
+         *
+         *     Only for a caller who is signed in. It is a small thing to leak, but the
+         *     unauthenticated branch of this endpoint exists to say one word, and adding a
+         *     second is how it stops being that.
          */
         SessionState: {
             /** Authenticated */
             authenticated: boolean;
+            build?: components["schemas"]["BuildInfo"] | null;
         };
         /**
          * SetRoutingProfile

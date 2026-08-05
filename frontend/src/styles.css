@@ -1111,3 +1111,13 @@ tr[data-same='false'] {
   display: block;
   margin-top: 0.2rem;
 }
+
+/* Which build answered. Quiet by default — it is reassurance, not information
+   somebody is looking for, right up until the moment it is the only thing they
+   need. */
+.app__build {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}

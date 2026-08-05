@@ -997,6 +997,26 @@
         "title": "BuildDataset",
         "type": "object"
       },
+      "BuildInfo": {
+        "description": "Which build of the API answered, so a stale process is visible.",
+        "properties": {
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "started_at"
+        ],
+        "title": "BuildInfo",
+        "type": "object"
+      },
       "ClaimView": {
         "properties": {
           "classification": {
@@ -4454,11 +4474,21 @@
         "type": "object"
       },
       "SessionState": {
-        "description": "Whether this browser is signed in.\n\nThe app cannot answer that for itself: the cookie is ``HttpOnly``, which is\nthe point, so the page has to ask the side that can read it.",
+        "description": "Whether this browser is signed in, and which build answered.\n\nThe app cannot answer the first for itself: the cookie is ``HttpOnly``, which\nis the point, so the page has to ask the side that can read it.\n\n``build`` rides along because the same request already happens on every load,\nand because \"am I looking at the code I just changed?\" turned out to be a\nquestion nobody could answer from the screen. A developer restarts the API,\nreloads, does not see a new control, and cannot tell a missing feature from a\nstale process \u2014 which happened three times in one afternoon, twice sending\nsomebody to debug the wrong thing.\n\n``started_at`` rather than a version string: the package version is bumped by\nhand and says nothing about whether *this* process predates *that* edit. When\nthe process started does, exactly.\n\nOnly for a caller who is signed in. It is a small thing to leak, but the\nunauthenticated branch of this endpoint exists to say one word, and adding a\nsecond is how it stops being that.",
         "properties": {
           "authenticated": {
             "title": "Authenticated",
             "type": "boolean"
+          },
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

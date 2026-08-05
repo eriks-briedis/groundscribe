@@ -134,18 +134,18 @@ def test_the_login_endpoints_are_reachable_without_a_session(client: TestClient)
 
 def test_the_session_endpoint_says_whether_there_is_one(client: TestClient) -> None:
     """The cookie cannot be read by the app, so it has to ask."""
-    assert client.get("/auth/session").json() == {"authenticated": False}
+    assert client.get("/auth/session").json()["authenticated"] is False
 
     sign_in(client)
 
-    assert client.get("/auth/session").json() == {"authenticated": True}
+    assert client.get("/auth/session").json()["authenticated"] is True
 
 
 def test_signing_out_ends_the_session(client: TestClient) -> None:
     sign_in(client)
 
     assert client.post("/auth/logout").status_code == 204
-    assert client.get("/auth/session").json() == {"authenticated": False}
+    assert client.get("/auth/session").json()["authenticated"] is False
     assert client.get("/projects/p1").status_code == 401
 
 
@@ -169,7 +169,7 @@ def test_the_served_application_is_locked_with_what_it_was_given(tmp_path: Path)
     application = served_app(environ={PASSWORD_ENV: PASSWORD}, env_file=tmp_path / "absent")
     served = TestClient(application, cookies=None)
 
-    assert served.get("/auth/session").json() == {"authenticated": False}
+    assert served.get("/auth/session").json()["authenticated"] is False
     assert served.get("/projects/p1").status_code == 401
 
 
@@ -199,4 +199,29 @@ def test_without_a_password_the_application_is_open(harness: Harness) -> None:
     open_client = TestClient(create_app(runtime_factory=lambda: harness.runtime))
 
     assert open_client.get("/projects/p1").status_code == 404
-    assert open_client.get("/auth/session").json() == {"authenticated": True}
+    assert open_client.get("/auth/session").json()["authenticated"] is True
+
+
+def test_the_build_is_told_to_a_caller_who_is_signed_in(client: TestClient) -> None:
+    """ "Am I looking at the code I just changed?" had no answer from the screen.
+
+    A stale API and a missing feature are indistinguishable to somebody reloading
+    a page, and telling them apart meant reading `ps`. The session request already
+    happens on every load, so the answer costs nothing extra.
+
+    ``started_at`` rather than a version: the package version is bumped by hand
+    and says nothing about whether *this process* predates *that* edit.
+    """
+    client.post("/auth/login", json={"password": PASSWORD})
+
+    build = client.get("/auth/session").json()["build"]
+
+    assert build is not None
+    assert build["version"]
+    assert build["started_at"]
+
+
+def test_an_unauthenticated_caller_is_told_nothing_but_the_answer(client: TestClient) -> None:
+    """The unauthenticated branch exists to say one word, and adding a second is
+    how it stops being that."""
+    assert client.get("/auth/session").json() == {"authenticated": False, "build": None}

@@ -21,7 +21,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { ModeProvider, useMode } from './mode';
 import { ThemeProvider, ThemeToggle } from './theme';
-import { fetchSession, onUnauthorized, signOut } from '@/api/client';
+import { fetchSession, onUnauthorized, signOut, type SessionState } from '@/api/client';
 import { SignInScreen } from '@/screens/SignInScreen';
 import { ArchitectureBoardScreen } from '@/screens/ArchitectureBoardScreen';
 import { ArticleWorkspaceScreen } from '@/screens/ArticleWorkspaceScreen';
@@ -140,10 +140,14 @@ function ProjectNav({ hash }: { hash: string }) {
  */
 function useSession() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [build, setBuild] = useState<SessionState['build']>(null);
 
   const check = useCallback(() => {
     fetchSession()
-      .then((session) => setAuthenticated(session.authenticated))
+      .then((session) => {
+        setAuthenticated(session.authenticated);
+        setBuild(session.build ?? null);
+      })
       .catch(() => setAuthenticated(false));
   }, []);
 
@@ -152,7 +156,7 @@ function useSession() {
     onUnauthorized(() => setAuthenticated(false));
   }, [check]);
 
-  return { authenticated, check, setAuthenticated };
+  return { authenticated, build, check, setAuthenticated };
 }
 
 function Chrome() {
@@ -175,6 +179,18 @@ function Chrome() {
         </a>
         <span className="app__spacer" />
         <div className="app__tools">
+          {/* Which build answered. A stale API and a missing feature look
+              identical from a screen, and telling them apart cost an afternoon
+              three times over. */}
+          {session.build ? (
+            <span
+              className="app__build"
+              data-testid="build"
+              title={`groundscribe ${session.build.version}, this process started ${session.build.started_at}`}
+            >
+              up {new Date(session.build.started_at).toLocaleTimeString()}
+            </span>
+          ) : null}
           <ThemeToggle />
           <span className="app__mode" data-testid="mode">
             {mode}

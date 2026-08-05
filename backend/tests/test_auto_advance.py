@@ -279,3 +279,28 @@ def test_it_is_a_persons_edge_and_leads_exactly_one_place() -> None:
 
     assert edge is not None
     assert edge.actor is ActorType.USER, "only the author knows if another is worth writing"
+
+
+def test_every_state_routing_can_reach_knows_what_to_run_there() -> None:
+    """A run routed into a state with no job sits in it forever.
+
+    ``route_revision`` moves a run into one of seven correcting states without
+    queueing anything — unlike the ordinary path, where the entry edge and the
+    enqueue happen in the same command. Three of the seven end in ``-ing``, which
+    means "work is in flight", and were absent from the map for exactly the
+    reason that made them dangerous: normally there is already a job.
+
+    Observed on a real run, which routed to ``source_model_extracting`` and
+    parked there with an empty queue and an idle worker.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    reachable = targets_for(S.REVISION_REQUIRED, WorkflowAction.ROUTE_REVISION)
+    assert reachable, "routing has destinations, or this asserts nothing"
+
+    for destination in reachable:
+        if destination in HUMAN_GATES:
+            continue  # a person is what happens next there, not a job
+        assert next_step(destination) is not None, (
+            f"routing can reach {destination.value} and nothing knows what to run there"
+        )

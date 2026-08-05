@@ -27,6 +27,9 @@ import base64
 import hashlib
 import hmac
 import time
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -92,14 +95,54 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class SessionState(BaseModel):
-    """Whether this browser is signed in.
+class BuildInfo(BaseModel):
+    """Which build of the API answered, so a stale process is visible."""
 
-    The app cannot answer that for itself: the cookie is ``HttpOnly``, which is
-    the point, so the page has to ask the side that can read it.
+    version: str
+    #: When this process started, in UTC. Compared against when a change was
+    #: made, it answers "is the server running it?" without reading `ps`.
+    started_at: datetime
+
+
+class SessionState(BaseModel):
+    """Whether this browser is signed in, and which build answered.
+
+    The app cannot answer the first for itself: the cookie is ``HttpOnly``, which
+    is the point, so the page has to ask the side that can read it.
+
+    ``build`` rides along because the same request already happens on every load,
+    and because "am I looking at the code I just changed?" turned out to be a
+    question nobody could answer from the screen. A developer restarts the API,
+    reloads, does not see a new control, and cannot tell a missing feature from a
+    stale process — which happened three times in one afternoon, twice sending
+    somebody to debug the wrong thing.
+
+    ``started_at`` rather than a version string: the package version is bumped by
+    hand and says nothing about whether *this* process predates *that* edit. When
+    the process started does, exactly.
+
+    Only for a caller who is signed in. It is a small thing to leak, but the
+    unauthenticated branch of this endpoint exists to say one word, and adding a
+    second is how it stops being that.
     """
 
     authenticated: bool
+    build: BuildInfo | None = None
+
+
+#: When this process started. Captured at import, which is as close to "when the
+#: server came up" as a module can get, and fixed for the life of the process —
+#: which is the property that makes it worth reporting.
+STARTED_AT = datetime.now(UTC)
+
+
+def build_info() -> BuildInfo:
+    """This process's build, for a screen that has to say which one answered."""
+    try:
+        installed = package_version("groundscribe")
+    except PackageNotFoundError:  # pragma: no cover - a source checkout with no dist
+        installed = "unknown"
+    return BuildInfo(version=installed, started_at=STARTED_AT)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -153,9 +196,11 @@ def session(request: Request) -> SessionState:
     """Whether the caller is signed in, asked rather than assumed."""
     password = configured_password_of(request)
     if password is None:
-        return SessionState(authenticated=True)
+        return SessionState(authenticated=True, build=build_info())
+    authenticated = session_is_valid(request.cookies.get(SESSION_COOKIE), password)
     return SessionState(
-        authenticated=session_is_valid(request.cookies.get(SESSION_COOKIE), password)
+        authenticated=authenticated,
+        build=build_info() if authenticated else None,
     )
 
 

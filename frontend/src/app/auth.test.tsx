@@ -122,3 +122,30 @@ describe('the sign-in screen', () => {
     expect(await screen.findByLabelText(/password/i)).toBeInTheDocument();
   });
 });
+
+describe('which build answered', () => {
+  it('shows when the API process started, so a stale one is visible', async () => {
+    fakeBackend({
+      '/auth/session': {
+        authenticated: true,
+        build: { version: '0.1.0', started_at: '2026-08-05T09:10:00Z' },
+      },
+    });
+
+    render(<App />);
+
+    // A stale API and a missing feature look identical from a screen; this is
+    // the difference, and it costs one already-happening request.
+    const build = await screen.findByTestId('build');
+    expect(build).toHaveAttribute('title', expect.stringContaining('0.1.0'));
+  });
+
+  it('says nothing when the backend offered nothing', async () => {
+    fakeBackend({ '/auth/session': { authenticated: true } });
+
+    render(<App />);
+    await screen.findByRole('banner').catch(() => undefined);
+
+    expect(screen.queryByTestId('build')).toBeNull();
+  });
+});
