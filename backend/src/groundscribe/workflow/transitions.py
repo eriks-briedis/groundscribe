@@ -149,6 +149,14 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.SOURCE_QUESTIONS_REQUIRED),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.ARCHITECTURE_PROPOSING),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.BRIEF_GENERATING),
+    # Reviewing is a routing destination because a failing score is usually
+    # judging a version nothing has reviewed. A voice pass produces a version and
+    # takes the run straight to scoring, so by the time a score fails, the last
+    # review describes the text as it stood before the voice pass reworded it —
+    # and both of the substantive destinations read the *current* version's
+    # review. They found none, and the run stopped with a plan it could not
+    # write.
+    _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.SUBSTANTIVE_REVIEWING),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.REVISION_PLAN_REQUIRED),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.SUBSTANTIVE_REWRITING),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.VOICE_ALIGNING),

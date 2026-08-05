@@ -290,6 +290,13 @@ async def test_a_stagnant_history_stalls_the_run_and_records_why(
 #: assigned, for the reason phase 05's helpers walk them: a loop that only closes
 #: when the state is set by hand is not a loop.
 BACK_TO_SCORING: dict[WorkflowState, tuple[WorkflowAction, ...]] = {
+    # Where a substantive failure lands now. The review is what a plan and a
+    # rewrite both read, and until this was a destination the run arrived at
+    # them without one.
+    WorkflowState.SUBSTANTIVE_REVIEWING: (
+        WorkflowAction.ACCEPT_REVIEW,
+        WorkflowAction.SUBMIT_VOICE_PASS,
+    ),
     WorkflowState.REVISION_PLAN_REQUIRED: (WorkflowAction.APPROVE_REVISION_PLAN,),
     WorkflowState.SUBSTANTIVE_REWRITING: (
         WorkflowAction.SUBMIT_REWRITE,
@@ -435,3 +442,64 @@ def test_the_scoring_prompt_says_an_overclaim_is_not_a_factual_gap() -> None:
     assert prompt.rindex(FailureCategory.SUBSTANTIVE_ISSUE.value, 0, unsupported) > prompt.rindex(
         FailureCategory.FACTUAL_GAP.value, 0, unsupported
     ), "an unsupported claim is described under substantive_issue, not factual_gap"
+
+
+# ----------------------------------------------------------------------
+# A failing score is judging text no review has read
+# ----------------------------------------------------------------------
+
+
+def test_a_substantive_failure_is_reviewed_before_it_is_planned() -> None:
+    """The version a score fails is one nothing has reviewed, so review it.
+
+    ``align_voice`` produces an article version and takes the run straight to
+    scoring — it is the only stage whose output no review sees. By the time a
+    score fails, the newest review therefore describes the text as it stood
+    before the voice pass reworded it.
+
+    Both of the other destinations read the *current* version's review:
+    ``_plan_revision`` and ``_rewrite`` each call ``latest_review`` on
+    ``latest_version``. Observed on a real run, whose first score-driven
+    substantive route failed with "article version f480c80f has not been
+    reviewed" — and it would have failed for any article, because the path into
+    scoring always runs through a voice pass.
+    """
+    from groundscribe.workflow.policy import default_workflow_policy
+
+    rule = default_workflow_policy().rule(FailureCategory.SUBSTANTIVE_ISSUE)
+
+    assert rule.target is WorkflowState.SUBSTANTIVE_REVIEWING
+    # Kept, for a caller that knows a review of the current version exists.
+    assert WorkflowState.REVISION_PLAN_REQUIRED in rule.alternatives
+    assert WorkflowState.SUBSTANTIVE_REWRITING in rule.alternatives
+
+
+def test_reviewing_leads_back_to_the_stages_that_need_it() -> None:
+    """Routing there is only useful if the review's own exits carry the run on.
+
+    Neither exit is a person's: a review that finds something substantive asks
+    for a plan, and one that finds only polish says the substance is settled. So
+    the round costs a review call and no clicks.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    assert targets_for(
+        WorkflowState.SUBSTANTIVE_REVIEWING, WorkflowAction.REQUIRE_REVISION_PLAN
+    ) == (WorkflowState.REVISION_PLAN_REQUIRED,)
+    assert targets_for(WorkflowState.SUBSTANTIVE_REVIEWING, WorkflowAction.ACCEPT_REVIEW) == (
+        WorkflowState.VOICE_ALIGNING,
+    )
+
+
+def test_the_round_is_bounded_like_every_other_substantive_one() -> None:
+    """Review, plan and rewrite spend the same budget, so the loop cannot run away.
+
+    A review that finds only polish sends the run to voice and back to the same
+    failing score, which would route again. Three rounds, and then a person has
+    to authorise the next one.
+    """
+    from groundscribe.workflow.policy import LimitKind, default_workflow_policy
+
+    policy = default_workflow_policy()
+    assert policy.rule(FailureCategory.SUBSTANTIVE_ISSUE).limit is LimitKind.SUBSTANTIVE
+    assert policy.limits.substantive == 3

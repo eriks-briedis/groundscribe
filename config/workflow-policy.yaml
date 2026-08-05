@@ -7,11 +7,13 @@
 # whenever a route, limit or threshold changes — superseded versions live in git
 # history, and a run that cannot name its policy version cannot be explained
 # afterwards. Phase 08's scoring loop resolves through this same file.
-version: "2"
+version: "3"
 description: >
   Bounded revision: send each failure to the stage that can actually correct it,
   cap the automatic rounds, and hand the run to a person when it stops improving.
   Version 2 adds `source_questions`, which bounds the one loop that was not.
+  Version 3 sends substantive failures to be reviewed first, because the version
+  a score fails is one no review has read.
 
 # Failure class → correcting stage. `target` is the default; `alternatives` are
 # the other ends the same rule legitimately has, chosen by the caller when it
@@ -39,13 +41,21 @@ routing:
     limit: architecture
     rationale: The article is structurally wrong, not badly written.
 
-  # Substantive problems go through a plan first: a rewrite briefed by "the
-  # review said it was thin" produces a differently thin article.
+  # Substantive problems are reviewed, then planned, then rewritten — in that
+  # order, because each step needs the one before it and a rewrite briefed by
+  # "the review said it was thin" produces a differently thin article.
+  #
+  # Reviewing is the default rather than planning, which it used to be. A voice
+  # pass produces a version and carries the run straight to scoring, so a score
+  # that fails is nearly always judging text no review has seen; both of the
+  # other destinations read the current version's review, found none, and left
+  # the run at `revision_plan_required` with a plan it could not write. The
+  # alternatives are for a caller that knows a current review already exists.
   substantive_issue:
-    target: revision_plan_required
-    alternatives: [substantive_rewriting]
+    target: substantive_reviewing
+    alternatives: [revision_plan_required, substantive_rewriting]
     limit: substantive
-    rationale: Plan the revision, then rewrite against the plan.
+    rationale: Review what actually failed, plan against that review, then rewrite.
 
   # Style is the voice pass's job and nothing else's.
   style_issue:
