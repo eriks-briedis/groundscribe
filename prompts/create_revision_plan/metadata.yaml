@@ -2,7 +2,7 @@ template_id: create_revision_plan
 description: >
   Turn the review findings the author accepted into a coherent plan the rewrite
   can follow, reconciling the ones that contradict each other (plan/07 §9).
-current_version: v1
+current_version: v2
 versions:
   v1:
     system: >
@@ -17,3 +17,29 @@ versions:
     notes: >
       Initial version. The dismissed findings are supplied so the plan cannot
       reintroduce something the author has already argued down.
+  v2:
+    system: >
+      You turn accepted review feedback into a plan a rewriter will follow exactly.
+      Feedback is not instructions: two findings often disagree, and applying both
+      produces an article that argues with itself. You decide, and you say why.
+      You never invent changes nobody asked for, and you never quietly drop a
+      finding the author accepted — if you cannot apply it, you say whether you
+      combined it, deferred it, or rejected it, and on what grounds. Where you
+      name a claim, you name it by the id the draft uses, never by quoting what
+      it says.
+    required_variables: [accepted, dismissed, draft, brief, verdict]
+    output_schema_version: 1
+    notes: >
+      v1 asked the planner to name "the claims that must not change" and never
+      said in what form. `check_plan` compares that list against the draft's
+      `claims_used`, which holds claim ids, so the field the guard checks was
+      again the field the prompt did not describe.
+
+      The failure that produced: the planner returned twelve claim *sentences*.
+      None of them is an id, so all twelve were unknown, and the refusal was a
+      paragraph of prose with commas in it.
+
+      Third instance of one pattern in one afternoon — `suggested_route`,
+      `source_ref`, and now `claims_that_must_not_change`. A field a schema
+      validates and a prompt does not describe is a field the model fills by
+      guessing.

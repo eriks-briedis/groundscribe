@@ -268,9 +268,14 @@ def check_plan(
 
     unknown = sorted(set(planned.claims_that_must_not_change) - set(draft.claims_used))
     if unknown:
+        # Quoted, for the reason `check_findings` quotes its own: the field holds
+        # claim *ids*, and a planner that writes the claim's text there produces
+        # values with commas in them. Joined bare, twelve such values read as one
+        # long sentence and the message stops looking like a list at all.
         raise PlanContractError(
-            f"the plan promises to preserve {', '.join(unknown)}, which the draft does not "
-            "use; a promise about something that is not there protects nothing"
+            f"the plan promises to preserve {', '.join(repr(claim) for claim in unknown)}, "
+            "which the draft does not use; a promise about something that is not there "
+            "protects nothing (name claims by the id the draft's claims_used lists)"
         )
 
 

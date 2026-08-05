@@ -228,3 +228,39 @@ async def test_a_plan_that_reopens_the_brief_says_so_in_its_record(
 def test_the_reconciliation_kinds_are_what_the_spec_names() -> None:
     """Combine, defer, reject: the three things to do with feedback you cannot apply."""
     assert {kind.value for kind in ReconciliationKind} == {"combined", "deferred", "rejected"}
+
+
+async def test_a_claim_named_by_its_text_reads_as_one_bad_value(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """``claims_that_must_not_change`` holds ids, and the refusal has to show that.
+
+    Observed on a real run: the planner returned twelve claim *sentences* there.
+    Joined bare, they made a paragraph with commas in it that no longer read as a
+    list of rejected values — the same failure mode as packing several ids into
+    one ``source_ref``, and the same fix.
+    """
+    sentence = "The previous signal pipeline confused evidence existence with product viability."
+    payload = golden_plan(claims_that_must_not_change=["c1", sentence])
+
+    with pytest.raises(PlanContractError, match=r"claims_used"):
+        await plan(db_session, snapshot_store, payload)
+
+
+def test_the_plan_prompt_says_claims_are_named_by_id() -> None:
+    """v1 asked for "the claims that must not change" and never said in what form.
+
+    ``check_plan`` compares the answer against the draft's ``claims_used``, which
+    holds ids — so the prompt described the concept and left the contract to be
+    guessed at.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        "create_revision_plan",
+        {"accepted": [], "dismissed": [], "draft": "{}", "brief": "{}", "verdict": "revise"},
+    )
+
+    assert "claims_used" in rendered.rendered_prompt
+    assert "claim id" in rendered.rendered_prompt
