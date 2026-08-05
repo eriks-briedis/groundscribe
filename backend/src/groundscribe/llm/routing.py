@@ -249,8 +249,7 @@ def profile_path(profile: str | None, *, root: Path | None = None) -> Path:
         return base / ROUTING_CONFIG_FILENAME
     if not PROFILE_NAME.match(profile):
         raise RoutingConfigError(
-            f"invalid routing profile name {profile!r}: "
-            "lowercase letters, digits and dashes only"
+            f"invalid routing profile name {profile!r}: lowercase letters, digits and dashes only"
         )
     return base / ROUTING_PROFILE_TEMPLATE.format(profile=profile)
 
@@ -286,9 +285,7 @@ def routing_policy(profile: str | None = None, *, root: Path | None = None) -> R
     path = profile_path(profile, root=root)
     if profile is not None and not path.is_file():
         known = ", ".join(available_profiles(root=root)) or "none"
-        raise RoutingConfigError(
-            f"no routing profile {profile!r} at {path} (available: {known})"
-        )
+        raise RoutingConfigError(f"no routing profile {profile!r} at {path} (available: {known})")
     return RoutingPolicy.from_yaml(path)
 
 

@@ -332,8 +332,10 @@ def project_routing(
             typer.echo(f"available: {', '.join(('default', *profiles.available))}")
             return
         if not by:
-            typer.echo("--by is required when setting a profile: an anonymous choice about "
-                       "where material is sent is unreviewable")
+            typer.echo(
+                "--by is required when setting a profile: an anonymous choice about "
+                "where material is sent is unreviewable"
+            )
             raise typer.Exit(code=1)
         # "default" spelled out, because a shell cannot pass a null and an empty
         # string is what a person types by accident.

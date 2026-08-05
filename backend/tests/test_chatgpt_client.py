@@ -42,9 +42,11 @@ pytestmark = pytest.mark.anyio
 
 def jwt(expires_in: float) -> str:
     """A token whose only meaningful claim is when it stops working."""
-    claims = base64.urlsafe_b64encode(
-        json.dumps({"exp": int(time.time() + expires_in)}).encode()
-    ).decode().rstrip("=")
+    claims = (
+        base64.urlsafe_b64encode(json.dumps({"exp": int(time.time() + expires_in)}).encode())
+        .decode()
+        .rstrip("=")
+    )
     return f"header.{claims}.signature"
 
 

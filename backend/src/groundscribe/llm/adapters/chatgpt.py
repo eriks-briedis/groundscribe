@@ -427,9 +427,7 @@ class _Token:
 #: The frames that carry a final answer. ``incomplete`` is included because a
 #: response cut short is still a response with usage and a reason attached, and
 #: throwing it away would lose the only account of why it stopped.
-_FINAL_EVENTS: Final = frozenset(
-    {"response.completed", "response.incomplete", "response.failed"}
-)
+_FINAL_EVENTS: Final = frozenset({"response.completed", "response.incomplete", "response.failed"})
 
 
 def _auth_path(explicit: Path | str | None) -> Path:

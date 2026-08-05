@@ -324,9 +324,10 @@ async def test_a_pydantic_schema_is_rewritten_into_the_subset_strict_mode_accept
     assert "minItems" not in sent["$defs"]["Evidence"]["properties"]["segment_ids"]
     assert sent["additionalProperties"] is False
     # The pipeline's own schema is untouched: it is what still parses the answer.
-    assert "minItems" in SourceModel.model_json_schema()["$defs"]["Evidence"]["properties"][
-        "segment_ids"
-    ]
+    assert (
+        "minItems"
+        in SourceModel.model_json_schema()["$defs"]["Evidence"]["properties"]["segment_ids"]
+    )
 
 
 async def test_a_mapping_keyed_by_an_enum_is_written_out_as_its_own_keys() -> None:
