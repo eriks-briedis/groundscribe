@@ -92,6 +92,17 @@ class ActorAction(BaseModel):
     actor_id: str
 
 
+class ContinueToArticle(ActorAction):
+    """Approving one article and naming the next to write (phase 16).
+
+    The next article is named rather than inferred: auto-advance follows the one
+    the architecture selected, which is the article being finished here, so
+    anything inferred would restart what the author is leaving behind.
+    """
+
+    next_article_id: str = Field(min_length=1)
+
+
 class BuildDataset(BaseModel):
     """Building an evaluation corpus out of approved work (plan/12)."""
 

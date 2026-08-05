@@ -596,6 +596,42 @@ class ApplicationService:
         )
         return self._settle(resumed)
 
+    def approve_and_continue(
+        self, article_id: str, *, approved_by: str, next_article_id: str
+    ) -> CommandResult:
+        """Publish this article, then start another the architecture approved.
+
+        Approving an architecture opens an article per approved concept and the
+        run carries exactly one of them here, so without this the rest were rows
+        nothing could act on (phase 16).
+
+        ``next_article_id`` is named rather than inferred. Auto-advance picks the
+        article the *architecture* selected, which is the one just finished, so
+        letting it choose would restart the article being left behind. Which of
+        the remaining concepts is worth writing is the author's judgement and
+        there is nothing in the run that encodes it.
+        """
+        project_id = self.project_for_article(article_id)
+        if self.project_for_article(next_article_id) != project_id:
+            raise UnknownProject(
+                f"article {next_article_id} belongs to another project; a run writes the "
+                "articles its own architecture approved"
+            )
+
+        resumed = self._resume(project_id)
+        validated = resumed.engine.validated_version
+        resumed.engine.apply(
+            A.APPROVE_AND_CONTINUE,
+            actor_id=approved_by,
+            actor_type=ActorType.USER,
+            artifacts=(validated,) if validated is not None else (),
+            rationale="the author approved this article and chose another to write",
+        )
+        self._settle(resumed)
+        return self._enqueue_for_article(
+            next_article_id, JobType.GENERATE_BRIEF, entry=A.GENERATE_BRIEF
+        )
+
     def override_and_approve(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Accept an article the score refused, on a person's explicit say-so."""
         return self._act(

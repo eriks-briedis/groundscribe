@@ -105,6 +105,15 @@ class WorkflowAction(StrEnum):
     VALIDATION_PASSED = "validation_passed"
     VALIDATION_FAILED = "validation_failed"
     APPROVE_FINAL = "approve_final"
+    #: Accept this article and go back for another of the approved ones.
+    #:
+    #: Its own action rather than a second destination for ``APPROVE_FINAL``,
+    #: because the machine takes the sole target when none is named and only
+    #: ``ROUTE_REVISION`` — which asks the routing policy — is allowed to be
+    #: ambiguous. Two destinations here would put that choice in the call site,
+    #: where a caller that forgot to name one would silently finish a run the
+    #: author meant to continue.
+    APPROVE_AND_CONTINUE = "approve_and_continue"
     REJECT_FINAL = "reject_final"
 
     # Endings available everywhere.

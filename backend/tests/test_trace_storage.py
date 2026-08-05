@@ -202,8 +202,14 @@ def test_the_report_and_the_cost_are_both_reachable(cli_runner: CliRunner) -> No
     A storage figure nobody can ask for cannot inform a retention decision, and
     a report nobody can render is a rendering nobody uses.
     """
-    privacy = cli_runner.invoke(cli.app, ["privacy", "--help"]).output
+    # Width pinned, because Rich wraps help text to the terminal it thinks it has
+    # and an option name is the first thing a narrow one breaks across lines.
+    # Unpinned, this passed on a developer's terminal and failed in CI, which
+    # makes it a test of the window rather than of the command.
+    wide = {"COLUMNS": "200"}
+
+    privacy = cli_runner.invoke(cli.app, ["privacy", "--help"], env=wide).output
     assert "report" in privacy
 
-    traces = cli_runner.invoke(cli.app, ["privacy", "traces", "--help"]).output
+    traces = cli_runner.invoke(cli.app, ["privacy", "traces", "--help"], env=wide).output
     assert "--report" in traces

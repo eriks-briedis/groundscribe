@@ -423,6 +423,11 @@ class ProjectionReader:
                 title=article.title,
                 status=article.status,
             ),
+            siblings=[
+                self._card(other)
+                for other in self._articles(article.project_id)
+                if other.id != article.id
+            ],
             run_id=run.id,
             state=position.state,
             available_actions=list(available_actions(position.state)),

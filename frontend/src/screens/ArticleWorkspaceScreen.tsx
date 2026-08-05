@@ -12,7 +12,12 @@
  */
 import { useState } from 'react';
 
-import { fetchArticleWorkspace, type ArticleWorkspace } from '@/api/client';
+import {
+  ApiError,
+  fetchArticleWorkspace,
+  sendCommand,
+  type ArticleWorkspace,
+} from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
 import { ActionBar, PendingCommand } from '@/components/ActionBar';
 import { DiffViewer } from '@/components/DiffViewer';
@@ -202,6 +207,8 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
             </button>
             {approving ? <Approval workspace={workspace} /> : null}
           </section>
+
+          <ContinueToNext workspace={workspace} actor={actor} onDone={resource.reload} />
         </section>
       )}
     </Loaded>
@@ -215,6 +222,81 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
  * fold away to look calmer, and the calm version is the one that gets an article
  * approved without its remaining concerns being read.
  */
+/**
+ * Approving this article and starting another the architecture approved.
+ *
+ * Approving an architecture opens an article per approved concept and the run
+ * carries exactly one of them to publication; the rest were rows nothing could
+ * act on, because the finished state is terminal and artefacts are scoped to the
+ * run that produced them (phase 16).
+ *
+ * Rendered only when the backend offers `approve_and_continue`, and only for
+ * siblings with nothing written yet — an article that already has versions is
+ * not what "another one" means.
+ *
+ * The action needs a second article id, which no generic action bar can supply,
+ * so it is offered here rather than beside the other buttons: the link says the
+ * option exists, this screen builds the request.
+ */
+function ContinueToNext({
+  workspace,
+  actor,
+  onDone,
+}: {
+  workspace: ArticleWorkspace;
+  actor: string;
+  onDone: () => void;
+}) {
+  const link = (workspace.action_links ?? []).find(
+    (candidate) => candidate.action === 'approve_and_continue',
+  );
+  const unwritten = (workspace.siblings ?? []).filter((sibling) => sibling.versions === 0);
+  const [next, setNext] = useState('');
+  const [problem, setProblem] = useState('');
+
+  if (!link?.path || unwritten.length === 0) return null;
+
+  async function go() {
+    if (!link?.path || !next) return;
+    setProblem('');
+    try {
+      await sendCommand(link.path, { actor_id: actor, next_article_id: next });
+      onDone();
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.detail : String(error));
+    }
+  }
+
+  return (
+    <section className="panel" data-testid="continue-to-next">
+      <h2>Write another</h2>
+      <p className="muted">
+        This project&apos;s architecture approved {unwritten.length + 1} articles. Publishing this
+        one need not end the run.
+      </p>
+      <label>
+        Next article
+        <select value={next} onChange={(event) => setNext(event.target.value)}>
+          <option value="">Finish here</option>
+          {unwritten.map((sibling) => (
+            <option key={sibling.id} value={sibling.id}>
+              {sibling.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="button" onClick={go} disabled={!next}>
+        Approve this and start the next
+      </button>
+      {problem ? (
+        <p className="failure" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function Approval({ workspace }: { workspace: ArticleWorkspace }) {
   const approval = workspace.approval;
   const validation = workspace.validation;

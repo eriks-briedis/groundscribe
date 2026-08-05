@@ -325,6 +325,7 @@ export const architecture: ArchitectureBoard = {
 };
 
 export const articleWorkspace: ArticleWorkspace = {
+  siblings: [],
   article: { id: ARTICLE_ID, project_id: PROJECT_ID, title: 'Read-through caching', status: 'draft' },
   run_id: 'r1',
   state: 'human_approval_required',

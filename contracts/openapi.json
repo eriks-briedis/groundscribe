@@ -857,6 +857,13 @@
             "title": "Scores",
             "type": "array"
           },
+          "siblings": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleCard"
+            },
+            "title": "Siblings",
+            "type": "array"
+          },
           "source_evidence": {
             "items": {
               "$ref": "#/components/schemas/ClaimView"
@@ -1263,6 +1270,26 @@
           "strategy_version"
         ],
         "title": "ContextSelectionView",
+        "type": "object"
+      },
+      "ContinueToArticle": {
+        "description": "Approving one article and naming the next to write (phase 16).\n\nThe next article is named rather than inferred: auto-advance follows the one\nthe architecture selected, which is the article being finished here, so\nanything inferred would restart what the author is leaving behind.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "next_article_id": {
+            "minLength": 1,
+            "title": "Next Article Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id",
+          "next_article_id"
+        ],
+        "title": "ContinueToArticle",
         "type": "object"
       },
       "CreateExperiment": {
@@ -5698,6 +5725,56 @@
           }
         },
         "summary": "Approve"
+      }
+    },
+    "/articles/{article_id}/approve-and-continue": {
+      "post": {
+        "description": "Publish this article, then brief another the architecture approved.\n\n``next_article_id`` is in the body rather than inferred, because the run\ncannot know it: auto-advance follows the article the *architecture* selected,\nwhich is the one being finished here, and which of the remaining concepts is\nworth writing is a judgement only the author holds.",
+        "operationId": "approve_and_continue_articles__article_id__approve_and_continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueToArticle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve And Continue"
       }
     },
     "/articles/{article_id}/brief/approve": {

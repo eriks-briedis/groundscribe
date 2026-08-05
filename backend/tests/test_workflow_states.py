@@ -107,6 +107,10 @@ EXPECTED_ACTIONS: dict[WorkflowState, set[WorkflowAction]] = {
     },
     WorkflowState.HUMAN_APPROVAL_REQUIRED: {
         WorkflowAction.APPROVE_FINAL,
+        # Approve this one and go write another of the approved concepts
+        # (phase 16). Without it the run finished here and the other articles
+        # approval had opened were rows nothing could act on.
+        WorkflowAction.APPROVE_AND_CONTINUE,
         WorkflowAction.REJECT_FINAL,
     },
     WorkflowState.STALLED: {

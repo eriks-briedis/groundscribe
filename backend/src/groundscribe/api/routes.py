@@ -433,6 +433,32 @@ def approve(
     return render(service.approve(article_id, approved_by=body.actor_id))
 
 
+@router.post(
+    "/articles/{article_id}/approve-and-continue",
+    response_model=schemas.CommandResponse,
+    status_code=202,
+)
+def approve_and_continue(
+    article_id: str,
+    body: schemas.ContinueToArticle,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Publish this article, then brief another the architecture approved.
+
+    ``next_article_id`` is in the body rather than inferred, because the run
+    cannot know it: auto-advance follows the article the *architecture* selected,
+    which is the one being finished here, and which of the remaining concepts is
+    worth writing is a judgement only the author holds.
+    """
+    return render(
+        service.approve_and_continue(
+            article_id,
+            approved_by=body.actor_id,
+            next_article_id=body.next_article_id,
+        )
+    )
+
+
 @router.post("/articles/{article_id}/override-approve", response_model=schemas.CommandResponse)
 def override_and_approve(
     article_id: str,

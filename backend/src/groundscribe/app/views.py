@@ -674,6 +674,15 @@ class ArticleWorkspace(BaseModel):
     """plan/11 → *Article workspace*, and the approval view built on it."""
 
     article: ArticleSummary
+    #: The project's other approved concepts, and whether anything was written
+    #: for each (phase 16).
+    #:
+    #: Here because this is the screen where approving happens, and approving is
+    #: where the author decides whether the project is finished or whether one of
+    #: the others is worth writing. A screen that had to fetch the dashboard to
+    #: populate that choice would be assembling itself from two reads, which is
+    #: the thing one composed read per screen exists to avoid.
+    siblings: list[ArticleCard] = Field(default_factory=list)
     run_id: str
     state: WorkflowState
     available_actions: list[str] = Field(default_factory=list)

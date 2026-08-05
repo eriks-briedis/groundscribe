@@ -34,8 +34,10 @@ from groundscribe.app.advance import HUMAN_GATES, NEXT, next_step
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
 from groundscribe.jobs.enums import JobType
+from groundscribe.provenance.enums import ActorType
 from groundscribe.storage.snapshot_store import SnapshotStore
-from groundscribe.workflow.states import WorkflowState
+from groundscribe.workflow.states import WorkflowAction, WorkflowState
+from groundscribe.workflow.transitions import available_actions
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
 from test_services import new_project, script_extraction, with_source
@@ -235,3 +237,45 @@ def test_the_setting_is_versioned_with_the_rest_of_the_constraints(harness: Harn
     ).one()
 
     assert row.auto_advance is False
+
+
+# ----------------------------------------------------------------------
+# Writing another of the approved articles
+# ----------------------------------------------------------------------
+
+
+def test_approving_can_go_back_for_another_approved_article() -> None:
+    """Approval opens an article per concept; the run carried one to publication.
+
+    The rest were rows nothing could act on — the finished state is terminal, and
+    artefacts are scoped to the run that produced them, so a second run would
+    have found no source model and no architecture to work from.
+
+    Asserted on the table rather than through a run, because what had to change
+    is the table: `human_approval_required` gained a second way out.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    assert targets_for(S.HUMAN_APPROVAL_REQUIRED, WorkflowAction.APPROVE_AND_CONTINUE) == (
+        S.ARCHITECTURE_APPROVED,
+    )
+    # And the finished state stays finished: this is an edge *into* the loop
+    # again, taken before a run ends, never out of one that has.
+    assert next_step(S.COMPLETED) is None
+    assert WorkflowAction.APPROVE_AND_CONTINUE.value not in available_actions(S.COMPLETED)
+
+
+def test_it_is_a_persons_edge_and_leads_exactly_one_place() -> None:
+    """The machine takes the sole target when none is named, and only routing is
+    allowed to be ambiguous — which is why this is its own action rather than a
+    second destination for ``approve_final``."""
+    from groundscribe.workflow.transitions import transition_for
+
+    edge = transition_for(
+        S.HUMAN_APPROVAL_REQUIRED,
+        WorkflowAction.APPROVE_AND_CONTINUE,
+        S.ARCHITECTURE_APPROVED,
+    )
+
+    assert edge is not None
+    assert edge.actor is ActorType.USER, "only the author knows if another is worth writing"

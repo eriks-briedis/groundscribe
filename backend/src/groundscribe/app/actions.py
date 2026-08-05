@@ -95,6 +95,12 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
     WorkflowAction.APPROVE_FINAL: Endpoint(
         "POST", "/articles/{article_id}/approve", ARTICLE, requires_actor=True
     ),
+    # Offered like every other action, but not takeable from a generic action
+    # bar: it needs a second article id nothing else supplies, so the link is a
+    # signal that the option exists and the screen builds the request.
+    WorkflowAction.APPROVE_AND_CONTINUE: Endpoint(
+        "POST", "/articles/{article_id}/approve-and-continue", ARTICLE, requires_actor=True
+    ),
     WorkflowAction.OVERRIDE_AND_APPROVE: Endpoint(
         "POST", "/articles/{article_id}/override-approve", ARTICLE, requires_actor=True
     ),

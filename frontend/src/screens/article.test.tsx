@@ -351,3 +351,75 @@ describe('rerunning on a run that has finished', () => {
     expect(screen.queryByTestId('rerun-dead-end')).toBeNull();
   });
 });
+
+/**
+ * Writing another of the approved articles (phase 16).
+ *
+ * Approving an architecture opens an article per approved concept and the run
+ * carried exactly one of them to publication. The rest were rows nothing could
+ * act on: the finished state is terminal, and artefacts are scoped to the run
+ * that produced them, so a second run would have found no source model.
+ */
+describe('continuing to another article', () => {
+  const withSiblings = {
+    ...articleWorkspace,
+    action_links: [
+      ...(articleWorkspace.action_links ?? []),
+      {
+        action: 'approve_and_continue',
+        method: 'POST',
+        path: `/articles/${ARTICLE_ID}/approve-and-continue`,
+        requires_actor: true,
+        taken_by: 'you',
+      },
+    ],
+    siblings: [
+      { id: 'a2', title: 'Artefacts Beat Chat Threads', status: 'draft', versions: 0 },
+      { id: 'a3', title: 'Already Written', status: 'draft', versions: 3 },
+    ],
+  };
+
+  it('offers only the concepts nothing has been written for', async () => {
+    fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: withSiblings });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    const panel = await screen.findByTestId('continue-to-next');
+    expect(panel).toHaveTextContent('Artefacts Beat Chat Threads');
+    // Three versions in: "another one" does not mean starting it over.
+    expect(panel).not.toHaveTextContent('Already Written');
+  });
+
+  it('names the next article in the request, since the run cannot infer it', async () => {
+    const backend = fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: withSiblings,
+      [`/articles/${ARTICLE_ID}/approve-and-continue`]: {
+        project_id: 'p1',
+        run_id: 'r1',
+        state: 'brief_generating',
+        available_actions: [],
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.selectOptions(await screen.findByLabelText(/next article/i), 'a2');
+    await userEvent.click(screen.getByRole('button', { name: /approve this and start the next/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]).toMatchObject({
+      path: `/articles/${ARTICLE_ID}/approve-and-continue`,
+      body: { actor_id: 'ada', next_article_id: 'a2' },
+    });
+  });
+
+  it('stays hidden when every other concept has already been written', async () => {
+    fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: { ...withSiblings, siblings: [] },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await screen.findByTestId('run-state');
+
+    expect(screen.queryByTestId('continue-to-next')).toBeNull();
+  });
+});

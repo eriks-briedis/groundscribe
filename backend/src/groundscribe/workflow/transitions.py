@@ -158,6 +158,21 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
         "validation is deterministic; a failure re-enters routing, never export",
     ),
     _user(S.HUMAN_APPROVAL_REQUIRED, A.APPROVE_FINAL, S.COMPLETED),
+    # Approving an architecture opens an article per approved concept, and the
+    # run then carries exactly one of them here. Without this edge the rest were
+    # rows nothing could act on: `completed` is terminal, and artefacts are
+    # scoped to the run that produced them, so a second run would have found no
+    # source model and no architecture to work from.
+    #
+    # Back to `architecture_approved` rather than to a brief, because that is
+    # where the run already knows how to pick up an approved concept — the same
+    # state approval itself lands in.
+    _user(
+        S.HUMAN_APPROVAL_REQUIRED,
+        A.APPROVE_AND_CONTINUE,
+        S.ARCHITECTURE_APPROVED,
+        "the author accepted this article and chose to write another approved one",
+    ),
     _user(S.HUMAN_APPROVAL_REQUIRED, A.REJECT_FINAL, S.REVISION_REQUIRED),
     # Stalled: the escalation options, every one of them a person's decision.
     _user(S.STALLED, A.AUTHORISE_REWRITE, S.SUBSTANTIVE_REWRITING),

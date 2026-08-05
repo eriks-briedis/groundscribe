@@ -93,6 +93,10 @@ def test_a_human_pause_offers_no_action_the_engine_could_take_alone() -> None:
 
     assert offered & {action.value for action in WorkflowAction} == {
         A.APPROVE_FINAL.value,
+        # Also a person's, and the point of it: approving is where the author
+        # decides whether the project is finished or whether one of the other
+        # approved concepts is worth writing (phase 16).
+        A.APPROVE_AND_CONTINUE.value,
         A.REJECT_FINAL.value,
         A.CANCEL.value,
         A.FAIL.value,

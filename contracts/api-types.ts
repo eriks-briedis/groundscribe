@@ -24,6 +24,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{article_id}/approve-and-continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve And Continue
+         * @description Publish this article, then brief another the architecture approved.
+         *
+         *     ``next_article_id`` is in the body rather than inferred, because the run
+         *     cannot know it: auto-advance follows the article the *architecture* selected,
+         *     which is the one being finished here, and which of the remaining concepts is
+         *     worth writing is a judgement only the author holds.
+         */
+        post: operations["approve_and_continue_articles__article_id__approve_and_continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/articles/{article_id}/brief/approve": {
         parameters: {
             query?: never;
@@ -1721,6 +1746,8 @@ export interface components {
             run_id: string;
             /** Scores */
             scores?: components["schemas"]["ScoreView"][];
+            /** Siblings */
+            siblings?: components["schemas"]["ArticleCard"][];
             /** Source Evidence */
             source_evidence?: components["schemas"]["ClaimView"][];
             state: components["schemas"]["WorkflowState"];
@@ -1907,6 +1934,20 @@ export interface components {
             strategy_version: string;
             /** Token Budget */
             token_budget?: number | null;
+        };
+        /**
+         * ContinueToArticle
+         * @description Approving one article and naming the next to write (phase 16).
+         *
+         *     The next article is named rather than inferred: auto-advance follows the one
+         *     the architecture selected, which is the article being finished here, so
+         *     anything inferred would restart what the author is leaving behind.
+         */
+        ContinueToArticle: {
+            /** Actor Id */
+            actor_id: string;
+            /** Next Article Id */
+            next_article_id: string;
         };
         /** CreateExperiment */
         CreateExperiment: {
@@ -4112,6 +4153,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_and_continue_articles__article_id__approve_and_continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinueToArticle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
