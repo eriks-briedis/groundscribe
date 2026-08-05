@@ -33,7 +33,7 @@ from groundscribe.api.routes import router
 from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
-from groundscribe.app.services import NothingToRetry, UnknownProject
+from groundscribe.app.services import NothingToRetry, NothingToRevise, UnknownProject
 from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
@@ -82,6 +82,10 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # coming. 409 rather than 404: the run exists and the request is well formed,
     # and what makes it unanswerable is the run's state — which changes.
     (NothingToRetry, 409),
+    # Asked to route a score that passed, or an article never scored. 409 for the
+    # same reason: the run exists, the request is fine, and the run's state is
+    # what makes it unanswerable.
+    (NothingToRevise, 409),
     # Something named does not exist.
     (UnknownProject, 404),
     (MissingInput, 404),

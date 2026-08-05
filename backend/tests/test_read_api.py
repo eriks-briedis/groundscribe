@@ -29,9 +29,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.api.app import create_app
+from groundscribe.provenance import models as provenance_models
 from groundscribe.storage.snapshot_store import SnapshotStore
 from read_helpers import Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
@@ -922,3 +924,54 @@ async def test_reading_something_that_does_not_exist_says_so(client: TestClient)
     assert client.get("/projects/nope/dashboard").status_code == 404
     assert client.get("/articles/nope/workspace").status_code == 404
     assert client.get("/executions/nope/inspect").status_code == 404
+
+
+# ----------------------------------------------------------------------
+# The way out of the pause a failed score parks in (phase 16)
+# ----------------------------------------------------------------------
+
+
+async def test_a_failed_score_offers_a_way_onward_as_well_as_an_override(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """The pause at ``revision_required`` is deliberate; having one exit was not.
+
+    ``route_score`` existed, was exported, and nothing but a test called it — so
+    a failing score parked the run and the only way out published the article the
+    score had just refused. Observed on a real run, which sat there while three
+    voice passes ran against a state that was never going to move.
+    """
+    await walk.to_failing_score()
+    scored = walk.last_score
+
+    assert scored["state"] == "revision_required"
+    offered = set(scored["available_actions"])
+    assert "override_and_approve" in offered, "accepting it anyway stays available"
+    assert "route_revision" in offered, "and so does sending it to be corrected"
+
+
+async def test_revising_asks_the_policy_where_to_go_and_says_why(
+    walk: Walkthrough, client: TestClient, harness: Harness
+) -> None:
+    """The person asks for a revision; the *policy* picks the destination.
+
+    ``route_revision`` is still not an edge a person takes directly — the machine
+    refuses it — so the command asks the engine to route, and the decision it
+    records names the score that caused it. A route with no score behind it
+    cannot be argued with six weeks later.
+    """
+    await walk.to_failing_score()
+
+    routed = await walk.command(
+        "POST", f"/articles/{walk.article_id}/revise", json={"actor_id": AUTHOR}
+    )
+
+    assert routed["state"] != "revision_required"
+    decision = harness.runtime.session.scalars(
+        select(provenance_models.DecisionRecord)
+        .where(provenance_models.DecisionRecord.decision_type == "revision_routing")
+        .order_by(provenance_models.DecisionRecord.decided_at.desc())
+    ).first()
+    assert decision is not None, "a route nobody recorded cannot be argued with later"
+    assert decision.inputs["requested_by"] == AUTHOR
+    assert decision.inputs["evaluation_id"], "the score that caused it travels with the route"

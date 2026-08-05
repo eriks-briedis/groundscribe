@@ -84,6 +84,9 @@ class Walkthrough:
         self.harness = harness
         self.project_id = ""
         self.article_id = ""
+        #: What the last scoring command answered, so a caller that walked to a
+        #: failing score can assert on it without scoring twice.
+        self.last_score: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Issuing commands
@@ -273,6 +276,26 @@ class Walkthrough:
 
     async def validate(self) -> dict[str, Any]:
         return await self.command("POST", f"/articles/{self.article_id}/validate")
+
+    async def to_failing_score(self) -> dict[str, Any]:
+        """The whole walk, ending parked on a score the rubric refused.
+
+        The same sequence as :meth:`to_approval` with the other score sheet — the
+        golden one, which describes an article the rubric rejects. That is the
+        state a real run sat in while three voice passes ran against it, because
+        the only way out published the article the score had just refused.
+        """
+        await self.open_project()
+        await self.extract()
+        await self.architecture()
+        await self.brief()
+        await self.draft()
+        await self.review()
+        await self.revise()
+        await self.review(clean=True)
+        await self.align_voice()
+        self.last_score = await self.score(passing=False)
+        return self.last_score
 
     async def to_approval(self) -> dict[str, Any]:
         """The whole walk, ending where a person decides whether to publish."""

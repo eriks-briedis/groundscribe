@@ -60,9 +60,18 @@ ARTICLE = "article"
 #: second copy of the API which nothing tests. Here it sits beside the list it
 #: annotates, in the module that already answers "what may be done next".
 #:
-#: Absent deliberately: every action no endpoint performs. ``fail``, ``stall``,
-#: ``route_revision`` and the ``submit_*`` edges are the machine's own — a person
-#: does not take them, and inventing a URL for them would say they could.
+#: Absent deliberately: every action no endpoint performs. ``fail``, ``stall``
+#: and the ``submit_*`` edges are the machine's own — a person does not take
+#: them, and inventing a URL for them would say they could.
+#:
+#: ``route_revision`` was in that list and is no longer, which is a correction
+#: rather than a change of mind. It is still not an edge a person takes: the
+#: machine refuses it directly and only ``route()`` may apply it, so the policy
+#: keeps the choice of destination. What was wrong was concluding that it
+#: therefore needed no endpoint. Nothing else called it either, so a failing
+#: score parked at ``revision_required`` and stayed there — the seven correcting
+#: destinations were reachable from a test and nowhere else. The endpoint asks
+#: the policy to route; it does not name where.
 ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
     WorkflowAction.EXTRACT_SOURCE_MODEL: Endpoint(
         "POST", "/projects/{project_id}/source-model/extract", PROJECT
@@ -92,6 +101,12 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
         "POST", "/articles/{article_id}/revision-plan/approve", ARTICLE, requires_actor=True
     ),
     WorkflowAction.VALIDATE_FINAL: Endpoint("POST", "/articles/{article_id}/validate", ARTICLE),
+    # The other way out of `revision_required`. `route_revision` is the machine's
+    # own edge — a person cannot take it directly — so the link is addressed to
+    # the command that asks the policy to take it on their say-so.
+    WorkflowAction.ROUTE_REVISION: Endpoint(
+        "POST", "/articles/{article_id}/revise", ARTICLE, requires_actor=True
+    ),
     WorkflowAction.APPROVE_FINAL: Endpoint(
         "POST", "/articles/{article_id}/approve", ARTICLE, requires_actor=True
     ),

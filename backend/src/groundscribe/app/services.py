@@ -94,6 +94,7 @@ from groundscribe.voice.shipped import shipped_voice_profile
 from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.engine import WorkflowEngine
 from groundscribe.workflow.errors import AttributionRequired, IllegalTransition
+from groundscribe.workflow.policy import FailureCategory
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 
@@ -102,6 +103,15 @@ A = WorkflowAction
 
 class UnknownProject(LookupError):
     """Asked about a project that does not exist, or has no run."""
+
+
+class NothingToRevise(LookupError):
+    """Asked to route a failing score on a run that has none.
+
+    Its own type because both ways to get here are ordinary: the article has not
+    been scored, or its last score passed. Neither is an error in the caller's
+    request and neither should read as one.
+    """
 
 
 class NothingToRetry(LookupError):
@@ -631,6 +641,61 @@ class ApplicationService:
         return self._enqueue_for_article(
             next_article_id, JobType.GENERATE_BRIEF, entry=A.GENERATE_BRIEF
         )
+
+    def revise(self, article_id: str, *, requested_by: str) -> CommandResult:
+        """Send a failed score to the stage that can correct it.
+
+        The run parks at ``revision_required`` when a score fails, and that pause
+        is deliberate: it is where a person may accept the article anyway, or go
+        and supply what the score said was missing. Routing on the way out of
+        scoring would step past it every time (see
+        :func:`~groundscribe.scoring.loop.route_score`).
+
+        What was missing is the person's way *onward* from that pause. Only
+        ``override_and_approve`` left it, so declining to override meant the run
+        stayed there — the routing policy, its seven destinations and the whole
+        failure vocabulary were reachable from nothing but a test.
+
+        The category is read from the evaluation rather than recomputed. It was
+        decided when the score was made, by the scorer that saw every deduction,
+        and a second derivation here would be a second opinion about a decision
+        already recorded.
+        """
+        resumed = self._resume(self.project_for_article(article_id))
+        evaluation = self._runtime.session.scalars(
+            select(models.EvaluationRun)
+            .join(
+                models.StageExecution,
+                models.StageExecution.id == models.EvaluationRun.stage_execution_id,
+            )
+            .where(models.StageExecution.pipeline_run_id == resumed.run.id)
+            .order_by(models.EvaluationRun.created_at.desc())
+        ).first()
+        if evaluation is None:
+            raise NothingToRevise(f"article {article_id} has not been scored")
+
+        routed_as = evaluation.scores.get("routed_as")
+        if not routed_as:
+            raise NothingToRevise(
+                f"the last score of article {article_id} passed; there is nothing to correct "
+                "and no route that would mean anything"
+            )
+
+        resumed.engine.route(
+            FailureCategory(routed_as),
+            evidence={
+                "evaluation_id": evaluation.id,
+                "overall": evaluation.scores.get("overall"),
+                "requested_by": requested_by,
+                "failures": [
+                    failure.get("detail")
+                    for failure in evaluation.scores.get("failures", [])
+                    if isinstance(failure, dict)
+                ],
+            },
+        )
+        settled = self._settle(resumed)
+        return self.advance(resumed.context.project_id) or settled
 
     def override_and_approve(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Accept an article the score refused, on a person's explicit say-so."""

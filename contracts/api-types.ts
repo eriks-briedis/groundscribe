@@ -189,6 +189,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{article_id}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revise
+         * @description Send a failed score to the stage that can correct it.
+         *
+         *     The pause at ``revision_required`` is deliberate — it is where a person may
+         *     accept the article anyway. This is the other way out of it, and until now
+         *     there was none: the routing policy and its seven destinations were reachable
+         *     from nothing but a test.
+         */
+        post: operations["revise_articles__article_id__revise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/articles/{article_id}/revision-plan": {
         parameters: {
             query?: never;
@@ -4418,6 +4443,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_articles__article_id__revise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActorAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
                 };
             };
             /** @description Validation Error */

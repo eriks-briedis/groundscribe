@@ -6077,6 +6077,56 @@
         "summary": "Read Review History"
       }
     },
+    "/articles/{article_id}/revise": {
+      "post": {
+        "description": "Send a failed score to the stage that can correct it.\n\nThe pause at ``revision_required`` is deliberate \u2014 it is where a person may\naccept the article anyway. This is the other way out of it, and until now\nthere was none: the routing policy and its seven destinations were reachable\nfrom nothing but a test.",
+        "operationId": "revise_articles__article_id__revise_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revise"
+      }
+    },
     "/articles/{article_id}/revision-plan": {
       "post": {
         "description": "Queue the plan a rewrite will be bound by.",

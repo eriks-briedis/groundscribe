@@ -459,6 +459,24 @@ def approve_and_continue(
     )
 
 
+@router.post(
+    "/articles/{article_id}/revise", response_model=schemas.CommandResponse, status_code=202
+)
+def revise(
+    article_id: str,
+    body: schemas.ActorAction,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Send a failed score to the stage that can correct it.
+
+    The pause at ``revision_required`` is deliberate — it is where a person may
+    accept the article anyway. This is the other way out of it, and until now
+    there was none: the routing policy and its seven destinations were reachable
+    from nothing but a test.
+    """
+    return render(service.revise(article_id, requested_by=body.actor_id))
+
+
 @router.post("/articles/{article_id}/override-approve", response_model=schemas.CommandResponse)
 def override_and_approve(
     article_id: str,
