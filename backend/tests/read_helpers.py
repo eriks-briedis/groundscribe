@@ -50,7 +50,20 @@ SETTLED_GAPS: dict[str, Any] = {
 #: walk publishes under a target the golden article can actually meet; scoring
 #: 1800 words of prose nobody wrote would fail a check that is working correctly.
 WALK_TARGET_WORDS = 400
-WALK_CONSTRAINTS = DEFAULT_CONSTRAINTS.model_copy(update={"target_length_words": WALK_TARGET_WORDS})
+#: ``auto_advance`` off, deliberately and not incidentally.
+#:
+#: The walkthrough drives one stage at a time so a test can script that stage's
+#: response, run it, and assert on what it left behind. A run that started the
+#: next stage by itself (phase 16) would reach work whose response had not been
+#: scripted yet, and the failure would land on the *following* assertion rather
+#: than where the mistake was.
+#:
+#: The shipped default is on, and is exercised by ``test_auto_advance.py``, which
+#: scripts a whole sequence up front precisely because that is the rhythm a run
+#: driving itself actually has.
+WALK_CONSTRAINTS = DEFAULT_CONSTRAINTS.model_copy(
+    update={"target_length_words": WALK_TARGET_WORDS, "auto_advance": False}
+)
 
 #: What every scripted call reports having consumed. Fixed rather than varied so
 #: a total is checkable by multiplication.

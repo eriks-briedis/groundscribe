@@ -75,6 +75,7 @@ def build_harness(session: Session, snapshots: SnapshotStore) -> Harness:
             recorder=recorder,
             handlers=stage_handlers(runtime),
             worker_id="worker-1",
+            settled=lambda job: service.advance(job.project_id),
         ),
         client=client,
         runtime=runtime,

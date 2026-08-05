@@ -102,11 +102,20 @@ class Worker:
         recorder: ProvenanceRecorder,
         handlers: Mapping[JobType, JobHandler],
         worker_id: str = "worker",
+        settled: Callable[[Job], object] | None = None,
     ) -> None:
         self._queue = queue
         self._recorder = recorder
         self._handlers = dict(handlers)
         self.worker_id = worker_id
+        # Where the run gets to decide what happens next (phase 16). A callback
+        # rather than a call into the application layer, for the reason the
+        # handlers are: this module runs jobs and knows nothing about which ones
+        # follow which. Invoked before the commit, so the job that finished and
+        # the job that follows it land in one transaction — a crash between them
+        # would otherwise leave a run that had completed a stage and forgotten to
+        # start the next.
+        self._settled = settled
         # The worker is the process that runs unattended, so it is the one whose
         # failures are read from a log rather than watched on a screen (plan/14).
         self._log = event_logger(__name__)
@@ -153,6 +162,8 @@ class Worker:
 
         self._queue.complete(job, result=outcome.result)
         self._emit(job, "job.completed", payload={"result": outcome.result})
+        if self._settled is not None:
+            self._settled(job)
         self._commit()
         return job
 

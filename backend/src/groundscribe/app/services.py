@@ -35,6 +35,11 @@ from sqlalchemy import select
 
 from groundscribe.app import rehydrate
 from groundscribe.app.actions import available_actions
+from groundscribe.app.advance import (
+    auto_advance_enabled,
+    next_step,
+    selected_article_id,
+)
 from groundscribe.app.runtime import Runtime
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import AnswerResponse, ArtifactType, SourceFormat
@@ -56,6 +61,7 @@ from groundscribe.experiments.variables import ForkVariables
 from groundscribe.jobs.enums import JobStatus, JobType
 from groundscribe.jobs.models import Job
 from groundscribe.llm.generation import StructuredGenerator
+from groundscribe.llm.quota import QuotaWindow, subscription_usage
 from groundscribe.llm.routing import available_profiles, routing_policy
 from groundscribe.observability.metrics import RunMetrics, collect_metrics
 from groundscribe.privacy.export import ExportedArticle, ExportFormat, render_article
@@ -84,6 +90,7 @@ from groundscribe.voice.learning import VoiceLearning
 from groundscribe.voice.models import VoiceProfileVersion, VoiceSuggestion
 from groundscribe.voice.precedence import ResolvedVoice
 from groundscribe.voice.schemas import VoiceProfileDocument
+from groundscribe.voice.shipped import shipped_voice_profile
 from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.engine import WorkflowEngine
 from groundscribe.workflow.errors import AttributionRequired, IllegalTransition
@@ -286,7 +293,8 @@ class ApplicationService:
                 uri=uri,
             )
         )
-        return self._settle(resumed)
+        settled = self._settle(resumed)
+        return self.advance(project_id) or settled
 
     # ------------------------------------------------------------------
     # Source model
@@ -479,7 +487,8 @@ class ApplicationService:
             approved_by=approved_by,
         )
         self._open_articles(resumed, architecture)
-        return self._settle(resumed)
+        settled = self._settle(resumed)
+        return self.advance(project_id) or settled
 
     # ------------------------------------------------------------------
     # Article stages
@@ -559,7 +568,16 @@ class ApplicationService:
                 source_model=rehydrate.document(
                     self._runtime.snapshots, source_snapshot, SourceModel
                 ),
-                prohibited_terms=resumed.context.constraints.confidential_names,
+                # Both lists, because they forbid words for different reasons and
+                # a term is either wanted in the prose or it is not. The voice
+                # profile's half was being dropped here (phase 16): its
+                # ``prohibited_terms`` property exists, its docstring says it
+                # serves the voice pass *and* final validation, and only the
+                # first of those was ever asking.
+                prohibited_terms=(
+                    *resumed.context.constraints.confidential_names,
+                    *self._voice_for(resumed, article_id).prohibited_terms,
+                ),
             ),
             enter=False,
         )
@@ -762,6 +780,15 @@ class ApplicationService:
             payload={"routing_profile": chosen or "", "previous_routing_profile": previous or ""},
         )
         return self._settle(resumed)
+
+    def subscription_usage(self) -> tuple[QuotaWindow, ...]:
+        """What the subscription providers have consumed, per rolling window.
+
+        Installation-wide rather than per project, because that is the shape of
+        the thing being measured: a plan's rate limit is one bucket, and a run
+        that exhausts it does so regardless of which project asked.
+        """
+        return subscription_usage(self._runtime.session)
 
     def routing_profiles(self, project_id: str) -> RoutingProfiles:
         """What this project runs against, and what else it could."""
@@ -1082,6 +1109,33 @@ class ApplicationService:
         )
         return self._settle(resumed, job=job)
 
+    def advance(self, project_id: str) -> CommandResult | None:
+        """Start the work this run is parked waiting for, if nobody need be asked.
+
+        ``None`` when there is nothing to start — the run is at a gate a person
+        owns, at an ending, or the project has auto-advance switched off — and
+        that is the ordinary case rather than a failure. Callers treat it as
+        "nothing further happened", because nothing did.
+
+        One step, not a loop. Every step here queues a job, and the worker that
+        runs it calls this again when it finishes, so the run walks itself
+        forward one stage per completion. Draining the whole pipeline inside one
+        call would mean holding a transaction open across every model call in a
+        run, and a crash anywhere in it would roll back the lot.
+        """
+        if not auto_advance_enabled(self._runtime, project_id):
+            return None
+        resumed = self._resume(project_id)
+        step = next_step(resumed.engine.state)
+        if step is None:
+            return None
+        if not step.per_article:
+            return self._enqueue(project_id, step.job_type, entry=step.entry, payload={})
+        article_id = selected_article_id(self._runtime, project_id)
+        if article_id is None:
+            return None
+        return self._enqueue_for_article(article_id, step.job_type, entry=step.entry)
+
     def _act(
         self,
         project_id: str,
@@ -1090,12 +1144,21 @@ class ApplicationService:
         actor_id: str,
         rationale: str = "",
     ) -> CommandResult:
-        """A person moves the run, and nothing else happens."""
+        """A person moves the run, and then it carries on by itself.
+
+        The advance is what makes approving something feel like approving it: a
+        person who accepts a brief has said what they think about the brief, and
+        asking them to press *draft* immediately afterwards is asking them to
+        confirm a decision they just made. It is skipped where the state a
+        person moved into is one they own too — ``advance`` returns ``None``
+        there, so this needs no condition of its own.
+        """
         resumed = self._resume(project_id)
         resumed.engine.apply(
             action, actor_id=actor_id, actor_type=ActorType.USER, rationale=rationale
         )
-        return self._settle(resumed)
+        settled = self._settle(resumed)
+        return self.advance(resumed.context.project_id) or settled
 
     def _settle(
         self,
@@ -1114,6 +1177,26 @@ class ApplicationService:
             job=job,
             detail=detail or {},
         )
+
+    def _voice_for(self, resumed: Resumed, article_id: str) -> VoiceProfileDocument:
+        """The effective voice for one article.
+
+        Resolved here rather than imported from ``app.handlers``, which holds the
+        same helper for the worker's side: handlers already imports this module,
+        and a shared helper would have to move somewhere neither of them owns for
+        the sake of four lines.
+        """
+        project = self._runtime.session.get(domain_models.Project, resumed.context.project_id)
+        if project is None:  # pragma: no cover - a run always has its project
+            return shipped_voice_profile()
+        store = VoiceStore(
+            self._runtime.session,
+            snapshots=self._runtime.snapshots,
+            recorder=self._runtime.recorder,
+        )
+        return store.resolve(
+            user_id=project.user_id, project_id=project.id, article_id=article_id
+        ).profile
 
     def _resume(self, project_id: str) -> Resumed:
         """Rebuild the engine and the stage context from stored rows."""

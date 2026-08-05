@@ -120,6 +120,22 @@ def _command() -> Iterator[ApplicationService]:
     service.commit()
 
 
+@contextmanager
+def _reading() -> Iterator[ApplicationService]:
+    """One invocation that will only read, and says so.
+
+    Write-ahead logging entitles a reader to the last committed snapshot while a
+    writer holds the lock, and phase 15 wired that through for every `GET`. A
+    read-only *command* wants it for the same reason and one more: the moment a
+    person asks what a run has consumed is usually the moment a run is consuming
+    it, and `_command`'s `BEGIN IMMEDIATE` would queue behind the job for the
+    length of a model call before failing on the busy timeout (KNOWN-ISSUES §1).
+
+    Nothing is committed, because nothing was written.
+    """
+    yield ApplicationService(build_runtime(reading=True))
+
+
 def _emit(result: Any) -> None:
     """Print what a command produced, in the shape a terminal can read."""
     state = getattr(result, "state", None)
@@ -702,11 +718,16 @@ def worker_run(
     # person who typed it.
     configure_logging()
     runtime = build_runtime()
+    advancing = ApplicationService(runtime)
     worker = Worker(
         queue=runtime.queue,
         recorder=runtime.recorder,
         handlers=stage_handlers(runtime),
         worker_id=worker_id,
+        # What makes a run walk itself forward (phase 16): the job that just
+        # finished settles the run into the next state, and this queues whatever
+        # that state was waiting for. Nothing happens at a gate a person owns.
+        settled=lambda job: advancing.advance(job.project_id),
     )
     recovered = worker.recover()
     runtime.session.commit()
@@ -778,6 +799,29 @@ def llm_probe(
         )
         raise typer.Exit(code=1)
     typer.echo(f"all {len(results)} model(s) answered.")
+
+
+@llm_app.command("quota")
+def llm_quota() -> None:
+    """What the subscription providers have consumed lately.
+
+    The answer `writer project metrics` cannot give for a provider that bills
+    nobody: those calls cost $0.00, truthfully, and the thing that runs out is
+    the plan's rate limit instead. Reported as consumption rather than as a
+    percentage, because no cap is written down here — see :mod:`llm.quota`.
+    """
+    with _reading() as service:
+        windows = service.subscription_usage()
+    if not windows:
+        typer.echo("no subscription providers are configured")
+        return
+    for window in windows:
+        typer.echo(
+            f"{window.provider} · last {window.label}: {window.calls} call(s), "
+            f"{window.total_tokens:,} tokens "
+            f"({window.input_tokens:,} in, {window.output_tokens:,} out)"
+        )
+    typer.echo("no limit is recorded here; compare against your plan's own figures")
 
 
 @contracts_app.command("export")

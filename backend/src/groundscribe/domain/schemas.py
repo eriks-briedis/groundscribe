@@ -93,6 +93,15 @@ class EditorialConstraints(BaseModel):
     #: that loses least, because a default is a choice nobody made and a trace
     #: can be thinned later but never un-thinned.
     trace_retention_mode: RetentionMode = RetentionMode.FULL
+    #: Whether the run starts pipeline-owned work by itself (phase 16).
+    #:
+    #: Defaults to on, which is the opposite reasoning from the two settings
+    #: above: those default to the cautious end because they govern what is kept
+    #: and what may be sent, and both are hard to undo. This one governs only
+    #: *who presses start* on work the run was already parked waiting to do, and
+    #: every gate a person owns still stops it. Off is for watching a run stage
+    #: by stage.
+    auto_advance: bool = True
 
     def permits_provider(self, provider: str) -> bool:
         """Whether ``provider`` may be sent this project's material."""

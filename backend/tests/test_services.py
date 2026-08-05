@@ -30,6 +30,7 @@ from groundscribe.app.services import NothingToRetry
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
 from groundscribe.jobs.enums import JobStatus, JobType
+from groundscribe.jobs.models import Job
 from groundscribe.llm import InjectableFailure
 from groundscribe.provenance.enums import ExecutionStatus
 from groundscribe.storage.snapshot_store import SnapshotStore
@@ -107,6 +108,11 @@ async def test_importing_a_source_runs_in_the_request_because_no_model_is_called
     plan/09's rule is that *LLM* work leaves the request. Ingestion calls
     nothing, finishes in microseconds, and the next command needs its result, so
     a job would buy a round trip and a second failure mode for nothing.
+
+    The job on the result is not ingestion's. Auto-advance (phase 16) queues the
+    extraction that ``source_ingested`` was waiting for, which is the distinction
+    this test now also pins: no model was called *in the request*, and the model
+    work that follows is a job like every other.
     """
     project_id = new_project(harness)
 
@@ -117,9 +123,10 @@ async def test_importing_a_source_runs_in_the_request_because_no_model_is_called
         source_format=SourceFormat.MARKDOWN,
     )
 
-    assert result.job is None
-    assert result.state is S.SOURCE_INGESTED
-    assert harness.client.received_requests == ()
+    assert harness.client.received_requests == (), "ingestion calls no model"
+    assert result.job is not None, "the run does not sit still waiting to be asked"
+    assert result.job.job_type == JobType.EXTRACT_SOURCE_MODEL.value
+    assert result.state is S.SOURCE_MODEL_EXTRACTING
 
 
 # ----------------------------------------------------------------------
@@ -400,7 +407,13 @@ async def test_a_command_the_workflow_forbids_is_refused_before_anything_is_queu
     with pytest.raises(IllegalTransition):
         await harness.service.generate_brief(article_id)
 
-    assert harness.runtime.queue.pending_count() == 0
+    # Not "the queue is empty": auto-advance has already queued the extraction
+    # this run is legitimately waiting for. What must not be there is the work
+    # the refused command asked for.
+    queued = set(
+        harness.runtime.session.scalars(select(Job.job_type).where(Job.status == JobStatus.PENDING))
+    )
+    assert JobType.GENERATE_BRIEF not in queued
 
 
 async def test_a_human_action_without_an_actor_is_refused(harness: Harness) -> None:

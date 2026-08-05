@@ -181,6 +181,13 @@ class ProjectConstraints(LineageMixin, EntityMixin, Base):
     trace_retention_mode: Mapped[RetentionMode] = mapped_column(
         enum_column(RetentionMode), default=RetentionMode.FULL, nullable=False
     )
+    # Whether the run starts pipeline-owned work by itself (phase 16). Versioned
+    # with the rest rather than set on the project, because "was this run driving
+    # itself?" is asked of an artefact after the fact — a draft that appeared
+    # without anyone pressing anything is a different account of events from one
+    # a person asked for, and the constraints are what already answer that class
+    # of question for the run that produced it.
+    auto_advance: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     project: Mapped[Project] = relationship()
 
