@@ -39,6 +39,7 @@ from groundscribe.app.advance import (
     auto_advance_enabled,
     next_step,
     selected_article_id,
+    startable,
 )
 from groundscribe.app.runtime import Runtime
 from groundscribe.domain import models as domain_models
@@ -111,6 +112,15 @@ class NothingToRevise(LookupError):
     Its own type because both ways to get here are ordinary: the article has not
     been scored, or its last score passed. Neither is an error in the caller's
     request and neither should read as one.
+    """
+
+
+class NothingToAbandon(LookupError):
+    """Asked to give up on a proposal by a run with nothing to fall back to.
+
+    Its own type because it names a better answer rather than a dead end: with no
+    approved architecture the proposal is ordinary work that failed, and running
+    it again is what fixes it.
     """
 
 
@@ -419,6 +429,53 @@ class ApplicationService:
             payload={"job_id": job.id, "retried_job_id": failed.id, "job_type": failed.job_type},
         )
         return self._settle(resumed, job=job)
+
+    def abandon_proposal(self, project_id: str, *, requested_by: str) -> CommandResult:
+        """Give up on the architecture proposal in flight; keep the approved one.
+
+        The one failure :meth:`retry_failed_job` cannot recover. Running a
+        proposal again is the right answer while nothing is approved, but a
+        proposal that lands over an approved architecture is refused by
+        :meth:`WorkflowEngine._guard_architecture`, which wants lineage from the
+        approved snapshot *and* an override naming who authorised superseding it.
+        A retry arrives at the same refusal, and the state it fails in offers
+        nothing else — so before this, such a run could only be cancelled.
+
+        Refused when nothing is approved, because then this is the wrong tool:
+        there is no architecture to fall back to, the proposal is ordinary work
+        that failed, and a retry is what will fix it. Saying so is more use than
+        moving the run somewhere it cannot proceed from either.
+
+        Attributed, because giving up on work is a decision and the record should
+        name who made it.
+
+        Does not advance afterwards, which every other person's action does.
+        ``architecture_approved`` is a state whose next step is generating the
+        brief, and that is right for a run arriving there for the first time —
+        but a run arriving here is recovering from a failure, and it has a brief
+        and probably a draft already. Somebody who has just said "give up on
+        this" has not said "start the next thing", and rewriting their brief
+        because the state machine has one memory for the whole project would be
+        answering a question they did not ask.
+        """
+        if not requested_by:
+            raise AttributionRequired("abandoning a proposal is a person's decision")
+
+        resumed = self._resume(project_id)
+        if resumed.engine.approved_architecture is None:
+            raise NothingToAbandon(
+                f"project {project_id} has no approved architecture to fall back to; "
+                "this proposal is ordinary work that failed, so run it again instead"
+            )
+
+        self._runtime.recorder.record_user_intervention(
+            resumed.engine.execution,
+            user_id=requested_by,
+            intervention_type=InterventionType.OVERRIDE,
+            payload={"abandoned": "architecture_proposal"},
+        )
+        resumed.engine.apply(A.ABANDON_PROPOSAL, actor_id=requested_by, actor_type=ActorType.USER)
+        return self._settle(resumed)
 
     def submit_answers(self, project_id: str, *, submitted_by: str) -> CommandResult:
         """Hand the answered round back to the pipeline, rebuilding the source model.
@@ -1245,6 +1302,10 @@ class ApplicationService:
         resumed = self._resume(project_id)
         step = next_step(resumed.engine.state)
         if step is None:
+            return None
+        if not startable(
+            step, architecture_approved=resumed.engine.approved_architecture is not None
+        ):
             return None
         if not step.per_article:
             return self._enqueue(project_id, step.job_type, entry=step.entry, payload={})

@@ -7424,6 +7424,56 @@
         "summary": "Read Architecture"
       }
     },
+    "/projects/{project_id}/architecture/proposal/abandon": {
+      "post": {
+        "description": "Give up on the proposal in flight and keep the approved architecture.\n\nDeclared above the ``{version}`` routes so \"proposal\" is read as itself\nrather than as an architecture version \u2014 FastAPI matches in declaration\norder, and the literal has to win.",
+        "operationId": "abandon_proposal_projects__project_id__architecture_proposal_abandon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abandon Proposal"
+      }
+    },
     "/projects/{project_id}/architecture/propose": {
       "post": {
         "description": "Queue a proposal of the article or series the source supports.",

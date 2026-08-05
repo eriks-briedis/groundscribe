@@ -85,6 +85,13 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
         PROJECT,
         requires_actor=True,
     ),
+    # The way out of a proposal that cannot land. Present for the same reason
+    # `route_revision` is: without an endpoint the edge exists in the table and
+    # nowhere a person can reach, which is how a run ends up with cancel as its
+    # only honest option.
+    WorkflowAction.ABANDON_PROPOSAL: Endpoint(
+        "POST", "/projects/{project_id}/architecture/proposal/abandon", PROJECT, requires_actor=True
+    ),
     WorkflowAction.CANCEL: Endpoint(
         "POST", "/projects/{project_id}/cancel", PROJECT, requires_actor=True
     ),

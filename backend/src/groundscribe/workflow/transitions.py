@@ -88,6 +88,22 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
     _policy(S.ARCHITECTURE_PROPOSING, A.SUBMIT_ARCHITECTURE, S.ARCHITECTURE_REVIEW_REQUIRED),
     _user(S.ARCHITECTURE_REVIEW_REQUIRED, A.APPROVE_ARCHITECTURE, S.ARCHITECTURE_APPROVED),
     _user(S.ARCHITECTURE_REVIEW_REQUIRED, A.REJECT_ARCHITECTURE, S.ARCHITECTURE_PROPOSING),
+    # The way back out of a proposal that cannot land. Every other `-ing` state
+    # recovers by running its job again (`retry_failed_job`), and so does this one
+    # while nothing is approved yet. Once an architecture *is* approved, a
+    # proposal over it needs lineage and an override — which is a person's to
+    # give — so a failed one is not work to retry but work to give up on, and
+    # without this edge the run's only remaining moves are cancel and fail.
+    #
+    # Does not make `architecture_proposing` a state the engine parks in:
+    # `is_human_pause` asks whether *every* non-universal edge is a person's, and
+    # `submit_architecture` is still the pipeline's.
+    _user(
+        S.ARCHITECTURE_PROPOSING,
+        A.ABANDON_PROPOSAL,
+        S.ARCHITECTURE_APPROVED,
+        "the proposal is given up; the approved architecture stands",
+    ),
     _policy(S.ARCHITECTURE_APPROVED, A.GENERATE_BRIEF, S.BRIEF_GENERATING),
     _user(
         S.ARCHITECTURE_APPROVED,

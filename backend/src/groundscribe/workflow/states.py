@@ -76,6 +76,16 @@ class WorkflowAction(StrEnum):
     APPROVE_ARCHITECTURE = "approve_architecture"
     REJECT_ARCHITECTURE = "reject_architecture"
     REOPEN_ARCHITECTURE = "reopen_architecture"
+    #: Give up on a proposal in flight and keep the architecture already approved.
+    #:
+    #: The only recovery ``retry_failed_job`` cannot perform. Re-queueing the same
+    #: work is the right answer to a proposal that failed on a timeout or a bad
+    #: response, but a proposal that lands over an *approved* architecture is
+    #: refused by the engine's own guard — it needs lineage from the approved
+    #: snapshot and an override naming who authorised superseding it — so running
+    #: it again arrives at the same refusal, and the state it fails in has no
+    #: other way forward.
+    ABANDON_PROPOSAL = "abandon_proposal"
 
     # Brief.
     GENERATE_BRIEF = "generate_brief"

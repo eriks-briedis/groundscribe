@@ -69,7 +69,10 @@ EXPECTED_ACTIONS: dict[WorkflowState, set[WorkflowAction]] = {
     },
     WorkflowState.SOURCE_QUESTIONS_REQUIRED: {WorkflowAction.ANSWER_QUESTIONS},
     WorkflowState.SOURCE_MODEL_READY: {WorkflowAction.PROPOSE_ARCHITECTURE},
-    WorkflowState.ARCHITECTURE_PROPOSING: {WorkflowAction.SUBMIT_ARCHITECTURE},
+    WorkflowState.ARCHITECTURE_PROPOSING: {
+        WorkflowAction.SUBMIT_ARCHITECTURE,
+        WorkflowAction.ABANDON_PROPOSAL,
+    },
     WorkflowState.ARCHITECTURE_REVIEW_REQUIRED: {
         WorkflowAction.APPROVE_ARCHITECTURE,
         WorkflowAction.REJECT_ARCHITECTURE,
@@ -307,3 +310,33 @@ def test_the_loops_the_spec_requires_exist(
 ) -> None:
     """Answers re-enter extraction, rewrites re-enter review, validation can bounce back."""
     assert transition_for(source, action, target) is not None
+
+
+def test_giving_up_on_a_proposal_does_not_make_the_run_look_parked() -> None:
+    """The edge is a person's, and the state it leaves is still work in flight.
+
+    ``is_human_pause`` asks whether *every* non-universal edge belongs to a
+    person, so adding one to a state that had none turns it into a place the
+    engine reports as waiting on the author. ``architecture_proposing`` means a
+    proposal is being written; a run there is waiting on a model, and a screen
+    saying otherwise would be asking for a decision nobody has to make.
+    """
+    from groundscribe.workflow.transitions import human_pause_states, is_human_pause
+
+    assert not is_human_pause(WorkflowState.ARCHITECTURE_PROPOSING)
+    assert WorkflowState.ARCHITECTURE_PROPOSING not in human_pause_states()
+
+
+def test_abandoning_a_proposal_leads_to_the_architecture_that_is_approved() -> None:
+    """One destination, so the engine takes it without being told which.
+
+    And it is the approved architecture rather than ``source_model_ready``: the
+    edge exists for the case where something *is* approved, which is the case a
+    retry cannot recover. With nothing approved the proposal can simply be run
+    again, and ``retry_failed_job`` is what does that.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    assert targets_for(WorkflowState.ARCHITECTURE_PROPOSING, WorkflowAction.ABANDON_PROPOSAL) == (
+        WorkflowState.ARCHITECTURE_APPROVED,
+    )

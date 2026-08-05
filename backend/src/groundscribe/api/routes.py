@@ -319,6 +319,22 @@ def update_architecture(
 
 
 @router.post(
+    "/projects/{project_id}/architecture/proposal/abandon",
+    response_model=schemas.CommandResponse,
+)
+def abandon_proposal(
+    project_id: str, body: schemas.ActorAction, service: Service
+) -> schemas.CommandResponse:
+    """Give up on the proposal in flight and keep the approved architecture.
+
+    Declared above the ``{version}`` routes so "proposal" is read as itself
+    rather than as an architecture version — FastAPI matches in declaration
+    order, and the literal has to win.
+    """
+    return render(service.abandon_proposal(project_id, requested_by=body.actor_id))
+
+
+@router.post(
     "/projects/{project_id}/architecture/{version}/approve",
     response_model=schemas.CommandResponse,
 )

@@ -192,6 +192,34 @@ def auto_advance_enabled(runtime: Runtime, project_id: str) -> bool:
     return True if constraints is None else constraints.auto_advance
 
 
+def startable(step: Step, *, architecture_approved: bool) -> bool:
+    """Whether auto-advance can finish what it is about to start.
+
+    The map answers "what is this state waiting for?" from the state alone,
+    which is the whole reason it is readable. This is the one question it cannot
+    answer that way: whether the job it names could succeed given what the run
+    has already approved.
+
+    Proposing an architecture is the case. ``route_revision`` can send a failure
+    to ``architecture_proposing`` at any point, including long after an
+    architecture was approved — and a proposal that lands over an approved one
+    is refused twice over by :meth:`WorkflowEngine._guard_architecture`: it must
+    fork from the approved snapshot, and it must carry an override naming who
+    authorised superseding it. Both are deliberate, and neither is something a
+    job started by nobody can supply. So the job is not merely likely to fail,
+    it cannot succeed, and starting it costs a model call to arrive there.
+
+    Observed on a real run, which routed a factual failure back to the source,
+    followed the map through re-extraction into proposing a second architecture,
+    and failed with ``SilentMutationError`` — leaving the run in
+    ``architecture_proposing``, a state whose only remaining exits are cancel
+    and fail.
+    """
+    if step.job_type is not JobType.PROPOSE_ARCHITECTURE:
+        return True
+    return not architecture_approved
+
+
 def next_step(state: WorkflowState) -> Step | None:
     """The work ``state`` is waiting to have done, or nothing.
 

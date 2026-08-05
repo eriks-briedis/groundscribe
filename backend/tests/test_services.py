@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
-from groundscribe.app.services import NothingToRetry
+from groundscribe.app.services import NothingToAbandon, NothingToRetry
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
 from groundscribe.jobs.enums import JobStatus, JobType
@@ -385,6 +385,111 @@ async def test_a_retry_is_attributed(harness: Harness) -> None:
 
     with pytest.raises(AttributionRequired):
         harness.service.retry_failed_job(project_id, requested_by="")
+
+
+# ----------------------------------------------------------------------
+# The recovery a retry cannot perform
+# ----------------------------------------------------------------------
+
+
+async def reopened_architecture(harness: Harness) -> str:
+    """A run with an architecture approved, and a second proposal in flight.
+
+    Which is the shape the dead end has: three of the five ways into
+    ``architecture_proposing`` are a person's, and once something is approved the
+    proposal they start cannot land without lineage and an override.
+    """
+    from groundscribe.provenance.enums import ActorType
+    from groundscribe.workflow.states import WorkflowAction
+
+    # Driven by hand, so approval parks in `architecture_approved` instead of
+    # being carried straight on into the brief.
+    created = harness.service.create_project(
+        title="Read-through caching",
+        author_id=AUTHOR,
+        constraints=DEFAULT_CONSTRAINTS.model_copy(update={"auto_advance": False}),
+    )
+    project_id = created.project_id
+    await harness.service.import_source(
+        project_id,
+        title="Read-through caching for the render pipeline",
+        text=golden_text("source.md"),
+        source_format=SourceFormat.MARKDOWN,
+    )
+    script_extraction(harness, gaps={"schema_version": 1, "gaps": []})
+    await harness.service.extract_source_model(project_id)
+    await harness.drain()
+
+    harness.client.script_response("propose_content_architecture", golden_json("architecture.json"))
+    await harness.service.propose_architecture(project_id)
+    await harness.drain()
+    harness.service.approve_architecture(project_id, approved_by=AUTHOR)
+
+    # Through the engine, because `reopen_architecture` is an edge the table
+    # permits and no command performs — which is a gap of its own, and not one
+    # this test should paper over by pretending the command exists.
+    resumed = harness.service._resume(project_id)
+    resumed.engine.apply(
+        WorkflowAction.REOPEN_ARCHITECTURE, actor_id=AUTHOR, actor_type=ActorType.USER
+    )
+    harness.runtime.positions.capture(resumed.position, resumed.engine)
+    assert harness.service.project_state(project_id).state is S.ARCHITECTURE_PROPOSING
+    return project_id
+
+
+async def test_a_proposal_that_cannot_land_can_be_given_up_on(harness: Harness) -> None:
+    """The state had one forward edge and it needed the impossible thing.
+
+    ``submit_architecture`` wants a proposal, and a proposal over an approved
+    architecture is refused by the engine's guard unless it forks from the
+    approved snapshot and carries an override. So a run here could be retried
+    into the same refusal forever, or cancelled. Now it can put the proposal down
+    and keep what was already approved.
+    """
+    project_id = await reopened_architecture(harness)
+
+    result = harness.service.abandon_proposal(project_id, requested_by=AUTHOR)
+
+    assert result.state is S.ARCHITECTURE_APPROVED
+
+
+async def test_giving_up_does_not_also_rewrite_the_brief(harness: Harness) -> None:
+    """Every other person's action advances afterwards; this one must not.
+
+    ``architecture_approved`` is a state whose next step is the brief, and that is
+    right for a run reaching it the first time. A run reaching it *here* has a
+    brief already — somebody who said "give up on this proposal" did not ask for
+    the next one to be written.
+    """
+    project_id = await reopened_architecture(harness)
+
+    result = harness.service.abandon_proposal(project_id, requested_by=AUTHOR)
+
+    assert result.job is None
+    assert harness.runtime.queue.pending_count() == 0
+
+
+async def test_a_run_with_nothing_approved_is_told_to_retry_instead(harness: Harness) -> None:
+    """Wrong tool, and saying which is the right one beats moving the run.
+
+    With no approved architecture there is nothing to fall back to, and the
+    proposal is ordinary work that failed — which ``retry_failed_job`` fixes.
+    """
+    project_id = await with_source(harness)
+    script_extraction(harness, gaps={"schema_version": 1, "gaps": []})
+    await harness.drain()
+    assert harness.service.project_state(project_id).state is S.ARCHITECTURE_PROPOSING
+
+    with pytest.raises(NothingToAbandon):
+        harness.service.abandon_proposal(project_id, requested_by=AUTHOR)
+
+
+async def test_giving_up_on_a_proposal_is_attributed(harness: Harness) -> None:
+    """Abandoning work is a decision, and the record should name who made it."""
+    project_id = await reopened_architecture(harness)
+
+    with pytest.raises(AttributionRequired):
+        harness.service.abandon_proposal(project_id, requested_by="")
 
 
 # ----------------------------------------------------------------------

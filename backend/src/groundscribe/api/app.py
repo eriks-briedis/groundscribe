@@ -33,7 +33,12 @@ from groundscribe.api.routes import router
 from groundscribe.app.reads import UnknownArtefact
 from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
-from groundscribe.app.services import NothingToRetry, NothingToRevise, UnknownProject
+from groundscribe.app.services import (
+    NothingToAbandon,
+    NothingToRetry,
+    NothingToRevise,
+    UnknownProject,
+)
 from groundscribe.experiments.datasets import SensitiveProject
 from groundscribe.experiments.replay import NotRerunnable
 from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
@@ -92,6 +97,10 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # same reason: the run exists, the request is fine, and the run's state is
     # what makes it unanswerable.
     (NothingToRevise, 409),
+    # Asked to give up on a proposal by a run with no approved architecture to
+    # fall back to. 409 for the same reason again, and the message names the
+    # command that does work there.
+    (NothingToAbandon, 409),
     # Something named does not exist.
     (UnknownProject, 404),
     (MissingInput, 404),

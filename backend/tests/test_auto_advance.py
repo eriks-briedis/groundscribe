@@ -304,3 +304,42 @@ def test_every_state_routing_can_reach_knows_what_to_run_there() -> None:
         assert next_step(destination) is not None, (
             f"routing can reach {destination.value} and nothing knows what to run there"
         )
+
+
+def test_it_will_not_start_a_job_that_cannot_succeed() -> None:
+    """Proposing an architecture over an approved one is refused by design.
+
+    ``_guard_architecture`` wants two things from a proposal that supersedes an
+    approved architecture: lineage showing what changed, and an override naming
+    who decided it should. Auto-advance has neither — nobody asked for the
+    proposal, so there is nobody to name — which makes this the one step in the
+    map that is not merely likely to fail but unable to pass.
+
+    Observed on a real run. A factual failure routed back to the source, the map
+    carried it through re-extraction into ``architecture_proposing``, and the job
+    failed with ``SilentMutationError``. The run was then stuck: the only ways out
+    of that state are ``submit_architecture`` — which needs the proposal that just
+    proved impossible — and cancelling.
+    """
+    from groundscribe.app.advance import startable
+
+    propose = NEXT[S.ARCHITECTURE_PROPOSING]
+    assert startable(propose, architecture_approved=False), "the first proposal is ordinary work"
+    assert not startable(propose, architecture_approved=True)
+
+
+def test_approving_an_architecture_still_starts_the_brief() -> None:
+    """The guard is about proposals, and must not stop the stages after one.
+
+    ``architecture_approved`` is by definition a state with an approved
+    architecture, so a check written as "an approved architecture stops
+    auto-advance" would park every run at the moment it was approved.
+    """
+    from groundscribe.app.advance import startable
+
+    for state, step in NEXT.items():
+        if step.job_type is JobType.PROPOSE_ARCHITECTURE:
+            continue
+        assert startable(step, architecture_approved=True), (
+            f"{state.value} stopped moving once an architecture was approved"
+        )
