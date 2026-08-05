@@ -86,6 +86,13 @@ class ResolvedVoice:
                 "instruction_id": active.instruction.id,
                 "category": active.instruction.category.value,
                 "strength": active.instruction.strength.value,
+                # What the rule actually says. Absent until phase 16, which meant
+                # every screen showing "the voice in force" listed identifiers —
+                # `no-spec-vocabulary` — and no reader could tell what the prose
+                # was being held to without opening a YAML file.
+                "text": active.instruction.text,
+                "rationale": active.instruction.rationale,
+                "prohibits": ", ".join(active.instruction.prohibits),
                 "source": active.source,
                 "overrides": active.overrides.source if active.overrides else "",
             }
@@ -95,6 +102,7 @@ class ResolvedVoice:
 
 def resolve_voice(
     *,
+    base_profile: VoiceProfileDocument | None = None,
     global_profile: VoiceProfileDocument | None = None,
     project_profile: VoiceProfileDocument | None = None,
     article_profile: VoiceProfileDocument | None = None,
@@ -106,13 +114,24 @@ def resolve_voice(
     only after every scope has had its say: a project profile may reinstate what
     the global one declared, and an article may then drop it, in that order.
 
-    Any of the three may be absent — a person who has not set a voice still gets
+    ``base_profile`` is the shipped one (``config/voice-profile.yaml``), wider
+    than the author's own and therefore first. It is a layer rather than a
+    default the others replace, which is the difference that matters: an author
+    who saves one instruction gets that instruction *and* the shipped rules,
+    where a default would have been silently discarded by the first profile
+    anyone wrote. Disagreeing with a shipped rule is done by declaring its id or
+    naming it under ``suppresses`` — the same two mechanisms every other scope
+    uses, so nothing here is special-cased.
+
+    Any of the four may be absent — a person who has not set a voice still gets
     to write. plan/10's calibration produces the first profile, and requiring one
     before anything could run would make onboarding a precondition rather than a
     first result.
     """
     layers = [
-        layer for layer in (global_profile, project_profile, article_profile) if layer is not None
+        layer
+        for layer in (base_profile, global_profile, project_profile, article_profile)
+        if layer is not None
     ]
 
     resolved: dict[str, ActiveInstruction] = {}

@@ -13,7 +13,7 @@ here. The brief reserves material that may be stated but not developed, and
 only for the reserved text appearing verbatim. Claiming otherwise would produce
 failures nobody could confirm, which is worse than a gap everyone can see.
 
-Two of the fourteen are not about the prose at all. Whether the version being
+Two of plan/08's fourteen are not about the prose at all. Whether the version being
 published is the version that passed review, and whether its stored bytes still
 hash to what was recorded, are questions no amount of reading the article would
 answer — and they are the two failures with the worst consequences.
@@ -57,6 +57,52 @@ _FENCE = re.compile(r"^\s*```", re.M)
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$", re.M)
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+_INLINE_CODE = re.compile(r"`[^`\n]+`")
+_QUOTED = re.compile(r"[“\"][^”\"\n]{4,}[”\"]")
+
+#: Defining a thing by what it is not: "It is not X. It is Y", "not X, but Y".
+#:
+#: A pattern rather than a literal, which is why it lives here and not in the
+#: voice profile: a hard rule there must name strings a person can read
+#: (``voice/schemas.py``), and this has no literal form. The profile pushes the
+#: model away from it; this counts what actually came out.
+_CONTRAST = re.compile(
+    r"\b(?:is|are|was|were)\s+not\b[^.;]{0,90}[.;]\s*(?:It|They|That|This)\s+(?:is|are)\b"
+    r"|\bnot\s+[^.,;]{2,60},\s*but\b"
+    r"|\bnot\b[^.;]{0,80};\s*it\s+is\b"
+    r"|\b(?:is|are)\s+not\s+(?:merely|just|simply|only)\b",
+    re.I,
+)
+
+#: A comma series of five or more items ending in "and X".
+_LONG_SERIES = re.compile(r"\b\w[\w-]*(?:,\s+[\w][\w -]*){3,},?\s+and\s+\w")
+
+#: How many contrast constructions per hundred sentences is too many.
+#:
+#: Three. The article that produced this check ran at 5.6 — thirteen in a hundred
+#: and forty-two sentences, in a piece arguing against generated-prose habits —
+#: and a reader registers the rhythm long before the argument. Three leaves room
+#: for the construction where two things are genuinely being distinguished, which
+#: is what it is for, and refuses it as a cadence.
+MAX_CONTRAST_PER_HUNDRED = 3.0
+
+#: The fewest items that make a comma series a list nobody retains.
+#:
+#: Five. The voice profile asks for three; this is the point past which it stops
+#: being a matter of taste. The measured article had twelve of them, several
+#: repeating the same eight nouns in a different order.
+MAX_SERIES_ITEMS = 5
+
+#: The fewest concrete tokens per thousand words an article should carry.
+#:
+#: Six. Measured against a two-thousand-word article about a system with states,
+#: scores and thresholds that contained **no numbers and no code spans at all** —
+#: it scored 3.9 on quoted phrases alone. An article claiming a thing is
+#: inspectable and never showing anything inspected has argued against itself,
+#: and that is checkable without asking a model what it thinks.
+MIN_SPECIFICS_PER_THOUSAND = 6.0
+
 #: Words too common to mean anything when a title and a thesis share them.
 # fmt: off
 _STOPWORDS = frozenset([
@@ -69,7 +115,7 @@ _STOPWORDS = frozenset([
 
 
 class ValidationCheck(StrEnum):
-    """The fourteen checks plan/08 names.
+    """The fourteen checks plan/08 names, and three phase 16 added.
 
     A closed vocabulary because the report lists which checks *ran*, not only
     which objected. A validator that quietly stopped performing one would
@@ -94,6 +140,13 @@ class ValidationCheck(StrEnum):
     INTERNAL_ANNOTATIONS = "internal_annotations"
     EXPORTED_VERSION = "exported_version"
     CONTENT_HASH = "content_hash"
+    #: Phase 16's three, and the only ones here that plan/08 did not name. They
+    #: come from a critique of an article this pipeline actually published, and
+    #: each measures a habit the voice profile pushes against but cannot check:
+    #: a pattern has no literal form, and a hard rule must name literals.
+    CONTRAST_DENSITY = "contrast_density"
+    LIST_LENGTH = "list_length"
+    CONCRETE_DETAIL = "concrete_detail"
 
 
 @dataclass(frozen=True)
@@ -155,7 +208,7 @@ class ValidationInput:
 def run_checks(article: ValidationInput) -> tuple[ValidationFinding, ...]:
     """Every objection, in the order the checks are declared.
 
-    All fourteen run; none short-circuits. A person deciding what to do about a
+    All of them run; none short-circuits. A person deciding what to do about a
     failed validation needs the whole list — one wrong number is a different
     problem from an article that is also too long, badly linked and still carrying
     a placeholder — and phase 08's routing picks a destination from them.
@@ -178,6 +231,9 @@ def run_checks(article: ValidationInput) -> tuple[ValidationFinding, ...]:
             _internal_annotations,
             _exported_version,
             _content_hash,
+            _contrast_density,
+            _list_length,
+            _concrete_detail,
         )
         for finding in check(article)
     )
@@ -536,6 +592,115 @@ def _content_hash(article: ValidationInput) -> tuple[ValidationFinding, ...]:
             ),
         ),
     )
+
+
+def _contrast_density(article: ValidationInput) -> tuple[ValidationFinding, ...]:
+    """phase 16: the article does not define things by what they are not.
+
+    Counted rather than forbidden. One or two are how a writer distinguishes two
+    things a reader would otherwise confuse; a dozen is a cadence, and a reader
+    hears it before they hear the argument. Only a count can tell those apart,
+    which is why this is here and not a rule in the voice profile.
+
+    Routed to ``style_issue`` so the voice pass is what corrects it. Nothing
+    about the article's claims is wrong.
+    """
+    prose = _prose_only(article.draft.body)
+    sentences = [item for item in _SENTENCE.split(prose) if item.strip()]
+    found = _CONTRAST.findall(prose)
+    if not sentences or not found:
+        return ()
+    density = 100 * len(found) / len(sentences)
+    if density <= MAX_CONTRAST_PER_HUNDRED:
+        return ()
+    return (
+        ValidationFinding(
+            check=ValidationCheck.CONTRAST_DENSITY,
+            detail=(
+                f"the article defines things by what they are not {len(found)} times in "
+                f"{len(sentences)} sentences ({density:.1f} per hundred, above "
+                f"{MAX_CONTRAST_PER_HUNDRED:g}); it has become the rhythm rather than a "
+                "distinction"
+            ),
+            severity=IssueSeverity.MAJOR,
+            passage=str(found[0])[:120],
+            suggested_route=FailureCategory.STYLE_ISSUE,
+        ),
+    )
+
+
+def _list_length(article: ValidationInput) -> tuple[ValidationFinding, ...]:
+    """phase 16: no comma series long enough that nobody retains it.
+
+    Five items is where a list stops carrying its own contents. The measured
+    article had twelve such runs, several of them the same eight nouns in a
+    different order — which reads as thoroughness and lands as noise.
+    """
+    prose = _prose_only(article.draft.body)
+    runs = [match.group(0) for match in _LONG_SERIES.finditer(prose)]
+    if not runs:
+        return ()
+    return (
+        ValidationFinding(
+            check=ValidationCheck.LIST_LENGTH,
+            detail=(
+                f"{len(runs)} comma series of {MAX_SERIES_ITEMS} items or more; replace each "
+                "with the two that matter, or with one example that implies the rest"
+            ),
+            severity=IssueSeverity.MINOR,
+            passage=runs[0][:120],
+            suggested_route=FailureCategory.STYLE_ISSUE,
+        ),
+    )
+
+
+def _concrete_detail(article: ValidationInput) -> tuple[ValidationFinding, ...]:
+    """phase 16: the article shows something, not only describes it.
+
+    Concrete means countable here: a number, an inline code span, a quoted
+    phrase. Deliberately crude, and it does not ask whether the specifics are
+    *good* — that is the reviewer's and the scorer's job. What it catches is the
+    article with none at all, which no amount of reading finds because every
+    paragraph is individually fine.
+
+    The article that produced this check ran two thousand words on a system with
+    states, scores and thresholds without printing a single number.
+    """
+    body = article.draft.body
+    prose = _without_code(body)
+    words = len(prose.split())
+    if words < 200:
+        # Too short for a density to mean anything; a note is not an article.
+        return ()
+    specifics = (
+        len(_NUMBER.findall(prose)) + len(_INLINE_CODE.findall(body)) + len(_QUOTED.findall(prose))
+    )
+    density = 1000 * specifics / words
+    if density >= MIN_SPECIFICS_PER_THOUSAND:
+        return ()
+    return (
+        ValidationFinding(
+            check=ValidationCheck.CONCRETE_DETAIL,
+            detail=(
+                f"{specifics} concrete details in {words} words ({density:.1f} per thousand, "
+                f"below {MIN_SPECIFICS_PER_THOUSAND:g}): no figure, quoted line or named "
+                "value a reader could check. An article that describes a thing without "
+                "showing it asks to be taken on trust"
+            ),
+            severity=IssueSeverity.MAJOR,
+            suggested_route=FailureCategory.SUBSTANTIVE_ISSUE,
+        ),
+    )
+
+
+def _prose_only(body: str) -> str:
+    """The body with code — fenced and inline — taken out.
+
+    Both, unlike :func:`_without_code`, which keeps inline spans because the
+    number check wants them. A sentence pattern found inside `like_this` is not
+    a sentence.
+    """
+    return _INLINE_CODE.sub(" ", _without_code(body))
 
 
 def _without_code(body: str) -> str:

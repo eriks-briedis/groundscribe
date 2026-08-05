@@ -236,15 +236,26 @@ def test_a_heading_level_that_skips_is_a_formatting_problem() -> None:
 def test_the_checks_are_exactly_the_ones_the_spec_lists() -> None:
     """The closed list, and a validator quietly missing one is one that passes it.
 
-    Fourteen from plan/08 plus ``excluded_material``, which plan/13 adds when
-    source segments and claims gain confidentiality flags of their own. It is
-    listed here rather than in the phase-13 module for the reason the whole set
-    is pinned in one place: the report claims which checks *ran*, and a list that
-    could be extended somewhere else is a list nobody can read as complete.
+    Fourteen from plan/08, plus ``excluded_material``, which plan/13 adds when
+    source segments and claims gain confidentiality flags of their own, plus
+    phase 16's three. It is listed here rather than in each phase's own module
+    for the reason the whole set is pinned in one place: the report claims which
+    checks *ran*, and a list that could be extended somewhere else is a list
+    nobody can read as complete.
+
+    Phase 16's three are the only ones no plan named. They come from a critique
+    of an article this pipeline published — a contrast construction used as a
+    cadence, comma series nobody retains, and two thousand words about a scored
+    system containing no numbers — and each measures something the voice profile
+    pushes against but cannot check, because a hard rule there must name literal
+    strings and a pattern has none.
     """
     assert {check.value for check in ValidationCheck} == {
+        "concrete_detail",
         "confidential_names",
+        "contrast_density",
         "excluded_material",
+        "list_length",
         "prohibited_terminology",
         "unresolved_placeholders",
         "required_facts",
@@ -496,3 +507,82 @@ async def test_the_validator_calls_no_model(
     assert result.usage.total_tokens == 0
     assert result.value.report.validator_version == ValidateFinalOutput.impl_version
     assert VALIDATION_STAGE == "validate_article"
+
+
+# ---------------------------------------------------------------------------
+# Phase 16: the three checks a real published article earned
+# ---------------------------------------------------------------------------
+
+
+def test_defining_things_by_what_they_are_not_becomes_a_failure_when_it_is_the_rhythm() -> None:
+    """One or two distinguish; a dozen is a cadence a reader hears before the argument.
+
+    Measured on a published article: thirteen in a hundred and forty-two
+    sentences, in a piece arguing against generated-prose habits. Only a count
+    can tell the two apart, which is why the voice profile pushes against this
+    and cannot check it — a hard rule there must name literal strings.
+    """
+    tic = (
+        "The record is not a log. It is the product. "
+        "Scoring is not decoration. It is the gate. "
+        "The brief is not an outline. It is a contract. "
+        "Provenance is not a feature. It is the argument. "
+    )
+    findings = run_checks(checks_for(golden_article(body=tic * 3)))
+
+    objected = {finding.check for finding in findings}
+    assert ValidationCheck.CONTRAST_DENSITY in objected
+    contrast = next(f for f in findings if f.check is ValidationCheck.CONTRAST_DENSITY)
+    # The voice pass is what corrects it: nothing about the claims is wrong.
+    assert contrast.suggested_route is FailureCategory.STYLE_ISSUE
+    assert contrast.severity is IssueSeverity.MAJOR
+
+
+def test_a_comma_series_nobody_retains_is_reported() -> None:
+    """Eight nouns read as thoroughness and land as noise; the sixth is not retained."""
+    body = (
+        "The trace holds source material, decisions, requests, responses, scores, "
+        "tool calls, routing, versions, and user interventions.\n"
+    )
+    findings = run_checks(checks_for(golden_article(body=golden_article().body + body)))
+
+    assert ValidationCheck.LIST_LENGTH in {finding.check for finding in findings}
+
+
+def test_an_article_that_shows_nothing_concrete_is_refused() -> None:
+    """The failure no amount of reading finds, because every paragraph is fine.
+
+    Two thousand words on a system with states, scores and thresholds, containing
+    no figure, no named value and no quoted line. This does not judge whether the
+    specifics are *good* — that is the reviewer's job — only that there are some.
+    """
+    vague = (
+        "The system manages the process carefully. Decisions are recorded so they "
+        "can be reviewed later. The approach keeps the material and the prose apart, "
+        "which is what makes the whole thing work as intended. "
+    )
+    findings = run_checks(checks_for(golden_article(body=vague * 40)))
+
+    assert ValidationCheck.CONCRETE_DETAIL in {finding.check for finding in findings}
+
+
+def test_prose_that_shows_its_working_passes_the_concrete_check() -> None:
+    """The other half: the check must not fire on an article that does show things.
+
+    A baseline that failed everything would prove nothing about the test above.
+    """
+    shown = (
+        "The scorer returned 94.25 overall, with `voice_adherence` at 94 against a "
+        'profile holding no instructions. The floor is 85. One failure read "a '
+        'requirement the rubric marks as required is unmet". '
+    )
+    findings = run_checks(checks_for(golden_article(body=shown * 20)))
+
+    assert ValidationCheck.CONCRETE_DETAIL not in {finding.check for finding in findings}
+
+
+def test_a_note_is_too_short_for_a_density_to_mean_anything() -> None:
+    """Below two hundred words a ratio is noise, so the check declines to fire."""
+    findings = run_checks(checks_for(golden_article(body="A short paragraph, and no more.")))
+
+    assert ValidationCheck.CONCRETE_DETAIL not in {finding.check for finding in findings}

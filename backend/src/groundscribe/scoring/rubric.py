@@ -27,7 +27,7 @@ rubric that got more generous.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -168,6 +168,14 @@ class ScoreAssessment:
     dimensions: Mapping[ScoreDimension, float]
     weights: ResolvedWeights
     failures: tuple[ScoreFailure, ...] = ()
+    #: Dimensions there was nothing to judge against (phase 16).
+    #:
+    #: Kept on the assessment rather than dropped silently, because "94 for voice"
+    #: and "no voice profile, so voice was not judged" are different facts and
+    #: only one of them is true. A reader shown the first cannot recover the
+    #: second, and every score in the system is meant to be shown with what
+    #: produced it.
+    unassessable: tuple[ScoreDimension, ...] = ()
 
     @property
     def rubric_version(self) -> str:
@@ -250,6 +258,7 @@ class ScoringRubric(BaseModel):
         blocking_issues: Sequence[str] = (),
         unsupported_claims: Sequence[str] = (),
         unmet_requirements: Sequence[str] = (),
+        unassessable: Collection[ScoreDimension] = (),
     ) -> ScoreAssessment:
         """Score the article and decide the verdict, reporting both.
 
@@ -257,10 +266,32 @@ class ScoringRubric(BaseModel):
         The verdict is one bit, but the person deciding what to do about it needs
         to know whether one dimension slipped or the article is wrong in four
         ways, and phase 08's routing picks a correcting stage from the failures.
+
+        ``unassessable`` names dimensions there was nothing to judge against —
+        voice adherence with no voice profile is the case it was written for. They
+        are dropped from the weighted overall, which is renormalised over what
+        remains, and their floors are not applied: a dimension nobody could
+        measure cannot be below a threshold.
+
+        Excluded rather than scored zero *or* scored generously, because both of
+        those are claims. A run with an empty profile returned 94 for voice and
+        that number was an artefact of an empty input, not a judgement; scoring it
+        zero would have been the same mistake pointing the other way.
         """
         resolved = self.weights_for(depth)
         checked = _checked(dimensions)
-        overall = sum(checked[key] * resolved.weight(key) for key in ScoreDimension)
+        skipped = tuple(sorted(set(unassessable), key=lambda item: item.value))
+        counted = [key for key in ScoreDimension if key not in set(skipped)]
+        if not counted:
+            raise ScoringRubricError(
+                "every dimension was reported unassessable; an overall over nothing is a "
+                "number with no article behind it"
+            )
+        # Renormalised, so removing a tenth of the weight does not silently cost
+        # the article a tenth of its score. The remaining dimensions keep their
+        # proportions to each other, which is what the weights were expressing.
+        divisor = sum(resolved.weight(key) for key in counted)
+        overall = sum(checked[key] * resolved.weight(key) for key in counted) / divisor
 
         failures: list[ScoreFailure] = []
         if overall < self.passing.overall:
@@ -284,7 +315,7 @@ class ScoringRubric(BaseModel):
                 threshold=minimum,
                 actual=checked[dimension],
             )
-            for dimension in ScoreDimension
+            for dimension in counted
             if (minimum := self.passing.minimums.get(dimension)) is not None
             and checked[dimension] < minimum
         )
@@ -311,6 +342,7 @@ class ScoringRubric(BaseModel):
             dimensions=checked,
             weights=resolved,
             failures=tuple(failures),
+            unassessable=skipped,
         )
 
 

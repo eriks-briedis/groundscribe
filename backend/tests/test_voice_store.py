@@ -20,6 +20,7 @@ from groundscribe.domain import models as domain_models
 from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.voice.enums import InstructionStrength, VoiceCategory, VoiceScope
+from groundscribe.voice.precedence import ResolvedVoice
 from groundscribe.voice.schemas import VoiceInstruction, VoiceProfileDocument
 from groundscribe.voice.store import VoiceStore
 from provenance_helpers import make_recorder, seed_project
@@ -42,6 +43,19 @@ def profile(
     return VoiceProfileDocument(
         name=f"{scope.value}-voice", version=version, scope=scope, instructions=instructions
     )
+
+
+def _text_of(resolved: ResolvedVoice, instruction_id: str) -> str:
+    """One instruction's text, found by id rather than by position.
+
+    Positional after phase 16: the shipped profile is the widest layer, so an
+    author's own instructions no longer arrive first. Which is the point — a
+    test indexing into the list was asserting about ordering it did not mean.
+    """
+    for active in resolved.active:
+        if active.instruction.id == instruction_id:
+            return active.instruction.text
+    raise AssertionError(f"no instruction {instruction_id!r} in the resolved voice")
 
 
 @pytest.fixture
@@ -156,17 +170,23 @@ def test_an_article_override_is_used_only_for_its_own_article(
     for_a1 = store.resolve(user_id=AUTHOR, project_id=project_id, article_id="a1")
     for_a2 = store.resolve(user_id=AUTHOR, project_id=project_id, article_id="a2")
 
-    assert for_a1.profile.instructions[0].text.startswith("Sharp")
-    assert for_a2.profile.instructions[0].text == "Plain."
+    assert _text_of(for_a1, "tone").startswith("Sharp")
+    assert _text_of(for_a2, "tone") == "Plain."
 
 
 def test_an_author_with_no_profile_still_gets_a_voice(store: VoiceStore, project_id: str) -> None:
-    """Empty, and usable. Requiring calibration before anything could run would
-    make onboarding a precondition rather than a first result."""
+    """The shipped one, and usable. Requiring calibration before anything could
+    run would make onboarding a precondition rather than a first result.
+
+    It used to be *empty*, which was the same thing as having no voice system at
+    all: the align-voice prompt enforced nothing, the scorer measured against
+    nothing and returned 94, and validation prohibited nothing (phase 16).
+    """
     resolved = store.resolve(user_id=AUTHOR, project_id=project_id)
 
-    assert resolved.active == ()
-    assert resolved.profile.instructions == ()
+    assert resolved.active != (), "an empty voice is not a neutral one"
+    assert {item.profile_name for item in resolved.active} == {"shipped"}
+    assert resolved.profile.hard_rules, "the shipped rules are enforceable"
 
 
 def test_a_retired_version_is_not_resolved(store: VoiceStore, project_id: str) -> None:
@@ -180,4 +200,6 @@ def test_a_retired_version_is_not_resolved(store: VoiceStore, project_id: str) -
 
     resolved = store.resolve(user_id=AUTHOR, project_id=project_id)
 
-    assert [item.instruction.id for item in resolved.active] == ["new"]
+    # The author's own, ignoring the shipped layer underneath them.
+    mine = [item.instruction.id for item in resolved.active if item.profile_name != "shipped"]
+    assert mine == ["new"]

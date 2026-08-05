@@ -239,6 +239,12 @@ class ActiveInstructionOut(BaseModel):
     instruction_id: str
     category: str
     strength: str
+    #: What the rule says, and what it forbids literally. Without these a screen
+    #: can only list identifiers, which tells a reader a rule exists and nothing
+    #: about what their prose is being held to.
+    text: str = ""
+    rationale: str = ""
+    prohibits: str = ""
     source: str
     overrides: str
 

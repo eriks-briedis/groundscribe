@@ -32,6 +32,7 @@ from groundscribe.voice.enums import VoiceScope
 from groundscribe.voice.models import VoiceProfileVersion
 from groundscribe.voice.precedence import ResolvedVoice, resolve_voice
 from groundscribe.voice.schemas import VoiceProfileDocument
+from groundscribe.voice.shipped import shipped_voice_profile
 
 
 class VoiceStore:
@@ -119,12 +120,19 @@ class VoiceStore:
     ) -> ResolvedVoice:
         """The effective voice for one article, project or author.
 
-        An author with nothing saved resolves to an empty voice rather than an
-        error. plan/10's calibration produces the first profile, and requiring
-        one before anything could run would make onboarding a precondition
-        instead of a first result.
+        An author with nothing saved resolves to the shipped profile rather than
+        to nothing. plan/10's calibration produces their *own* first profile, and
+        requiring one before anything could run would make onboarding a
+        precondition instead of a first result — but the thing that ran while
+        they had none used to be an empty document, and an empty document is not
+        a neutral voice (see :mod:`groundscribe.voice.shipped`).
+
+        The shipped layer is the widest, so anything an author saves displaces it
+        by id or drops it by name. Nothing here is special-cased: it is a fourth
+        scope in a resolver that already had three.
         """
         return resolve_voice(
+            base_profile=shipped_voice_profile(),
             global_profile=self._document_at(VoiceScope.GLOBAL, user_id=user_id),
             project_profile=(
                 self._document_at(VoiceScope.PROJECT, user_id=user_id, project_id=project_id)

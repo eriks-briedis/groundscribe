@@ -277,7 +277,26 @@ class ScoreArticle:
                     if deduction.rubric_required
                 }
             ),
+            unassessable=self._unassessable(),
         )
+
+    def _unassessable(self) -> tuple[ScoreDimension, ...]:
+        """The dimensions this run had nothing to judge against.
+
+        One case so far, and it is the one that was silently wrong: a voice
+        profile with no instructions. The scorer is asked whether the prose
+        "reads as the voice profile, without the phrases it avoids", and against
+        an empty document every article does — a real run returned 94 out of 100
+        for a voice nobody had described, and that seventh of the weighting held
+        up every overall the system produced.
+
+        The scorer is still *asked*, and its number still reaches the record. It
+        is the verdict this keeps it out of, because a number nobody can check is
+        evidence of nothing and the rubric is what decides.
+        """
+        if self._voice.instructions:
+            return ()
+        return (ScoreDimension.VOICE_ADHERENCE,)
 
     def _confidence(self, sheets: list[ArticleScore], context: PipelineContext) -> ScoreConfidence:
         """What each pass scored, and how far apart they were."""

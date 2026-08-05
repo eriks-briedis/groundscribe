@@ -1,0 +1,223 @@
+# The voice every article is written under unless an author says otherwise.
+#
+# Shipped because the alternative was shipping nothing, and nothing is what this
+# was: `VoiceProfileDocument()` with no instructions, resolved for every project
+# that had not run calibration — which was all of them. The consequences were not
+# subtle and are worth recording, because they are the argument for this file.
+#
+# The voice prompt renders "Each instruction says how firmly it binds" and then
+# loops over an empty list, so the model was asked to line-edit toward a voice
+# described by nothing. The scorer was handed the same empty document and asked
+# whether the prose "reads as the voice profile, without the phrases it avoids";
+# with no phrases to avoid it returned 94 out of 100. Final validation asks the
+# profile what it prohibits and got an empty tuple. Every mechanism ran, and every
+# one of them was inert.
+#
+# The article that came out of that run used the construction "It is not X, it is
+# Y" thirteen times in a hundred and forty-two sentences, listed eight nouns where
+# two would do, and carried sentences like "The source supports saying that the
+# measurement apparatus exists" — the spec's vocabulary, printed for a reader.
+#
+# ---------------------------------------------------------------------------
+# What belongs here and what does not
+# ---------------------------------------------------------------------------
+#
+# A hard rule must name literal strings it prohibits, and that is deliberate: a
+# regular expression in a voice profile is a thing the author cannot read
+# (`voice/schemas.py`). So the split is
+#
+#   here          literals a person recognises, and prose guidance
+#   validation    patterns, densities, counts — see `validation/checks.py`
+#
+# The contrast construction is the clearest case. It is a *pattern*, so it cannot
+# be a hard rule, and it is the single most damaging habit in the prose this
+# system produced. It appears below as a strong preference the model is pushed
+# toward, and as a counted check the finished article is measured against. Neither
+# alone would have caught it.
+#
+# ---------------------------------------------------------------------------
+# On overriding this
+# ---------------------------------------------------------------------------
+#
+# This is the widest layer, so anything here is displaced by an instruction with
+# the same `id` at project or article scope, and dropped entirely by naming that
+# id under `suppresses`. Disagreeing with a rule below is a supported thing to do
+# and needs no edit to this file — which is the point of ids being written by hand
+# rather than generated.
+name: shipped
+version: "1"
+scope: global
+description: >
+  The habits that make generated prose read as generated. Written against a real
+  article this pipeline produced and a critique of it, rather than from a list of
+  things language models are said to do.
+
+first_person: true
+
+instructions:
+  # --------------------------------------------------------------------
+  # Hard rules: literals, checked against the finished article
+  # --------------------------------------------------------------------
+
+  - id: no-spec-vocabulary
+    category: language
+    strength: hard_rule
+    text: >
+      Write sentences for a reader, never notes about the source. The reader
+      cannot see the source model and does not know what it does or does not
+      support; say the thing, or say you cannot say it, in the first person.
+    rationale: >
+      Observed verbatim in a published draft: "The source supports saying that
+      the measurement apparatus exists. It does not support saying it works
+      better." Both halves are true and neither is a sentence anyone would write
+      for somebody else to read. "I can show the instrumentation exists. I cannot
+      show it works better" says the same thing and is addressed to a person.
+    prohibits:
+      - "The source supports"
+      - "the source supports"
+      - "does not support saying"
+      - "The described"
+      - "the strongest described"
+      - "as described in the source"
+
+  - id: no-ai-filler
+    category: prohibited_patterns
+    strength: hard_rule
+    text: >
+      Cut the phrases that announce a point rather than making one. If a
+      sentence is worth noting it is worth writing; if it is not, delete it.
+    rationale: >
+      These are the tells a reader uses to decide, in about two seconds, whether
+      a human wrote something. None of them carries information — each one is a
+      sentence spent on the fact that a sentence is coming.
+    prohibits:
+      - "It is worth noting"
+      - "It's worth noting"
+      - "It is important to note"
+      - "It's important to note"
+      - "It should be noted"
+      - "delve into"
+      - "a testament to"
+      - "ever-evolving"
+      - "in today's fast-paced"
+      - "the world of"
+      - "Let that sink in"
+      - "Make no mistake"
+
+  - id: no-instructing-the-reader
+    category: tone
+    strength: hard_rule
+    text: >
+      Do not tell the reader what conclusion to draw or how to judge what they
+      have read. Make the case and stop; a reader who has followed the argument
+      resents being handed its verdict.
+    rationale: >
+      "That is how it should be judged" appeared in a draft that had already
+      earned the point over four paragraphs. Telling somebody what they now think
+      is the one move that can lose an argument you have already won.
+    prohibits:
+      - "should be judged"
+      - "is how it should be"
+      - "you should now"
+      - "as you can see"
+
+  # --------------------------------------------------------------------
+  # Strong preferences: prose, followed unless the passage argues otherwise
+  # --------------------------------------------------------------------
+
+  - id: no-contrast-construction
+    category: prohibited_patterns
+    strength: strong_preference
+    text: >
+      State claims positively. Do not define a thing by what it is not — "It is
+      not X, it is Y", "not a feature bolted on, it is the product", "rather than
+      a Z". The construction is allowed where two things are genuinely being
+      distinguished and the reader would otherwise confuse them; it is not a way
+      to add emphasis, and it must not become the rhythm of the article.
+    rationale: >
+      Thirteen occurrences in one hundred and forty-two sentences, in an article
+      arguing against generated-prose habits. A reader notices the repetition
+      before the argument, and the credibility cost lands hardest on exactly the
+      claim the article was making. Counted at publication as `contrast_density`.
+
+  - id: name-something-concrete
+    category: structure
+    strength: strong_preference
+    text: >
+      Every section names at least one concrete thing the reader could look up: a
+      real number, a named state or field, a quoted line, a filename, a command.
+      An article that describes a system as inspectable without ever showing
+      anything inspected has argued against itself.
+    rationale: >
+      A whole draft on a system's transparency claimed an explicit state machine
+      and never named a state, claimed scoring and never showed a score. The
+      reader finished holding a position and unable to picture the product.
+
+  - id: short-series
+    category: structure
+    strength: strong_preference
+    text: >
+      Three items in a comma series, at most. A longer list reads as
+      thoroughness and lands as noise — nobody retains the sixth item. Replace it
+      with the two that matter, or with one example that implies the rest.
+    rationale: >
+      "source material, decisions, requests, responses, scores, tool calls,
+      routing, versions, and user interventions" appeared three times in near
+      identical form in one article. Counted at publication as `list_length`.
+
+  - id: present-tense-for-what-exists
+    category: language
+    strength: strong_preference
+    text: >
+      Describe what is built in the present tense, plainly. Reserve "needs",
+      "should" and "would" for what does not exist yet, and when you use them say
+      so. A reader must never have to guess whether they are being told about a
+      product or a plan.
+    rationale: >
+      An article alternating "the pipeline needs scoring" with "the pipeline
+      scores" leaves a reader unsure the thing exists at all — which is expensive
+      in a piece whose subject is honesty about evidence.
+
+  - id: say-it-once
+    category: structure
+    strength: strong_preference
+    text: >
+      State the thesis once, in full, where it does most work. Restating it in
+      the introduction, the middle and both closing sections does not reinforce
+      it; it tells the reader the article ran out of things to say.
+
+  - id: open-with-the-thing
+    category: structure
+    strength: strong_preference
+    text: >
+      Say what the subject is within the first two paragraphs, before any framing
+      of what it is not. An opening that withholds the noun asks the reader to
+      hold an idea in suspension with nothing to hold it against.
+
+  # --------------------------------------------------------------------
+  # Tendencies: how this author writes, not a template to apply
+  # --------------------------------------------------------------------
+
+  - id: first-person-for-experience
+    category: tone
+    strength: tendency
+    text: >
+      Write your own experience in the first person and the past tense. "I would
+      paste a description in, get a draft, and somewhere around the fourth notice
+      a constraint had quietly gone" is a fact; the same sentence in the passive
+      is a claim.
+
+  - id: mechanism-over-category
+    category: language
+    strength: tendency
+    text: >
+      Describe how something goes wrong, not what class of problem it belongs to.
+      "The constraint disappears, then the limitation softens, then the caveat
+      becomes a claim" tells a reader something; "factual drift" names it.
+
+  - id: sentence-length-varies
+    category: punctuation
+    strength: tendency
+    text: >
+      Let a short sentence follow a long one. Uniform sentence length is the
+      cadence a reader registers as machine-written before they can say why.

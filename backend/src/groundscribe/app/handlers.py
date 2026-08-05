@@ -65,13 +65,21 @@ from groundscribe.stages.schemas import (
 )
 from groundscribe.stages.voice import AlignVoice
 from groundscribe.voice.models import VoiceProfileVersion
+from groundscribe.voice.shipped import shipped_voice_profile
 from groundscribe.voice.store import VoiceStore
 
 #: The voice an author who has saved nothing writes in. Empty rather than
 #: opinionated: plan/10's calibration produces the first profile, and inventing
 #: a default style for someone who has not chosen one would be the generic
 #: humanisation this phase exists to replace.
-DEFAULT_VOICE = VoiceProfileDocument()
+#: The voice for a project whose own row cannot be read.
+#:
+#: The shipped profile rather than an empty document (phase 16). An empty one is
+#: not a neutral fallback — it tells the align-voice prompt to enforce nothing,
+#: the scorer to measure against nothing, and final validation to prohibit
+#: nothing, which is how a run produced prose full of the patterns this system
+#: exists to remove and scored it 94.
+DEFAULT_VOICE = shipped_voice_profile()
 
 
 def voice_for(runtime: Runtime, resumed: Resumed, article_id: str | None) -> VoiceProfileDocument:
