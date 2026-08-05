@@ -80,6 +80,7 @@ from groundscribe.app.views import (
     LineageGraph,
     LineageNode,
     ModelVersionView,
+    PrivacyView,
     ProjectCard,
     ProjectDashboard,
     ProjectIndex,
@@ -112,6 +113,7 @@ from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.jobs.enums import JobStatus
 from groundscribe.jobs.models import Job
 from groundscribe.llm.routing import RoutingConfigError, available_profiles, routing_policy
+from groundscribe.privacy.material import restricted_spans
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import (
     ExecutionStatus,
@@ -240,6 +242,7 @@ class ProjectionReader:
             retry_command=self._retry_command(run, project_id),
             constraints=_constraints_view(constraints),
             routing=_routing_view(project),
+            privacy=self._privacy_view(project_id, constraints),
             source=self._completeness(project_id, questions),
             articles=[self._card(article) for article in self._articles(project_id)],
             questions=[question for question in questions if not question.resolved],
@@ -344,6 +347,7 @@ class ProjectionReader:
     def architecture(self, project_id: str) -> ArchitectureBoard:
         """plan/11 → *Architecture board*, every version of it."""
         self._project(project_id)
+        actions = available_actions(self._position(self._run(project_id)).state)
         versions = list(
             self._session.scalars(
                 select(domain_models.ContentArchitecture)
@@ -377,11 +381,17 @@ class ProjectionReader:
             ],
             proposal=self._document(current.snapshot if current else None),
             operations=[operation.value for operation in OverrideOperation],
-            edit_command=_architecture_command(
-                "PUT", project_id, current.id if current else None, ""
+            edit_command=(
+                _architecture_command("PUT", project_id, current.id if current else None, "")
+                if _may_edit_architecture(actions)
+                else None
             ),
-            approve_command=_architecture_command(
-                "POST", project_id, current.id if current else None, "/approve", actor=True
+            approve_command=(
+                _architecture_command(
+                    "POST", project_id, current.id if current else None, "/approve", actor=True
+                )
+                if WorkflowAction.APPROVE_ARCHITECTURE.value in actions
+                else None
             ),
         )
 
@@ -528,13 +538,18 @@ class ProjectionReader:
         An execution is listed with the filters it matched rather than merely
         because it matched: a person looking at a filtered list needs to see
         *why* each row is there, especially when two filters are applied at once.
+
+        Newest first, which is the opposite of every other list here and the
+        right way round for this one: the timeline is read while a run is moving,
+        and what a person came to see is the stage that just ran. Ascending puts
+        it below however many hundred rows the run has accumulated.
         """
         self._project(project_id)
         run = self._run(project_id)
         wanted = list(dict.fromkeys(filters))
 
         rows: list[TraceExecution] = []
-        for execution in self._executions(run):
+        for execution in reversed(self._executions(run)):
             matched = [item for item in TraceFilter if self._matches(execution, item)]
             if wanted and not set(wanted) <= set(matched):
                 continue
@@ -835,6 +850,33 @@ class ProjectionReader:
             raise UnknownArtefact(f"no pipeline run for project {project_id}")
         return run
 
+    def _privacy_view(
+        self, project_id: str, constraints: domain_models.ProjectConstraints
+    ) -> PrivacyView:
+        """What may be done with this project's trace, and the warning first.
+
+        ``holds_confidential`` is computed rather than assumed from the
+        constraints' name list: a span is confidential because somebody flagged
+        *it*, and a project can hold restricted material without ever naming a
+        person or a customer.
+        """
+        return PrivacyView(
+            holds_confidential=bool(restricted_spans(self._session, project_id)),
+            retention_mode=constraints.trace_retention_mode.value,
+            export_command=ActionLink(
+                action="export_traces",
+                method="GET",
+                path=f"/projects/{project_id}/traces",
+                taken_by="you",
+            ),
+            delete_command=ActionLink(
+                action="delete_traces",
+                method="DELETE",
+                path=f"/projects/{project_id}/traces",
+                taken_by="you",
+            ),
+        )
+
     def _retry_command(self, run: models.PipelineRun, project_id: str) -> ActionLink | None:
         """Offered only where a run cannot get itself moving again.
 
@@ -870,11 +912,23 @@ class ProjectionReader:
         return position
 
     def _executions(self, run: models.PipelineRun) -> list[models.StageExecution]:
+        """The run's executions, oldest first, in the same total order the
+        relationship uses (``PipelineRun.stage_executions``).
+
+        ``started_at`` is not decoration here. Nothing assigns ``ordinal``, so
+        every row carries the default 0 and ``ordinal, id`` degrades to a sort by
+        a random hex id — the run's history comes back shuffled, on SQLite too,
+        and the caller that asks for "the last stage" gets an arbitrary one.
+        """
         return list(
             self._session.scalars(
                 select(models.StageExecution)
                 .where(models.StageExecution.pipeline_run_id == run.id)
-                .order_by(models.StageExecution.ordinal, models.StageExecution.id)
+                .order_by(
+                    models.StageExecution.ordinal,
+                    models.StageExecution.started_at,
+                    models.StageExecution.id,
+                )
             )
         )
 
@@ -1405,6 +1459,20 @@ def _action_or_none(name: str) -> WorkflowAction | None:
         return None
 
 
+def _may_edit_architecture(actions: Sequence[str]) -> bool:
+    """Whether an author may commit edits to the architecture from here.
+
+    Editing has no action of its own: ``override_architecture`` reopens an
+    approved architecture and rejects a merely-proposed one, taking whichever
+    edge the run is standing on. So the offer follows the same pair, rather than
+    a single name that would be right in one state and absent in the other.
+    """
+    return any(
+        action.value in actions
+        for action in (WorkflowAction.REOPEN_ARCHITECTURE, WorkflowAction.REJECT_ARCHITECTURE)
+    )
+
+
 def _architecture_command(
     method: str, project_id: str, version_id: str | None, suffix: str, *, actor: bool = False
 ) -> ActionLink | None:
@@ -1412,6 +1480,11 @@ def _architecture_command(
 
     ``None`` before anything is proposed: there is no version to address, and a
     URL with a hole in it would be a button that fails when pressed.
+
+    The caller gates on the run's state for the other half of that rule. A
+    version that exists is not a version this run may still act on, and an
+    approve button offered after approval fails exactly the same way a URL with
+    a hole in it does.
     """
     if version_id is None:
         return None
@@ -1433,6 +1506,7 @@ def _constraints_view(row: domain_models.ProjectConstraints) -> ConstraintsView:
         allowed_providers=list(row.allowed_providers),
         confidential_names=list(row.confidential_names),
         trace_retention_consent=row.trace_retention_consent,
+        auto_advance=row.auto_advance,
     )
 
 
@@ -1542,6 +1616,20 @@ def _execution_ref(execution: models.StageExecution) -> ExecutionRef:
         completed_at=execution.completed_at,
         error_type=execution.error_type,
         error_message=execution.error_message,
+        rerun_command=ActionLink(
+            action="replay_execution",
+            method="POST",
+            path=f"/executions/{execution.id}/replay",
+            requires_actor=True,
+            taken_by="you",
+        ),
+        fork_command=ActionLink(
+            action="fork_execution",
+            method="POST",
+            path=f"/executions/{execution.id}/fork",
+            requires_actor=True,
+            taken_by="you",
+        ),
     )
 
 

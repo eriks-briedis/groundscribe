@@ -564,6 +564,30 @@ async def test_an_empty_board_offers_nothing_to_edit(walk: Walkthrough, client: 
     assert board["approve_command"] is None
 
 
+async def test_an_approved_architecture_is_not_offered_for_approval_again(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """plan/11 → a board offers what the run may do, not what it once could.
+
+    A version that exists is not a version this run may still act on. Offered
+    after approval, the button fails when pressed — the same failure the empty
+    board's ``None`` exists to prevent, arriving from the other side.
+
+    Editing survives approval, because it does not need the same edge: an
+    approved architecture is reopened rather than rejected, and both are ways to
+    commit an author's edits.
+    """
+    await walk.open_project()
+    await walk.extract()
+    await walk.architecture()
+
+    board = read(client, f"/projects/{walk.project_id}/architecture")
+
+    assert board["current_version_id"] is not None
+    assert board["approve_command"] is None
+    assert board["edit_command"] is not None
+
+
 # ----------------------------------------------------------------------
 # Article workspace
 # ----------------------------------------------------------------------
@@ -718,10 +742,15 @@ async def test_the_lineage_graph_links_a_version_to_the_one_it_came_from(
 # ----------------------------------------------------------------------
 
 
-async def test_the_timeline_returns_the_runs_executions_in_order(
+async def test_the_timeline_returns_the_runs_executions_newest_first(
     walk: Walkthrough, client: TestClient
 ) -> None:
-    """plan/11 → *Execution timeline — chronological expandable trace events*."""
+    """plan/11 → *Execution timeline — chronological expandable trace events*.
+
+    Pinned on ``started_at`` rather than on ``ordinal``: nothing assigns the
+    ordinal, so every row carries 0 and an assertion about it holds whatever
+    order the rows arrive in — including the shuffle a sort by id produces.
+    """
     await walk.open_project()
     await walk.extract()
 
@@ -729,8 +758,8 @@ async def test_the_timeline_returns_the_runs_executions_in_order(
 
     stages = [execution["stage"] for execution in trace["executions"]]
     assert "extract_source_truth" in stages
-    ordinals = [execution["ordinal"] for execution in trace["executions"]]
-    assert ordinals == sorted(ordinals)
+    started = [execution["started_at"] for execution in trace["executions"]]
+    assert started == sorted(started, reverse=True), "the stage that just ran belongs on top"
     assert trace["filters_applied"] == []
 
 
