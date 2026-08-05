@@ -368,3 +368,70 @@ async def rescore(
             voice=VOICE,
         )
     )
+
+
+# ----------------------------------------------------------------------
+# The scorer has to be told what the routes mean
+# ----------------------------------------------------------------------
+
+
+def test_the_scoring_prompt_defines_every_route_it_asks_for() -> None:
+    """A route the prompt never explains is one the scorer picks by its name.
+
+    ``suggested_route`` decides where a failing article goes, and v1 asked for it
+    while defining none of the five values. Observed on a real run: an article
+    asserting six things its source never contained came back ``factual_gap``,
+    which sends the run upstream to re-extract a source with nothing wrong with
+    it — and, because the stages after extraction follow, regenerates the
+    architecture, brief and draft to correct six sentences.
+
+    Asserted against the enum rather than a fixed list, so adding a category
+    without explaining it fails here rather than on someone's article.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        SCORE_STAGE,
+        {
+            "draft": "{}",
+            "brief": "{}",
+            "source_model": "{}",
+            "voice": "{}",
+            "dimensions": ["factual_fidelity"],
+        },
+    )
+
+    for category in FailureCategory:
+        assert category.value in rendered.rendered_prompt, (
+            f"the scorer is asked to choose {category.value} and never told what it means"
+        )
+
+
+def test_the_scoring_prompt_says_an_overclaim_is_not_a_factual_gap() -> None:
+    """The one distinction the routing turns on, pinned as text.
+
+    ``factual_gap`` is corrected upstream and ``substantive_issue`` in the prose,
+    and the policy deliberately forbids the first from reaching a rewrite. So a
+    claim the source does not support has exactly one correct route, and the
+    prompt has to say which — the names alone suggest the wrong one.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        SCORE_STAGE,
+        {
+            "draft": "{}",
+            "brief": "{}",
+            "source_model": "{}",
+            "voice": "{}",
+            "dimensions": ["factual_fidelity"],
+        },
+    )
+    prompt = rendered.rendered_prompt
+
+    unsupported = prompt.index("claim the source does not support")
+    assert prompt.rindex(FailureCategory.SUBSTANTIVE_ISSUE.value, 0, unsupported) > prompt.rindex(
+        FailureCategory.FACTUAL_GAP.value, 0, unsupported
+    ), "an unsupported claim is described under substantive_issue, not factual_gap"
