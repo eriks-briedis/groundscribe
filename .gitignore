@@ -18,9 +18,23 @@ coverage.xml
 htmlcov/
 
 # Databases / local artefacts
+#
+# The write-ahead log and shared-memory index are as much "the database" as the
+# file they are named after: SQLite writes there first and checkpoints later, so
+# a tracked `-wal` is live state that git will happily rewrite under a running
+# process. It did, once, and the next read came back "malformed database schema".
+# `*.db` alone does not cover them, because the sidecars are `*.db-wal`, not
+# `*.wal`.
 *.db
+*.db-*
 *.sqlite
-*.sqlite3
+*.sqlite*-shm
+*.sqlite*-wal
+
+# The content-addressed blob store: this project's *material*, not its code.
+# Two blobs were committed by accident, which is two more copies of somebody's
+# source document than a repository should hold.
+var/
 
 # Environment
 .env
