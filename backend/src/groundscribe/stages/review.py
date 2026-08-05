@@ -379,14 +379,21 @@ def check_findings(review: SubstantiveReview, source_model: SourceModel) -> None
 
     A finding citing a claim nobody extracted cannot be acted on *or* argued with:
     the author cannot check it, and the rewriter cannot correct against it.
+
+    Each bad reference is quoted, because ``source_ref`` holds one claim id and a
+    reviewer that puts several there produces a *single* value naming none of
+    them. Joined bare, four such values read as seventeen unknown ids, every one
+    of which is in the source model — which is a message that sends the reader
+    looking for the wrong bug. Quoted, ``'c010, c014, c033'`` says what it is.
     """
     known = {claim.id for claim in source_model.claims}
     dangling = sorted(review.cited_claim_ids() - known)
     if dangling:
         raise EvidenceError(
-            f"the review cites {', '.join(dangling)}, which "
+            f"the review cites {', '.join(repr(ref) for ref in dangling)}, which "
             f"{'is' if len(dangling) == 1 else 'are'} not in the source model; a finding "
-            "pointing at nothing can be neither checked nor corrected"
+            "pointing at nothing can be neither checked nor corrected "
+            "(source_ref holds one claim id — further claims go in evidence)"
         )
 
 

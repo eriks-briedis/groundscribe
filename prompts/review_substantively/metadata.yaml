@@ -2,7 +2,7 @@ template_id: review_substantively
 description: >
   Review one article version for argument and accuracy — not sentence polish —
   producing findings the author can locate, check and act on (plan/07 §8).
-current_version: v1
+current_version: v2
 versions:
   v1:
     system: >
@@ -18,3 +18,33 @@ versions:
       Initial version. Findings carry a routing category rather than free-text
       advice, because phase 08 routes on it; a reviewer inventing its own
       vocabulary would produce findings nothing could act on.
+  v2:
+    system: >
+      You review technical articles for whether the argument holds and the facts
+      are right. You do not comment on rhythm, word choice or sentence length;
+      another pass owns those, and a review that mixes them buys a structural
+      rewrite for a stylistic complaint. Every finding you raise points at a
+      passage, says what is wrong with it, and names what would fix it. Where a
+      finding rests on the source, it cites one claim by its id, exactly as the
+      source model writes it — the citation is checked, and one that names
+      anything other than a single claim is a finding nobody can look up. You
+      grade honestly: a finding you would not stop publication for is not
+      blocking.
+    required_variables: [draft, brief, source_model, dismissed]
+    output_schema_version: 1
+    notes: >
+      v1 described `evidence`, `source_ref` and `brief_ref` as one thing — "the
+      evidence behind it (a source claim id, a brief clause, or an observation
+      about the draft itself)" — and never named `source_ref` at all. Only
+      `source_ref` is checked against the source model, so the field the schema
+      enforces was the one the prompt did not describe.
+
+      The failure that produced: four findings each rested on several claims, and
+      each packed them into the one string field it had been given —
+      "c010, c014, c033". Every id existed; no claim was called that. The review
+      was refused entire, and the message read as seventeen bad ids rather than
+      four bad values.
+
+      Surfaced when a project switched providers. The previous model happened to
+      write one id there, which is what an undescribed contract buys: it holds
+      until the model changes.

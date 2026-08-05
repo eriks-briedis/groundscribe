@@ -325,3 +325,47 @@ def test_a_report_summarises_what_the_author_decided() -> None:
 
     assert report.actionable == ("i1", "i3")
     assert report.dismissed == ("i2",)
+
+
+async def test_several_claims_packed_into_one_reference_says_so(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """``source_ref`` holds one claim id, and the refusal has to read like it.
+
+    Observed on a real run: four findings each rested on several claims and each
+    packed them into the single string field, so the guard reported four bad
+    *values* by joining them — seventeen apparently-unknown ids, every one of
+    which was in the source model. The message sent the reader hunting for a
+    missing claim that was never missing.
+
+    Quoting each reference is what makes the difference legible, so it is
+    asserted rather than left to whoever next reads the traceback.
+    """
+    from groundscribe.stages.errors import EvidenceError
+
+    payload = golden_review()
+    payload["issues"][0]["source_ref"] = "c001, c002"
+
+    with pytest.raises(EvidenceError, match=r"'c001, c002'"):
+        await review(db_session, snapshot_store, payload)
+
+
+def test_the_review_prompt_describes_the_field_the_guard_checks() -> None:
+    """v1 checked ``source_ref`` and never named it.
+
+    It described ``evidence``, ``source_ref`` and ``brief_ref`` as one thing —
+    "the evidence behind it (a source claim id, a brief clause, or an observation
+    about the draft itself)" — while only ``source_ref`` is validated against the
+    source model. A field the schema enforces and the prompt does not describe is
+    one the model fills by guessing, and it held only until the provider changed.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        "review_substantively",
+        {"draft": "{}", "brief": "{}", "source_model": "{}", "dismissed": []},
+    )
+
+    for field in ("source_ref", "brief_ref", "evidence"):
+        assert field in rendered.rendered_prompt, f"the reviewer fills {field} without being told"
