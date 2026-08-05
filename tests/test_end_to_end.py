@@ -46,6 +46,17 @@ from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS, SHIPPED_PROVIDER
 from test_gap_questions import gap
 
+#: ``auto_advance`` off, for the reason ``read_helpers.WALK_CONSTRAINTS`` has it
+#: off: this walks the pipeline one stage at a time, scripting each response
+#: before the stage that consumes it runs. A run that started the next stage by
+#: itself (phase 16) would reach work nobody had scripted yet, and the failure
+#: would land on a later assertion rather than where the mistake was.
+#:
+#: The shipped default is on, and ``backend/tests/test_auto_advance.py`` covers
+#: it — by scripting a whole sequence up front, which is the rhythm a run driving
+#: itself actually has.
+E2E_CONSTRAINTS = DEFAULT_CONSTRAINTS.model_copy(update={"auto_advance": False})
+
 #: A first round that stops the run for the author, and a second that does not.
 #: The pair is what makes the answer step meaningful: without the blocking gap
 #: there is nothing to answer, and without the clean second round the run would
@@ -145,7 +156,7 @@ async def test_a_project_walks_the_pipeline_over_http_with_a_worker_behind_it(
         json={
             "title": "Read-through caching",
             "author_id": AUTHOR,
-            "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+            "constraints": E2E_CONSTRAINTS.model_dump(mode="json"),
         },
     )
     pipeline.project_id = created["project_id"]
@@ -263,7 +274,7 @@ async def test_the_whole_run_is_reconstructible_afterwards(
         json={
             "title": "Read-through caching",
             "author_id": AUTHOR,
-            "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+            "constraints": E2E_CONSTRAINTS.model_dump(mode="json"),
         },
     )
     pipeline.project_id = created["project_id"]
@@ -316,7 +327,7 @@ def test_a_command_is_durable_by_the_time_it_answers(tmp_path: Path) -> None:
         json={
             "title": "Read-through caching",
             "author_id": AUTHOR,
-            "constraints": DEFAULT_CONSTRAINTS.model_dump(mode="json"),
+            "constraints": E2E_CONSTRAINTS.model_dump(mode="json"),
         },
     )
 
