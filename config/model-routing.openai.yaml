@@ -38,15 +38,24 @@
 # `gpt-5-mini`. One stage opts out, for the same reason it opts out locally; see
 # the note above `extract_source_truth`.
 #
-# **`json_mode`, not `native_schema`.** The adapter does implement strict
-# `json_schema` for `native_schema`, and it would be the better constraint. It is
-# not set here because OpenAI's strict mode accepts a *subset* of JSON Schema —
-# every property required, `additionalProperties: false` — and this pipeline's
-# schemas are Pydantic's own output, which satisfies neither by construction. A
-# stage set to `native_schema` against a schema strict mode refuses fails at the
-# provider with a 400, on every call, which reads as an outage rather than a
-# configuration mistake. Worth revisiting behind a schema-compatibility pass;
-# not worth guessing at.
+# **`native_schema`, not `json_mode`** — reversed, and the reason it was the
+# other way round is worth keeping. Strict mode accepts a *subset* of JSON Schema:
+# every property required, `additionalProperties: false`, no content constraints.
+# Pydantic's own output satisfies none of those by construction, so setting
+# `native_schema` used to mean a 400 on every call.
+#
+# `_strict_schema` in `llm/adapters/openai.py` now rewrites the schema into that
+# subset on the way out — promoting defaulted fields to required, dropping
+# `minItems` and friends — so the pipeline's schemas can stay as they are. The
+# constraints that get dropped are still enforced, by the schema that parses the
+# response, and still become repair feedback; strict mode governs the shape and
+# Pydantic governs the contents.
+#
+# The bill is what forced it. Under `json_mode` the provider promises well-formed
+# JSON and nothing about the fields, so `extract_source_truth` returned a claim's
+# body as `statement` where the schema says `text` — twice, at full length, fully
+# billed, before a third attempt happened to guess right. 68% of that run's cost
+# bought nothing. A wrong shape is now unrepresentable rather than repairable.
 #
 # **Output budgets are version 11's, not version 9's.** How long an answer this
 # pipeline asks for is a property of the work, not of the model that does it —
@@ -88,8 +97,36 @@ default:
     provider: openai
     model: gpt-5-mini
     reasoning_effort: low
-    structured_output_mode: json_mode
+    structured_output_mode: native_schema
     timeout_seconds: 120.0
+
+# ---------------------------------------------------------------------------
+# How every `max_output_tokens` below was arrived at
+# ---------------------------------------------------------------------------
+#
+#   max_output_tokens = answer + reasoning headroom
+#   headroom: high 32768 · medium 16384 · low 8192
+#
+# On a reasoning model `max_completion_tokens` bounds reasoning tokens *and*
+# visible output together. Every number in this file was inherited from the local
+# profile, where it bounded the answer alone — so each one was measuring the wrong
+# quantity, and the ones at high effort were measuring it by the largest margin.
+#
+# This is not a theory. `generate_gap_questions` writes 515–801 output tokens on a
+# good day, was given 4096, and hit that ceiling exactly on its first real call:
+# the answer needed a thousand tokens and the reasoning wanted the rest. Sizing
+# from the answer alone would have "fixed" it at 8192 and failed again.
+#
+# The `answer` term is the local profile's number, except where a real run has
+# measured a bigger one — see `extract_source_truth`, whose accepted answer ran to
+# 22–35k tokens and whose inherited 16384 was therefore also wrong about the
+# answer, independently of reasoning.
+#
+# Sizing up is close to free and failing is not: a cap is not an allocation, so
+# the call is billed for tokens produced, while an exceeded cap throws away the
+# whole stage and the wall-clock that went into it. Where a stage should not be
+# writing at length, the limit that says so is its prompt, not a ceiling that
+# turns a long answer into an unparseable one.
 
 stages:
   # Structure matters more than style here, and a schema violation costs a repair
@@ -104,16 +141,16 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 24576
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 20480
       timeout_seconds: 180.0
 
   # The phase-06 editorial stages. Extraction is the one place a mistake is
@@ -122,23 +159,40 @@ stages:
   # reasoning effort in the file, and the largest output budget: a source model
   # cut off mid-answer is a source the pipeline never finished reading.
   #
-  # 16384 is version 11's measured number, not version 9's estimate. A 60-page
-  # source produced an answer that ran past 8192 output tokens — the bulk of it
-  # evidence, one claim carrying a list of segment ids, and there were 532
-  # segments. That is a fact about the source, so it survives the move here.
+  # 65536, and the two reasons it is not the default profile's 16384 are both
+  # reasons this profile exists.
+  #
+  # **16384 was an upper bound that had never been reached, and then it was.** It
+  # came from a 60-page source that ran past 8192 — the bulk of it evidence, one
+  # claim carrying a list of segment ids. A 532-segment source ran past 16384 as
+  # well, truncating identically on Ollama and on gpt-5, so this is a fact about
+  # the source rather than about either provider.
+  #
+  # **On a reasoning model the budget is not all answer.** `max_completion_tokens`
+  # bounds reasoning tokens *and* visible output together, so `reasoning_effort:
+  # high` spends some unknowable part of this number before the first character of
+  # JSON. The default profile's 16384 never had to cover that, which makes it the
+  # wrong number here twice over.
+  #
+  # Sized generously rather than to a measurement, because the asymmetry says to:
+  # a cap is not an allocation — the call is billed for tokens produced, so an
+  # unused budget costs nothing, while an exceeded one costs the whole extraction.
+  # The default profile could not do this: 16384 there is pinned by
+  # `context_window: 65536`, which the ~49k-token prompt very nearly fills.
   extract_source_truth:
     rationale: >
       Source truth is the one artefact that is not disposable; structured
       fidelity and reproducibility dominate everything else. Its answer is also
-      the longest this pipeline asks for, so the output budget is sized against a
-      measured run rather than a guess.
+      the longest this pipeline asks for, and on a reasoning model the budget is
+      shared with reasoning, so it is sized for the worst case rather than the
+      measured one.
     primary:
       provider: openai
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 16384
+      structured_output_mode: native_schema
+      max_output_tokens: 65536
       timeout_seconds: 600.0
     # The one fallback in this file that does not drop to the mini, which is a
     # decision rather than an oversight. Escalating *down* is only useful when the
@@ -153,33 +207,52 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 16384
+      structured_output_mode: native_schema
+      max_output_tokens: 65536
       timeout_seconds: 600.0
 
   # Gap analysis is a judgement about *absence*, which is harder than extraction
   # and much cheaper to get wrong in the safe direction: an unnecessary question
   # costs the author a moment, a missed blocking gap costs the article's honesty.
+  #
+  # **The budget here is reasoning, not answer, and the two failed differently.**
+  # `extract_source_truth` overflowed because its answer really was that long.
+  # This stage's answer is small — three accepted runs produced 515, 622 and 801
+  # output tokens — and it still hit 4096 exactly, on a 40,732-token input.
+  # Almost all of that ceiling went to reasoning before a question was written.
+  # This is the stage that produced the rule at the top of the file, and the one
+  # that shows why sizing from the answer alone would have picked 8192 and failed
+  # again: 4096 answer + 32768 headroom, with the answer term left at the local
+  # profile's figure because no run here has measured a bigger one.
   generate_gap_questions:
     rationale: >
       Judging what is missing needs the model's full attention; the cost of a
       false positive is one ignored question, of a false negative a misleading
-      article.
+      article. The budget is reasoning headroom rather than answer length, which
+      is why it dwarfs the answers this stage has actually produced.
     primary:
       provider: openai
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 36864
       timeout_seconds: 300.0
+    # Smaller than the primary because `reasoning_effort: medium` on the mini is a
+    # genuinely smaller reasoning spend — but not 2048, and the reason applies to
+    # every fallback in this file. This rung is never reached by a truncation: the
+    # ladder escalates those without retrying (`llm/generation.py:381`), precisely
+    # because a fallback that degrades the call would retry with less room than
+    # the ceiling that just proved too small. It is reached by a provider error or
+    # a bad schema, and arriving there with a budget that cannot hold the
+    # reasoning turns one recoverable failure into two.
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 2048
+      structured_output_mode: native_schema
+      max_output_tokens: 18432
       timeout_seconds: 180.0
 
   # Architecture is where breadth earns its keep: the point is to surface
@@ -194,15 +267,15 @@ stages:
       provider: openai
       model: gpt-5
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 6144
+      structured_output_mode: native_schema
+      max_output_tokens: 38912
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 3072
+      structured_output_mode: native_schema
+      max_output_tokens: 19456
       timeout_seconds: 180.0
 
   # The brief is a contract the drafter is bound by and the validator checks
@@ -218,16 +291,16 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 20480
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 2048
+      structured_output_mode: native_schema
+      max_output_tokens: 18432
       timeout_seconds: 180.0
 
   # The phase-06 placeholder for what phase 07 now routes as
@@ -240,7 +313,7 @@ stages:
       model: gpt-5
       reasoning_effort: medium
       structured_output_mode: prompted
-      max_output_tokens: 16384
+      max_output_tokens: 32768
       timeout_seconds: 600.0
 
   # The draft is the one stage whose output is mostly prose, and the only one that
@@ -256,15 +329,15 @@ stages:
       provider: openai
       model: gpt-5
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 16384
+      structured_output_mode: native_schema
+      max_output_tokens: 32768
       timeout_seconds: 600.0
     fallback:
       provider: openai
       model: gpt-5-mini
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 24576
       timeout_seconds: 300.0
 
   # Review judges rather than creates, and reads the draft *and* the source model
@@ -279,16 +352,16 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 40960
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 20480
       timeout_seconds: 180.0
 
   # Planning is a judgement about *other* judgements — which feedback wins when
@@ -304,16 +377,16 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 36864
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 2048
+      structured_output_mode: native_schema
+      max_output_tokens: 18432
       timeout_seconds: 180.0
 
   # The rewrite is prose again, and bound by a plan and a previous version.
@@ -325,15 +398,15 @@ stages:
       provider: openai
       model: gpt-5
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 16384
+      structured_output_mode: native_schema
+      max_output_tokens: 32768
       timeout_seconds: 600.0
     fallback:
       provider: openai
       model: gpt-5-mini
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 24576
       timeout_seconds: 300.0
 
   # The voice pass is the one stage whose whole job is how the prose sounds. No
@@ -349,15 +422,15 @@ stages:
       provider: openai
       model: gpt-5
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 16384
+      structured_output_mode: native_schema
+      max_output_tokens: 32768
       timeout_seconds: 600.0
     fallback:
       provider: openai
       model: gpt-5-mini
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 24576
       timeout_seconds: 300.0
 
   # Scoring is the most consequential judging call in the pipeline: it decides
@@ -373,16 +446,16 @@ stages:
       model: gpt-5
       seed: 20260725
       reasoning_effort: high
-      structured_output_mode: json_mode
-      max_output_tokens: 8192
+      structured_output_mode: native_schema
+      max_output_tokens: 40960
       timeout_seconds: 300.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: medium
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 20480
       timeout_seconds: 180.0
 
   # Validation must be boring and repeatable. It judges, it does not create, and
@@ -395,14 +468,14 @@ stages:
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: low
-      structured_output_mode: json_mode
-      max_output_tokens: 4096
+      structured_output_mode: native_schema
+      max_output_tokens: 12288
       timeout_seconds: 240.0
     fallback:
       provider: openai
       model: gpt-5-mini
       seed: 20260725
       reasoning_effort: low
-      structured_output_mode: json_mode
-      max_output_tokens: 2048
+      structured_output_mode: native_schema
+      max_output_tokens: 10240
       timeout_seconds: 180.0
