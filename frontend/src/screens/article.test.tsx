@@ -423,3 +423,76 @@ describe('continuing to another article', () => {
     expect(screen.queryByTestId('continue-to-next')).toBeNull();
   });
 });
+
+/**
+ * Sending a refused score back to be corrected (phase 16).
+ *
+ * The pause at `revision_required` had one exit and it published the article the
+ * score had just refused. The choice inside the other exit matters: re-extracting
+ * the same source cannot find a fact nobody ever wrote down.
+ */
+describe('routing a refused score', () => {
+  const refused = {
+    ...articleWorkspace,
+    action_links: [
+      {
+        action: 'route_revision',
+        method: 'POST',
+        path: `/articles/${ARTICLE_ID}/revise`,
+        requires_actor: true,
+        taken_by: 'pipeline',
+      },
+    ],
+  };
+
+  it('asks the policy to correct it, naming no destination', async () => {
+    const backend = fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: refused,
+      [`/articles/${ARTICLE_ID}/revise`]: {
+        project_id: 'p1',
+        run_id: 'r1',
+        state: 'source_model_extracting',
+        available_actions: [],
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /correct it against the source/i }),
+    );
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    // No `prefer`: which stage corrects a failure is the policy's call.
+    expect(backend.commands[0]?.body).toEqual({ actor_id: 'ada' });
+  });
+
+  it('can ask for the questions instead, when the source never said it', async () => {
+    const backend = fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: refused,
+      [`/articles/${ARTICLE_ID}/revise`]: {
+        project_id: 'p1',
+        run_id: 'r1',
+        state: 'source_questions_required',
+        available_actions: [],
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /ask me what is missing/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]?.body).toMatchObject({
+      actor_id: 'ada',
+      prefer: 'source_questions_required',
+    });
+  });
+
+  it('stays hidden when the run is not parked on a refused score', async () => {
+    fakeBackend(routes);
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await screen.findByTestId('run-state');
+
+    expect(screen.queryByTestId('route-revision')).toBeNull();
+  });
+});

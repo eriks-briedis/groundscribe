@@ -642,7 +642,13 @@ class ApplicationService:
             next_article_id, JobType.GENERATE_BRIEF, entry=A.GENERATE_BRIEF
         )
 
-    def revise(self, article_id: str, *, requested_by: str) -> CommandResult:
+    def revise(
+        self,
+        article_id: str,
+        *,
+        requested_by: str,
+        prefer: WorkflowState | None = None,
+    ) -> CommandResult:
         """Send a failed score to the stage that can correct it.
 
         The run parks at ``revision_required`` when a score fails, and that pause
@@ -660,6 +666,14 @@ class ApplicationService:
         decided when the score was made, by the scorer that saw every deduction,
         and a second derivation here would be a second opinion about a decision
         already recorded.
+
+        ``prefer`` chooses between the destinations that category already
+        permits, and cannot invent one — the policy refuses a state it does not
+        list. It exists because the right answer differs while the category does
+        not: a factual gap whose facts the author *has* is corrected by
+        re-extracting, and one whose facts nobody has ever written down is
+        corrected by asking them. Both are ``factual_gap``, and re-extracting the
+        same source for the second is a loop.
         """
         resumed = self._resume(self.project_for_article(article_id))
         evaluation = self._runtime.session.scalars(
@@ -683,10 +697,12 @@ class ApplicationService:
 
         resumed.engine.route(
             FailureCategory(routed_as),
+            prefer=prefer,
             evidence={
                 "evaluation_id": evaluation.id,
                 "overall": evaluation.scores.get("overall"),
                 "requested_by": requested_by,
+                "preferred": prefer.value if prefer is not None else None,
                 "failures": [
                     failure.get("detail")
                     for failure in evaluation.scores.get("failures", [])

@@ -3346,6 +3346,21 @@ export interface components {
             version_ordinal: number;
         };
         /**
+         * ReviseArticle
+         * @description Asking the policy to route a failed score, optionally naming which way.
+         *
+         *     ``prefer`` chooses between the destinations the failure's category already
+         *     permits and cannot invent one — the policy refuses a state it does not list.
+         *     It matters because the right answer differs while the category does not: a
+         *     factual gap whose facts the author has is corrected by re-extracting, and one
+         *     whose facts nobody has written down is corrected by asking them.
+         */
+        ReviseArticle: {
+            /** Actor Id */
+            actor_id: string;
+            prefer?: components["schemas"]["WorkflowState"] | null;
+        };
+        /**
          * RoutingProfilesView
          * @description Which routing policy a project runs against, and what else it could.
          *
@@ -4467,7 +4482,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ActorAction"];
+                "application/json": components["schemas"]["ReviseArticle"];
             };
         };
         responses: {

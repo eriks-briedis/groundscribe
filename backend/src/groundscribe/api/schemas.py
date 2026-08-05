@@ -92,6 +92,19 @@ class ActorAction(BaseModel):
     actor_id: str
 
 
+class ReviseArticle(ActorAction):
+    """Asking the policy to route a failed score, optionally naming which way.
+
+    ``prefer`` chooses between the destinations the failure's category already
+    permits and cannot invent one — the policy refuses a state it does not list.
+    It matters because the right answer differs while the category does not: a
+    factual gap whose facts the author has is corrected by re-extracting, and one
+    whose facts nobody has written down is corrected by asking them.
+    """
+
+    prefer: WorkflowState | None = None
+
+
 class ContinueToArticle(ActorAction):
     """Approving one article and naming the next to write (phase 16).
 

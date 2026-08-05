@@ -975,3 +975,50 @@ async def test_revising_asks_the_policy_where_to_go_and_says_why(
     assert decision is not None, "a route nobody recorded cannot be argued with later"
     assert decision.inputs["requested_by"] == AUTHOR
     assert decision.inputs["evaluation_id"], "the score that caused it travels with the route"
+
+
+async def test_a_revision_can_be_sent_to_the_questions_instead_of_re_extraction(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """The same category, two right answers, and only the author knows which.
+
+    ``factual_gap`` routes to ``source_model_extracting`` by default, which is
+    correct when the facts exist and the extraction missed them. It is a loop
+    when nobody has ever written them down: re-extracting the same source with
+    the same answers produces the same source model, and the article still has
+    nothing behind its claims.
+
+    Observed on a real run whose blocking question — *how is the score
+    calculated?* — was never answered, and whose draft then invented the formula.
+    """
+    await walk.to_failing_score()
+
+    routed = await walk.command(
+        "POST",
+        f"/articles/{walk.article_id}/revise",
+        json={"actor_id": AUTHOR, "prefer": "source_questions_required"},
+    )
+
+    assert routed["state"] == "source_questions_required"
+    # And the questions become answerable again, which is the whole point.
+    queue = read(client, f"/projects/{walk.project_id}/questions")
+    assert queue["submit"] is not None
+
+
+async def test_a_preferred_destination_the_policy_forbids_is_refused(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """``prefer`` chooses among what the category permits; it cannot invent one.
+
+    A factual failure is corrected against source truth — the policy says so and
+    says why — so asking to rewrite it instead is refused rather than quietly
+    honoured.
+    """
+    await walk.to_failing_score()
+
+    response = client.post(
+        f"/articles/{walk.article_id}/revise",
+        json={"actor_id": AUTHOR, "prefer": "voice_aligning"},
+    )
+
+    assert response.status_code >= 400, response.text

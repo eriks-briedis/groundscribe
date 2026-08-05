@@ -50,6 +50,7 @@ from groundscribe.workflow.errors import (
     LineageError,
     SilentMutationError,
 )
+from groundscribe.workflow.policy import WorkflowPolicyError
 
 #: How the app gets its collaborators. A callable rather than a fixed instance
 #: because a real deployment builds one per request around a fresh session,
@@ -78,6 +79,11 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (ArtifactProvenanceError, 409),
     # The request itself is unusable: nobody is accountable for the action.
     (AttributionRequired, 422),
+    # Or it named a destination the routing policy does not permit for that
+    # failure. 422 rather than 409: the run's state is fine and the *request* is
+    # what cannot be honoured — a factual failure is corrected against source
+    # truth, and asking to rewrite it instead is asking for the wrong thing.
+    (WorkflowPolicyError, 422),
     # Asked to run failed work again where there is none, or where it is already
     # coming. 409 rather than 404: the run exists and the request is well formed,
     # and what makes it unanswerable is the run's state — which changes.

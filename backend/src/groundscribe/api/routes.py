@@ -464,7 +464,7 @@ def approve_and_continue(
 )
 def revise(
     article_id: str,
-    body: schemas.ActorAction,
+    body: schemas.ReviseArticle,
     service: Service,
 ) -> schemas.CommandResponse:
     """Send a failed score to the stage that can correct it.
@@ -474,7 +474,7 @@ def revise(
     there was none: the routing policy and its seven destinations were reachable
     from nothing but a test.
     """
-    return render(service.revise(article_id, requested_by=body.actor_id))
+    return render(service.revise(article_id, requested_by=body.actor_id, prefer=body.prefer))
 
 
 @router.post("/articles/{article_id}/override-approve", response_model=schemas.CommandResponse)

@@ -4047,6 +4047,30 @@
         "title": "ReviewRound",
         "type": "object"
       },
+      "ReviseArticle": {
+        "description": "Asking the policy to route a failed score, optionally naming which way.\n\n``prefer`` chooses between the destinations the failure's category already\npermits and cannot invent one \u2014 the policy refuses a state it does not list.\nIt matters because the right answer differs while the category does not: a\nfactual gap whose facts the author has is corrected by re-extracting, and one\nwhose facts nobody has written down is corrected by asking them.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "prefer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "actor_id"
+        ],
+        "title": "ReviseArticle",
+        "type": "object"
+      },
       "RoutingProfilesView": {
         "description": "Which routing policy a project runs against, and what else it could.\n\n``selected`` is ``None`` for the shipped default, and the default is absent\nfrom ``available``: it is what not choosing means, and listing it beside the\nnamed profiles would make \"the default\" and \"openai\" look like the same kind\nof answer when one of them is currently the other.\n\nCarried on the dashboard rather than served from its own read, for the reason\nevery other screen is fed by one composed read: a screen that assembled\nitself from four GETs would have four chances to be half-loaded, and this is\nthe one panel whose whole job is to state a fact accurately.",
         "properties": {
@@ -6096,7 +6120,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ActorAction"
+                "$ref": "#/components/schemas/ReviseArticle"
               }
             }
           },

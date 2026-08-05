@@ -208,6 +208,7 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
             {approving ? <Approval workspace={workspace} /> : null}
           </section>
 
+          <RouteRevision workspace={workspace} actor={actor} onDone={resource.reload} />
           <ContinueToNext workspace={workspace} actor={actor} onDone={resource.reload} />
         </section>
       )}
@@ -222,6 +223,83 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
  * fold away to look calmer, and the calm version is the one that gets an article
  * approved without its remaining concerns being read.
  */
+/**
+ * Sending a refused score back to be corrected, and choosing which way.
+ *
+ * The pause at `revision_required` is deliberate — it is where a person may
+ * accept the article anyway. This is the other way out, and the choice inside it
+ * matters more than it looks: `factual_gap` routes to re-extraction by default,
+ * which is right when the facts exist and extraction missed them, and a loop
+ * when nobody has ever written them down. Re-extracting the same source with the
+ * same answers produces the same source model.
+ *
+ * The destinations are not listed here. The screen offers "correct it" and
+ * "ask me what is missing"; the policy decides what each means for this failure
+ * and refuses a preference it does not permit.
+ */
+function RouteRevision({
+  workspace,
+  actor,
+  onDone,
+}: {
+  workspace: ArticleWorkspace;
+  actor: string;
+  onDone: () => void;
+}) {
+  const link = (workspace.action_links ?? []).find(
+    (candidate) => candidate.action === 'route_revision',
+  );
+  const [problem, setProblem] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (!link?.path) return null;
+
+  async function send(prefer?: string) {
+    if (!link?.path) return;
+    setBusy(true);
+    setProblem('');
+    try {
+      await sendCommand(link.path, prefer ? { actor_id: actor, prefer } : { actor_id: actor });
+      onDone();
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.detail : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel" data-testid="route-revision">
+      <h2>Send it back</h2>
+      <p className="muted">
+        The score refused this article. Correcting it is the policy&apos;s call — these say
+        which kind of correction, not where it goes.
+      </p>
+      <div className="actions">
+        <button type="button" onClick={() => send()} disabled={busy}>
+          Correct it against the source
+        </button>
+        <button
+          type="button"
+          onClick={() => send('source_questions_required')}
+          disabled={busy}
+        >
+          Ask me what is missing
+        </button>
+      </div>
+      <p className="muted">
+        Choose the second when the source never said it. Re-reading the same material cannot
+        find a fact nobody wrote down.
+      </p>
+      {problem ? (
+        <p className="failure" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * Approving this article and starting another the architecture approved.
  *
