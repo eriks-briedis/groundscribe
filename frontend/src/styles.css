@@ -688,10 +688,11 @@ pre,
 }
 
 .prose {
-  max-width: 34rem;
+  max-width: 50rem;
+  margin-inline: auto;
   white-space: pre-wrap;
   font-family: var(--serif);
-  font-size: 1.02rem;
+  font-size: 1.15rem;
 }
 
 .warning,
@@ -1014,9 +1015,30 @@ tr[data-same='false'] {
 
 .markdown .prose h1,
 .markdown .prose h2,
+.markdown .prose h3,
+.markdown .prose h4 {
+  /* Bottom only: the space above a heading is the previous block's bottom
+     margin, so one rule owns each gap instead of two collapsing into it. */
+  margin: 0 0 0.4em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.markdown .prose h1 {
+  font-size: 1.9rem;
+}
+
+.markdown .prose h2 {
+  font-size: 1.45rem;
+}
+
 .markdown .prose h3 {
-  margin: 1.3em 0 0.4em;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
+}
+
+.markdown .prose h4 {
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
 }
 
 .markdown .prose p {

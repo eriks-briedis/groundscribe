@@ -72,6 +72,25 @@ export const dashboard: Dashboard = {
     allowed_providers: ['ollama'],
     confidential_names: ['Project Halide'],
     trace_retention_consent: true,
+    auto_advance: true,
+  },
+  privacy: {
+    holds_confidential: true,
+    retention_mode: 'full',
+    export_command: {
+      action: 'export_traces',
+      method: 'GET',
+      path: `/projects/${PROJECT_ID}/traces`,
+      requires_actor: false,
+      taken_by: 'you',
+    },
+    delete_command: {
+      action: 'delete_traces',
+      method: 'DELETE',
+      path: `/projects/${PROJECT_ID}/traces`,
+      requires_actor: false,
+      taken_by: 'you',
+    },
   },
   routing: {
     selected: null,
@@ -437,6 +456,20 @@ export const articleWorkspace: ArticleWorkspace = {
     corrections: [],
   },
   producing_execution: {
+    fork_command: {
+      action: 'fork_execution',
+      method: 'POST',
+      path: '/executions/e9/fork',
+      requires_actor: true,
+      taken_by: 'you',
+    },
+    rerun_command: {
+      action: 'replay_execution',
+      method: 'POST',
+      path: '/executions/e9/replay',
+      requires_actor: true,
+      taken_by: 'you',
+    },
     id: 'e9',
     stage: 'align_voice',
     impl_version: '1.0',

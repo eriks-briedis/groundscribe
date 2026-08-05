@@ -14,12 +14,14 @@ import { fetchInspection, type StageInspection } from '@/api/client';
 import { useMode } from '@/app/mode';
 import { Loaded, useResource } from '@/app/resource';
 import { Disclosure, Payload } from '@/components/Disclosure';
+import { Rerun } from '@/components/Rerun';
 
 export interface StageInspectorScreenProps {
   executionId: string;
+  actor: string;
 }
 
-export function StageInspectorScreen({ executionId }: StageInspectorScreenProps) {
+export function StageInspectorScreen({ executionId, actor }: StageInspectorScreenProps) {
   const { expanded } = useMode();
   const resource = useResource<StageInspection>(
     () => fetchInspection(executionId),
@@ -45,6 +47,16 @@ export function StageInspectorScreen({ executionId }: StageInspectorScreenProps)
               </p>
             ) : null}
           </header>
+
+          <section className="panel" data-testid="rerun">
+            <h2>Run it again</h2>
+            <Rerun
+              command={inspection.summary.rerun_command}
+              forkCommand={inspection.summary.fork_command}
+              stage={inspection.summary.stage}
+              actor={actor}
+            />
+          </section>
 
           <section className="panel" data-testid="inputs">
             <h2>Inputs</h2>

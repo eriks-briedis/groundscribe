@@ -33,6 +33,7 @@ import { ReviewHistoryScreen } from '@/screens/ReviewHistoryScreen';
 import { RunComparisonScreen } from '@/screens/RunComparisonScreen';
 import { SourceWorkspaceScreen } from '@/screens/SourceWorkspaceScreen';
 import { StageInspectorScreen } from '@/screens/StageInspectorScreen';
+import { VoiceScreen } from '@/screens/VoiceScreen';
 
 /**
  * Who is acting.
@@ -76,6 +77,7 @@ function Screen({ hash }: { hash: string }) {
     if (tail === 'questions') return <QuestionQueueScreen projectId={id} actor={ACTOR} />;
     if (tail === 'architecture') return <ArchitectureBoardScreen projectId={id} actor={ACTOR} />;
     if (tail === 'trace') return <ExecutionTimelineScreen projectId={id} />;
+    if (tail === 'voice') return <VoiceScreen projectId={id} actor={ACTOR} />;
     return <DashboardScreen projectId={id} actor={ACTOR} />;
   }
   if (route === 'articles' && id) {
@@ -83,7 +85,7 @@ function Screen({ hash }: { hash: string }) {
     return <ArticleWorkspaceScreen articleId={id} actor={ACTOR} />;
   }
   if (route === 'executions' && id) {
-    return <StageInspectorScreen executionId={id} />;
+    return <StageInspectorScreen executionId={id} actor={ACTOR} />;
   }
   if (route === '' || route === 'projects') {
     // The list, which is also what an empty address means: an application whose

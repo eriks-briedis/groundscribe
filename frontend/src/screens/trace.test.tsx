@@ -82,7 +82,7 @@ describe('the stage inspector', () => {
 
     render(
       <ModeProvider initial="editorial">
-        <StageInspectorScreen executionId={EXECUTION_ID} />
+        <StageInspectorScreen executionId={EXECUTION_ID} actor="ada" />
       </ModeProvider>,
     );
 
@@ -99,7 +99,7 @@ describe('the stage inspector', () => {
 
     render(
       <ModeProvider initial="debugging">
-        <StageInspectorScreen executionId={EXECUTION_ID} />
+        <StageInspectorScreen executionId={EXECUTION_ID} actor="ada" />
       </ModeProvider>,
     );
 
@@ -115,7 +115,7 @@ describe('the stage inspector', () => {
 
     render(
       <ModeProvider initial="editorial">
-        <StageInspectorScreen executionId={EXECUTION_ID} />
+        <StageInspectorScreen executionId={EXECUTION_ID} actor="ada" />
       </ModeProvider>,
     );
 

@@ -62,12 +62,27 @@
             "title": "Overrides",
             "type": "string"
           },
+          "prohibits": {
+            "default": "",
+            "title": "Prohibits",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
           "source": {
             "title": "Source",
             "type": "string"
           },
           "strength": {
             "title": "Strength",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
             "type": "string"
           }
         },
@@ -1119,6 +1134,11 @@
             "title": "Audience",
             "type": "string"
           },
+          "auto_advance": {
+            "default": true,
+            "title": "Auto Advance",
+            "type": "boolean"
+          },
           "confidential_names": {
             "items": {
               "type": "string"
@@ -1587,6 +1607,11 @@
             "title": "Audience",
             "type": "string"
           },
+          "auto_advance": {
+            "default": true,
+            "title": "Auto Advance",
+            "type": "boolean"
+          },
           "confidential_names": {
             "default": [],
             "items": {
@@ -1880,6 +1905,16 @@
             ],
             "title": "Error Type"
           },
+          "fork_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1891,6 +1926,16 @@
           "ordinal": {
             "title": "Ordinal",
             "type": "integer"
+          },
+          "rerun_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stage": {
             "title": "Stage",
@@ -3372,6 +3417,43 @@
         "title": "PreferenceOut",
         "type": "object"
       },
+      "PrivacyView": {
+        "description": "What can be done with this project's trace, addressed by the backend.\n\nTwo commands rather than one, because they are opposite acts with opposite\nrisks: exporting produces bytes that leave the machine, and deleting destroys\npayloads that cannot be recovered. Both were reachable only from the API\nuntil phase 16 \u2014 the privacy capability existed in the code and not in the\nproduct, which is the same as not having it.\n\n``holds_confidential`` is here so a screen can warn *before* the refusal\nrather than only after it. The backend still refuses a full export of\nconfidential material without an explicit acknowledgement (plan/13); this\nlets the interface say what is about to happen instead of surprising someone\nwith a 409.",
+        "properties": {
+          "delete_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "export_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "holds_confidential": {
+            "default": false,
+            "title": "Holds Confidential",
+            "type": "boolean"
+          },
+          "retention_mode": {
+            "default": "",
+            "title": "Retention Mode",
+            "type": "string"
+          }
+        },
+        "title": "PrivacyView",
+        "type": "object"
+      },
       "ProjectCard": {
         "description": "One project as the way-in lists it.\n\nEnough to choose between projects and nothing that needs a second query per\nrow: a list that cost a dashboard's worth of work per project would be the\nslowest screen in the application and the first one anybody sees.",
         "properties": {
@@ -3468,6 +3550,9 @@
               }
             ]
           },
+          "privacy": {
+            "$ref": "#/components/schemas/PrivacyView"
+          },
           "project": {
             "$ref": "#/components/schemas/ProjectSummary"
           },
@@ -3519,6 +3604,7 @@
           "journey",
           "constraints",
           "routing",
+          "privacy",
           "source",
           "usage"
         ],

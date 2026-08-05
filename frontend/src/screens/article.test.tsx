@@ -10,7 +10,7 @@
  * must be shown before approving, and every item on that list is something the
  * interface could plausibly leave out to look tidier.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -190,5 +190,132 @@ describe('the review history', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       /two rounds have not moved the score/i,
     );
+  });
+});
+
+/**
+ * Running an article again (phase 16, found missing while trying to use it).
+ *
+ * `POST /executions/{id}/replay` shipped in phase 12 with nothing calling it, so
+ * after fixing a voice profile there was no way to apply it to the article that
+ * had exposed the problem — short of starting the project over.
+ */
+describe('running a version again', () => {
+  it('replays the execution that produced it, under whatever is in force now', async () => {
+    const backend = fakeBackend({
+      ...routes,
+      '/executions/e9/replay': {
+        source_execution_id: 'e9',
+        job: { id: 'job-77', job_type: 'align_voice', status: 'pending' },
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /run align_voice again/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    const replayed = backend.commands[0]!;
+    expect(replayed.path).toBe('/executions/e9/replay');
+    expect(replayed.body).toMatchObject({ actor_id: 'ada' });
+    expect(await screen.findByRole('status')).toHaveTextContent('job-77');
+  });
+
+  it('says the original is untouched, because that is what makes it safe to press', async () => {
+    fakeBackend(routes);
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    const panel = await screen.findByTestId('rerun-version');
+    expect(panel).toHaveTextContent(/nothing about the original is changed/i);
+    expect(panel).toHaveTextContent(/resolved fresh/i);
+  });
+});
+
+/**
+ * Getting the article out (phase 16, found missing while auditing the API).
+ *
+ * Four export formats shipped in phase 13 and nothing called any of them, so a
+ * finished article lived only in the blob store — the pipeline ran to
+ * completion and there was no way to read the result outside the app.
+ */
+describe('exporting a version', () => {
+  it('renders the version that passed validation, in a named format', async () => {
+    const backend = fakeBackend({
+      ...routes,
+      '/versions/v3/export': {
+        version_id: 'v3',
+        content_hash: 'sha256:abc',
+        format: 'markdown',
+        media_type: 'text/markdown',
+        content: '# Read-through caching\n\np99 fell to 120ms.',
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /export this version/i }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/exported article/i)).toHaveValue(
+        '# Read-through caching\n\np99 fell to 120ms.',
+      ),
+    );
+    const asked = backend.requests.find((request) => request.path === '/versions/v3/export');
+    expect(asked?.query.get('format')).toBe('markdown');
+  });
+
+  it('shows the provenance beside the bytes, so a file can say where it came from', async () => {
+    fakeBackend({
+      ...routes,
+      '/versions/v3/export': {
+        version_id: 'v3',
+        content_hash: 'sha256:abc',
+        format: 'html',
+        media_type: 'text/html',
+        content: '<h1>Read-through caching</h1>',
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.selectOptions(await screen.findByLabelText(/^format$/i), 'html');
+    await userEvent.click(screen.getByRole('button', { name: /export this version/i }));
+
+    const panel = await screen.findByTestId('export');
+    await waitFor(() => expect(panel).toHaveTextContent('sha256:abc'));
+    expect(panel).toHaveTextContent('v3');
+  });
+});
+
+describe('forking a version', () => {
+  it('changes one variable and leaves the rest, so the two can be compared', async () => {
+    const backend = fakeBackend({
+      ...routes,
+      '/executions/e9/fork': {
+        source_execution_id: 'e9',
+        job: { id: 'job-88', job_type: 'align_voice', status: 'pending' },
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.selectOptions(await screen.findByLabelText(/^change$/i), 'temperature');
+    await userEvent.type(screen.getByLabelText(/^to$/i), '0.2');
+    await userEvent.type(screen.getByLabelText(/^why$/i), 'the voice pass reads flat');
+    await userEvent.click(screen.getByRole('button', { name: /fork this stage/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    const forked = backend.commands[0]!;
+    expect(forked.path).toBe('/executions/e9/fork');
+    expect(forked.body).toMatchObject({
+      actor_id: 'ada',
+      reason: 'the voice pass reads flat',
+      variables: { temperature: '0.2' },
+    });
+  });
+
+  it('will not fork without a value, because a fork that changes nothing is a replay', async () => {
+    fakeBackend(routes);
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    expect(await screen.findByRole('button', { name: /fork this stage/i })).toBeDisabled();
   });
 });

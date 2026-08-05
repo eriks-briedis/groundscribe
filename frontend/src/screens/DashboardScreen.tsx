@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react';
 import { fetchDashboard, subscribeToJob, type Dashboard } from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
 import { ActionBar, PendingCommand, Stranded } from '@/components/ActionBar';
+import { Privacy } from '@/components/Privacy';
 import { JourneyStrip, NowCard } from '@/components/Journey';
 import { RoutingProfilePanel } from '@/components/RoutingProfile';
 
@@ -133,6 +134,21 @@ export function DashboardScreen({ projectId, actor = 'ada' }: DashboardScreenPro
                 </p>
                 <p className="muted">
                   <a href={`#/projects/${projectId}/trace`}>Every call, in order</a>
+                </p>
+              </section>
+
+              <section className="panel" data-testid="privacy-panel">
+                <h2>Trace</h2>
+                <Privacy projectId={projectId} privacy={dashboard.privacy} />
+              </section>
+
+              <section className="panel">
+                <h2>Voice</h2>
+                <p className="muted">
+                  The rules every draft is written, edited and scored against.
+                </p>
+                <p className="muted">
+                  <a href={`#/projects/${projectId}/voice`}>Read and edit them</a>
                 </p>
               </section>
             </div>

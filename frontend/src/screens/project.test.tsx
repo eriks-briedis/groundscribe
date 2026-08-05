@@ -388,3 +388,68 @@ describe('the architecture board', () => {
     expect(screen.getByTestId('version-arch-2')).toHaveTextContent('one about invalidation');
   });
 });
+
+/**
+ * Taking the trace out and destroying it (phase 16, found missing while auditing).
+ *
+ * Both endpoints shipped in phase 13 and neither was reachable, so the
+ * local-first promise was true of the code and not of the product.
+ */
+describe('the trace panel', () => {
+  it('warns before a full export, because the warning after one is too late', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+
+    render(<DashboardScreen projectId={PROJECT_ID} />);
+
+    const panel = await screen.findByTestId('privacy-panel');
+    expect(panel).toHaveTextContent(/holds material marked confidential/i);
+    expect(panel).toHaveTextContent(/refuses it until you say so explicitly/i);
+  });
+
+  it('asks for the sanitised export without an acknowledgement', async () => {
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/dashboard`]: dashboard,
+      [`/projects/${PROJECT_ID}/traces`]: {
+        project_id: PROJECT_ID,
+        sanitised: true,
+        warnings: [],
+        withheld_payloads: 4,
+        runs: [{ id: 'r1' }],
+      },
+    });
+
+    render(<DashboardScreen projectId={PROJECT_ID} />);
+    await userEvent.click(await screen.findByRole('button', { name: /export, sanitised/i }));
+
+    await waitFor(() => expect(screen.getByTestId('export-result')).toHaveTextContent('4 payload'));
+    const asked = backend.requests.filter((r) => r.path === `/projects/${PROJECT_ID}/traces`);
+    expect(asked[0]?.query.get('sanitise')).toBe('true');
+    expect(asked[0]?.query.get('confidential_material_acknowledged')).toBe('false');
+  });
+
+  it('makes deleting a second, deliberate act, and says what stayed', async () => {
+    const backend = fakeBackend({
+      [`/projects/${PROJECT_ID}/dashboard`]: dashboard,
+      [`/projects/${PROJECT_ID}/traces`]: {
+        project_id: PROJECT_ID,
+        payloads: 12,
+        bytes_reclaimed: 4096,
+        records_kept: 30,
+        shared_payloads: 2,
+      },
+    });
+
+    render(<DashboardScreen projectId={PROJECT_ID} />);
+    await userEvent.click(await screen.findByRole('button', { name: /delete this project's traces/i }));
+
+    // Nothing is sent by asking; the confirmation is where the act happens.
+    expect(backend.commands).toHaveLength(0);
+    expect(screen.getByTestId('confirm-delete')).toHaveTextContent(/the record that each call happened stays/i);
+
+    await userEvent.click(screen.getByRole('button', { name: /^delete them$/i }));
+
+    await waitFor(() => expect(backend.commands).toHaveLength(1));
+    expect(backend.commands[0]?.method).toBe('DELETE');
+    expect(await screen.findByTestId('delete-result')).toHaveTextContent('Kept 30 record');
+  });
+});

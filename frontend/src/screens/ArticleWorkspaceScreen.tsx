@@ -17,8 +17,10 @@ import { Loaded, useResource } from '@/app/resource';
 import { ActionBar, PendingCommand } from '@/components/ActionBar';
 import { DiffViewer } from '@/components/DiffViewer';
 import { Disclosure, Payload } from '@/components/Disclosure';
+import { Export } from '@/components/Export';
 import { LineageGraph } from '@/components/LineageGraph';
 import { Markdown } from '@/components/Markdown';
+import { Rerun } from '@/components/Rerun';
 import { ScoreTable } from '@/components/ScoreTable';
 
 function readable(value: string): string {
@@ -57,6 +59,19 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
             ) : null}
           </header>
 
+          {workspace.producing_execution ? (
+            <section className="panel" data-testid="rerun-version">
+              <h2>Run it again</h2>
+              <Rerun
+                command={workspace.producing_execution.rerun_command}
+                forkCommand={workspace.producing_execution.fork_command}
+                stage={workspace.producing_execution.stage}
+                actor={actor}
+                onQueued={resource.reload}
+              />
+            </section>
+          ) : null}
+
           <ActionBar
             links={workspace.action_links ?? []}
             actor={actor}
@@ -77,6 +92,20 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
               <p>Nothing has been drafted yet.</p>
             )}
           </section>
+
+          {workspace.current_version ? (
+            <section className="panel" data-testid="export-version">
+              <h2>Export</h2>
+              <p className="muted">
+                The version that passed validation, rendered. The version id and content hash
+                travel with it, so a file on a desktop can still say which run produced it.
+              </p>
+              <Export
+                versionId={workspace.current_version.id}
+                title={workspace.article.title}
+              />
+            </section>
+          ) : null}
 
           <section className="panel">
             <h2>Changed since the last version</h2>

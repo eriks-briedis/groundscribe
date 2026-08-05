@@ -82,6 +82,15 @@ export type ArticleCard = Schemas['ArticleCard'];
 export type SessionState = Schemas['SessionState'];
 export type ProjectIndex = Schemas['ProjectIndex'];
 export type RoutingProfiles = Schemas['RoutingProfilesView'];
+export type EffectiveVoice = Schemas['EffectiveVoice'];
+export type VoiceProfileDocument = Schemas['VoiceProfileDocument'];
+export type VoiceInstruction = Schemas['VoiceInstruction'];
+export type VoiceProfileSummary = Schemas['VoiceProfileSummary'];
+export type RerunResponse = Schemas['RerunResponse'];
+export type ExportedArticle = Schemas['ExportedArticleOut'];
+export type ExportFormat = Schemas['ExportFormat'];
+export type TraceExport = Schemas['TraceExportOut'];
+export type TraceDeletion = Schemas['TraceDeletionOut'];
 
 /**
  * Told when the backend says the session is gone.
@@ -246,6 +255,99 @@ export async function sendCommand(
  */
 export async function fetchSession(): Promise<SessionState> {
   return unwrap(await api.GET('/auth/session'));
+}
+
+/**
+ * The voice in force for a project, and which profile each rule came from.
+ *
+ * Read per project rather than per author because that is the question the
+ * editor answers: an author's global profile is only half of what actually
+ * reaches the prose, and a screen showing only their own rules would hide the
+ * shipped ones they are inheriting.
+ */
+export async function fetchEffectiveVoice(projectId: string): Promise<EffectiveVoice> {
+  return unwrap(
+    await api.GET('/projects/{project_id}/voice', {
+      params: { path: { project_id: projectId } },
+    }),
+  );
+}
+
+/**
+ * One article version, rendered in a named format.
+ *
+ * Addressed by *version* rather than by article, which is the backend's choice
+ * and the right one: what a person exports is the version that passed
+ * validation, and naming it makes exporting the wrong one impossible rather than
+ * merely unlikely. The bytes are hash-checked before anything is rendered.
+ */
+export async function exportVersion(
+  versionId: string,
+  format: ExportFormat,
+): Promise<ExportedArticle> {
+  return unwrap(
+    await api.GET('/versions/{version_id}/export', {
+      params: { path: { version_id: versionId }, query: { format } },
+    }),
+  );
+}
+
+/**
+ * This project's execution records.
+ *
+ * A full export of a project holding confidential material is refused with a 409
+ * unless `acknowledged` is passed. The guard is the backend's and belongs there:
+ * by the time a warning field on a 200 could be read, the bytes have already
+ * been sent. The screen's job is to surface the refusal and make the caller say
+ * yes deliberately.
+ */
+export async function exportTraces(
+  projectId: string,
+  options: { sanitise?: boolean; acknowledged?: boolean } = {},
+): Promise<TraceExport> {
+  return unwrap(
+    await api.GET('/projects/{project_id}/traces', {
+      params: {
+        path: { project_id: projectId },
+        query: {
+          sanitise: options.sanitise ?? false,
+          confidential_material_acknowledged: options.acknowledged ?? false,
+        },
+      },
+    }),
+  );
+}
+
+/** Every profile version this author has saved, in force or superseded. */
+export async function fetchVoiceProfiles(userId: string): Promise<VoiceProfileSummary[]> {
+  return unwrap(await api.GET('/voice/profiles', { params: { query: { user_id: userId } } }));
+}
+
+/**
+ * Put a profile version in force.
+ *
+ * The body is the profile *document*, which is what the backend validates and
+ * what the voice pass consumes. Sending an editor-shaped wrapper would put a
+ * second definition of a voice between the author and the prose — including of
+ * whether a hard rule names anything checkable, which the document refuses and
+ * a wrapper would have to remember to.
+ */
+export async function saveVoiceProfile(
+  profile: VoiceProfileDocument,
+  scope: { userId: string; projectId?: string; articleId?: string },
+): Promise<VoiceProfileSummary> {
+  return unwrap(
+    await api.POST('/voice/profiles', {
+      params: {
+        query: {
+          user_id: scope.userId,
+          project_id: scope.projectId ?? null,
+          article_id: scope.articleId ?? null,
+        },
+      },
+      body: profile,
+    }),
+  );
 }
 
 /** Exchange the shared password for a session cookie. */

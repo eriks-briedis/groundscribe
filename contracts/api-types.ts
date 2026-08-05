@@ -1378,10 +1378,25 @@ export interface components {
             instruction_id: string;
             /** Overrides */
             overrides: string;
+            /**
+             * Prohibits
+             * @default
+             */
+            prohibits: string;
+            /**
+             * Rationale
+             * @default
+             */
+            rationale: string;
             /** Source */
             source: string;
             /** Strength */
             strength: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
         };
         /**
          * ActiveInstructionView
@@ -1837,6 +1852,11 @@ export interface components {
             allowed_providers?: string[];
             /** Audience */
             audience: string;
+            /**
+             * Auto Advance
+             * @default true
+             */
+            auto_advance: boolean;
             /** Confidential Names */
             confidential_names?: string[];
             /** Depth */
@@ -2071,6 +2091,11 @@ export interface components {
             /** Audience */
             audience: string;
             /**
+             * Auto Advance
+             * @default true
+             */
+            auto_advance: boolean;
+            /**
              * Confidential Names
              * @default []
              */
@@ -2197,12 +2222,14 @@ export interface components {
             error_message?: string | null;
             /** Error Type */
             error_type?: string | null;
+            fork_command?: components["schemas"]["ActionLink"] | null;
             /** Id */
             id: string;
             /** Impl Version */
             impl_version: string;
             /** Ordinal */
             ordinal: number;
+            rerun_command?: components["schemas"]["ActionLink"] | null;
             /** Stage */
             stage: string;
             /**
@@ -2937,6 +2964,36 @@ export interface components {
             reason: string;
         };
         /**
+         * PrivacyView
+         * @description What can be done with this project's trace, addressed by the backend.
+         *
+         *     Two commands rather than one, because they are opposite acts with opposite
+         *     risks: exporting produces bytes that leave the machine, and deleting destroys
+         *     payloads that cannot be recovered. Both were reachable only from the API
+         *     until phase 16 — the privacy capability existed in the code and not in the
+         *     product, which is the same as not having it.
+         *
+         *     ``holds_confidential`` is here so a screen can warn *before* the refusal
+         *     rather than only after it. The backend still refuses a full export of
+         *     confidential material without an explicit acknowledgement (plan/13); this
+         *     lets the interface say what is about to happen instead of surprising someone
+         *     with a 409.
+         */
+        PrivacyView: {
+            delete_command?: components["schemas"]["ActionLink"] | null;
+            export_command?: components["schemas"]["ActionLink"] | null;
+            /**
+             * Holds Confidential
+             * @default false
+             */
+            holds_confidential: boolean;
+            /**
+             * Retention Mode
+             * @default
+             */
+            retention_mode: string;
+        };
+        /**
          * ProjectCard
          * @description One project as the way-in lists it.
          *
@@ -2986,6 +3043,7 @@ export interface components {
             constraints: components["schemas"]["ConstraintsView"];
             journey: components["schemas"]["ProjectJourney"];
             pending_command?: components["schemas"]["ActionLink"] | null;
+            privacy: components["schemas"]["PrivacyView"];
             project: components["schemas"]["ProjectSummary"];
             /** Questions */
             questions?: components["schemas"]["QuestionView"][];

@@ -155,6 +155,21 @@ class ExecutionRef(BaseModel):
     completed_at: datetime | None = None
     error_type: str | None = None
     error_message: str | None = None
+    #: Where to run this stage again (phase 16).
+    #:
+    #: A link rather than a path the interface assembles, for the reason every
+    #: other command is: plan/11 forbids the frontend from addressing commands
+    #: itself, and a rerun button that built its own URL would be the first place
+    #: that rule was broken. Always offered — a replay takes no workflow edge and
+    #: moves no run, so there is no state in which it is unavailable.
+    rerun_command: ActionLink | None = None
+    #: Where to run it again with one thing changed (phase 16).
+    #:
+    #: Its own link rather than a flag on the one above, because they are
+    #: different requests: a replay carries no body beyond the actor, and a fork
+    #: carries a closed vocabulary of variables the backend validates. Offering
+    #: one link for both would mean the interface deciding which it was.
+    fork_command: ActionLink | None = None
 
 
 class InterventionView(BaseModel):
@@ -233,6 +248,10 @@ class ConstraintsView(BaseModel):
     allowed_providers: list[str] = Field(default_factory=list)
     confidential_names: list[str] = Field(default_factory=list)
     trace_retention_consent: bool = False
+    #: Whether the run starts pipeline-owned work by itself (phase 16). On this
+    #: view because a screen showing a run that is moving on its own has to be
+    #: able to say *why* nobody is being asked to press anything.
+    auto_advance: bool = True
 
 
 class SourceCompleteness(BaseModel):
@@ -351,6 +370,28 @@ class RoutingProfilesView(BaseModel):
     command: ActionLink | None = None
 
 
+class PrivacyView(BaseModel):
+    """What can be done with this project's trace, addressed by the backend.
+
+    Two commands rather than one, because they are opposite acts with opposite
+    risks: exporting produces bytes that leave the machine, and deleting destroys
+    payloads that cannot be recovered. Both were reachable only from the API
+    until phase 16 — the privacy capability existed in the code and not in the
+    product, which is the same as not having it.
+
+    ``holds_confidential`` is here so a screen can warn *before* the refusal
+    rather than only after it. The backend still refuses a full export of
+    confidential material without an explicit acknowledgement (plan/13); this
+    lets the interface say what is about to happen instead of surprising someone
+    with a 409.
+    """
+
+    holds_confidential: bool = False
+    retention_mode: str = ""
+    export_command: ActionLink | None = None
+    delete_command: ActionLink | None = None
+
+
 class ProjectDashboard(BaseModel):
     """plan/11 → *Project dashboard*, assembled from rows and nothing else."""
 
@@ -367,6 +408,7 @@ class ProjectDashboard(BaseModel):
     retry_command: ActionLink | None = None
     constraints: ConstraintsView
     routing: RoutingProfilesView
+    privacy: PrivacyView
     source: SourceCompleteness
     articles: list[ArticleCard] = Field(default_factory=list)
     questions: list[QuestionView] = Field(default_factory=list)
