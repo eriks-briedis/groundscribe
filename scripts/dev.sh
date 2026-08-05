@@ -99,8 +99,18 @@ if [[ ! -d frontend/node_modules ]]; then
   (cd frontend && npm install --no-audit --no-fund >/dev/null)
 fi
 
-echo "→ api"
-uv run uvicorn --factory groundscribe.api.asgi:served_app --host "$HOST" --port "$API_PORT" &
+echo "→ api (reloading on changes under backend/src)"
+# `--reload`, because the alternative was worse than it sounds. The frontend hot
+# reloads and the API did not, so a change to a projection left the two halves on
+# different builds — and a missing field looks exactly like a missing feature
+# from a reloaded page. That cost three separate detours in one afternoon, twice
+# restarting a process that was already current.
+#
+# Scoped to `backend/src`: unscoped, the watcher also walks `var/`, which is the
+# blob store and grows with every run, and `.venv`.
+uv run uvicorn --factory groundscribe.api.asgi:served_app \
+  --host "$HOST" --port "$API_PORT" \
+  --reload --reload-dir backend/src &
 pids+=("$!")
 
 # The CLI's worker drains the queue and exits — deliberately, so a crash halfway
