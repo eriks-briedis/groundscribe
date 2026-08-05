@@ -129,7 +129,7 @@ from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.journey import STATE_HEADLINES, journey_of, waiting_on
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
-from groundscribe.workflow.transitions import is_taken_by_user
+from groundscribe.workflow.transitions import TERMINAL_STATES, is_taken_by_user
 
 #: What counts as an expensive call, in dollars. A threshold has to be a number
 #: somewhere; it is here, named, rather than inside the filter that uses it, so a
@@ -447,7 +447,8 @@ class ProjectionReader:
             scores=scores,
             validation=validation,
             producing_execution=self._execution_ref(
-                current.created_by_execution_id if current else None
+                current.created_by_execution_id if current else None,
+                live=position.state not in TERMINAL_STATES,
             ),
             lineage=self.lineage(article_id),
             approval=ApprovalView(
@@ -1288,11 +1289,11 @@ class ProjectionReader:
             created_by_execution_id=version.created_by_execution_id,
         )
 
-    def _execution_ref(self, execution_id: str | None) -> ExecutionRef | None:
+    def _execution_ref(self, execution_id: str | None, *, live: bool = True) -> ExecutionRef | None:
         if execution_id is None:
             return None
         execution = self._session.get(models.StageExecution, execution_id)
-        return _execution_ref(execution) if execution else None
+        return _execution_ref(execution, live=live) if execution else None
 
     def _producer_of(self, snapshot: ArtifactSnapshot | None) -> models.StageExecution | None:
         """The execution that wrote a snapshot, so a screen can link back to it."""
@@ -1605,7 +1606,14 @@ def _intervention_view(intervention: models.UserIntervention) -> InterventionVie
     )
 
 
-def _execution_ref(execution: models.StageExecution) -> ExecutionRef:
+def _execution_ref(execution: models.StageExecution, *, live: bool = True) -> ExecutionRef:
+    """One execution, named so a screen can link to it and run it again.
+
+    ``live`` says whether the run this belongs to can still act on a rerun's
+    output. Defaulted to ``True`` so a caller that has no position in hand — the
+    inspector reaches an execution by id, from anywhere — does not have to
+    pretend to know; the callers that *do* know pass it.
+    """
     return ExecutionRef(
         id=execution.id,
         stage=execution.stage,
@@ -1630,6 +1638,7 @@ def _execution_ref(execution: models.StageExecution) -> ExecutionRef:
             requires_actor=True,
             taken_by="you",
         ),
+        rerun_feeds_pipeline=live,
     )
 
 

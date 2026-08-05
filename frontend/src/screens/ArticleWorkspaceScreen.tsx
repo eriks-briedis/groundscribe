@@ -66,6 +66,7 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
                 command={workspace.producing_execution.rerun_command}
                 forkCommand={workspace.producing_execution.fork_command}
                 stage={workspace.producing_execution.stage}
+                feedsPipeline={workspace.producing_execution.rerun_feeds_pipeline}
                 actor={actor}
                 onQueued={resource.reload}
               />

@@ -2230,6 +2230,11 @@ export interface components {
             /** Ordinal */
             ordinal: number;
             rerun_command?: components["schemas"]["ActionLink"] | null;
+            /**
+             * Rerun Feeds Pipeline
+             * @default true
+             */
+            rerun_feeds_pipeline: boolean;
             /** Stage */
             stage: string;
             /**

@@ -56,11 +56,29 @@ export interface RerunProps {
   forkCommand?: ActionLink | null;
   /** What is being run again, for the button to name. */
   stage?: string;
+  /**
+   * Whether the run will act on what this produces.
+   *
+   * The backend's answer, not a state this component reads: plan/11 forbids the
+   * frontend branching on a workflow state and `guards.test.ts` enforces it. A
+   * replay never moves the run — which is what makes it safe to offer on a
+   * finished one — so on a finished run it writes a version nothing will ever
+   * score, validate or approve. Saying so is the difference between a button
+   * that works and one that appears to.
+   */
+  feedsPipeline?: boolean;
   actor: string;
   onQueued?: (rerun: RerunResponse) => void;
 }
 
-export function Rerun({ command, forkCommand, stage, actor, onQueued }: RerunProps) {
+export function Rerun({
+  command,
+  forkCommand,
+  stage,
+  feedsPipeline = true,
+  actor,
+  onQueued,
+}: RerunProps) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
   const [queued, setQueued] = useState<RerunResponse | null>(null);
@@ -116,9 +134,19 @@ export function Rerun({ command, forkCommand, stage, actor, onQueued }: RerunPro
         Runs the stage again under whatever is in force now — the voice, the rubric and the
         routing profile are resolved fresh. Nothing about the original is changed.
       </p>
+      {feedsPipeline ? null : (
+        <p className="warning" data-testid="rerun-dead-end">
+          This run has finished, and a rerun does not restart it. What comes out is a version
+          you can read and export, and nothing will score, validate or approve it. To carry an
+          article further, start a new run.
+        </p>
+      )}
       {queued ? (
         <p role="status">
-          Queued as job {queued.job.id}. It becomes a new version beside the one it came from.
+          Queued as job {queued.job.id}.{' '}
+          {feedsPipeline
+            ? 'It becomes a new version beside the one it came from, and the run carries on.'
+            : 'It becomes a new version beside the one it came from, and stops there.'}
         </p>
       ) : null}
       {forkCommand?.path ? (

@@ -319,3 +319,35 @@ describe('forking a version', () => {
     expect(await screen.findByRole('button', { name: /fork this stage/i })).toBeDisabled();
   });
 });
+
+describe('rerunning on a run that has finished', () => {
+  it('says the result goes nowhere, instead of reading like a live rerun', async () => {
+    fakeBackend({
+      [`/articles/${ARTICLE_ID}/workspace`]: {
+        ...articleWorkspace,
+        producing_execution: {
+          ...articleWorkspace.producing_execution,
+          rerun_feeds_pipeline: false,
+        },
+      },
+    });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+
+    // A replay never moves the run, which is what makes it safe to offer on a
+    // finished one — and exactly why the finished case has to be said out loud.
+    expect(await screen.findByTestId('rerun-dead-end')).toHaveTextContent(
+      /nothing will score, validate or approve it/i,
+    );
+    expect(screen.getByRole('button', { name: /run align_voice again/i })).toBeEnabled();
+  });
+
+  it('says nothing of the sort while the run is still going', async () => {
+    fakeBackend(routes);
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await screen.findByTestId('rerun-version');
+
+    expect(screen.queryByTestId('rerun-dead-end')).toBeNull();
+  });
+});

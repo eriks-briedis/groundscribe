@@ -54,6 +54,7 @@ export function StageInspectorScreen({ executionId, actor }: StageInspectorScree
               command={inspection.summary.rerun_command}
               forkCommand={inspection.summary.fork_command}
               stage={inspection.summary.stage}
+              feedsPipeline={inspection.summary.rerun_feeds_pipeline}
               actor={actor}
             />
           </section>

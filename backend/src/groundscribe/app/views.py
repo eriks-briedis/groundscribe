@@ -170,6 +170,19 @@ class ExecutionRef(BaseModel):
     #: carries a closed vocabulary of variables the backend validates. Offering
     #: one link for both would mean the interface deciding which it was.
     fork_command: ActionLink | None = None
+    #: Whether the run will act on what a rerun produces.
+    #:
+    #: False on a finished run, and the difference matters enough to say: a
+    #: replay never moves the run — that is what makes it safe to offer at all —
+    #: so on a terminal one it writes a version nothing will ever score, validate
+    #: or approve. The version is real and can be read and exported; it is simply
+    #: not going anywhere, and a button that reads identically in both cases
+    #: promises something it cannot do.
+    #:
+    #: Answered here rather than by the interface reading the state, because
+    #: plan/11 forbids the frontend from branching on a workflow state and a test
+    #: enforces it. Which states are terminal is the machine's to know.
+    rerun_feeds_pipeline: bool = True
 
 
 class InterventionView(BaseModel):

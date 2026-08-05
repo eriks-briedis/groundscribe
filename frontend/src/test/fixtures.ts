@@ -456,6 +456,7 @@ export const articleWorkspace: ArticleWorkspace = {
     corrections: [],
   },
   producing_execution: {
+    rerun_feeds_pipeline: true,
     fork_command: {
       action: 'fork_execution',
       method: 'POST',
@@ -614,6 +615,7 @@ export const trace: TraceView = {
 
 export const inspection: StageInspection = {
   summary: {
+    rerun_feeds_pipeline: true,
     id: EXECUTION_ID,
     stage: 'extract_source_truth',
     impl_version: '1.1',
