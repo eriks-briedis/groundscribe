@@ -122,7 +122,8 @@ class Recorder:
 
     @property
     def sent(self) -> dict[str, Any]:
-        return json.loads(self.requests[-1].content)
+        body: dict[str, Any] = json.loads(self.requests[-1].content)
+        return body
 
     def to(self, host_fragment: str) -> list[httpx.Request]:
         return [r for r in self.requests if host_fragment in str(r.url)]

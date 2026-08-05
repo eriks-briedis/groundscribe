@@ -25,6 +25,7 @@ Selecting a profile is not consent, and consenting is not configuration.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,7 +36,9 @@ from groundscribe.app.services import generator_for
 from groundscribe.domain import models as domain_models
 from groundscribe.llm.routing import (
     ROUTING_CONFIG_FILENAME,
+    ModelChoice,
     RoutingConfigError,
+    StageRoute,
     available_profiles,
     default_routing_policy,
     profile_path,
@@ -276,10 +279,14 @@ class TestTheShippedProfile:
         assert routing_policy(SHIPPED_PROFILE).version != default_routing_policy().version
 
 
-def _choices(route: object) -> tuple[object, ...]:
-    primary = route.primary  # type: ignore[attr-defined]
-    fallback = route.fallback  # type: ignore[attr-defined]
-    return (primary,) if fallback is None else (primary, fallback)
+def _choices(route: StageRoute) -> tuple[ModelChoice, ...]:
+    """Both models a stage may use, or the one it has.
+
+    Typed against the real classes rather than ``object``: every caller reaches
+    for ``.provider`` or ``.temperature`` on what comes back, and an ``object``
+    return turned one honest ignore here into seven attribute errors out there.
+    """
+    return (route.primary,) if route.fallback is None else (route.primary, route.fallback)
 
 
 # ----------------------------------------------------------------------
@@ -424,7 +431,7 @@ class TestChoosingAProfile:
 
         harness.service.set_routing_profile(project_id, profile="openai", chosen_by=AUTHOR)
 
-        interventions = harness.runtime.session.query(_interventions()).all()
+        interventions: list[Any] = harness.runtime.session.query(_interventions()).all()
         payloads = [
             row.payload for row in interventions if "routing_profile" in (row.payload or {})
         ]
@@ -522,10 +529,11 @@ class TestOverHttp:
     small ones with four chances to be half-loaded.
     """
 
-    def routing(self, client: TestClient, project_id: str) -> dict:
+    def routing(self, client: TestClient, project_id: str) -> dict[str, Any]:
         response = client.get(f"/projects/{project_id}/dashboard")
         assert response.status_code == 200
-        return response.json()["routing"]
+        payload: dict[str, Any] = response.json()["routing"]
+        return payload
 
     def test_a_project_reports_what_it_runs_against(
         self, client: TestClient, harness: Harness
@@ -672,4 +680,6 @@ def test_a_project_starts_on_the_default(db_session: Session) -> None:
     db_session.add(domain_models.Project(id="p-rp", user_id="u-rp", title="Untouched"))
     db_session.flush()
 
-    assert db_session.get(domain_models.Project, "p-rp").routing_profile is None
+    untouched = db_session.get(domain_models.Project, "p-rp")
+    assert untouched is not None
+    assert untouched.routing_profile is None
