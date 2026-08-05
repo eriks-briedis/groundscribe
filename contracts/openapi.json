@@ -774,6 +774,16 @@
             ],
             "title": "Brief"
           },
+          "continue_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "current_version": {
             "anyOf": [
               {
@@ -828,6 +838,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revise_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
               },
               {
                 "type": "null"

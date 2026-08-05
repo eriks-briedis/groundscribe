@@ -246,9 +246,7 @@ function RouteRevision({
   actor: string;
   onDone: () => void;
 }) {
-  const link = (workspace.action_links ?? []).find(
-    (candidate) => candidate.action === 'route_revision',
-  );
+  const link = workspace.revise_command;
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -325,9 +323,7 @@ function ContinueToNext({
   actor: string;
   onDone: () => void;
 }) {
-  const link = (workspace.action_links ?? []).find(
-    (candidate) => candidate.action === 'approve_and_continue',
-  );
+  const link = workspace.continue_command;
   const unwritten = (workspace.siblings ?? []).filter((sibling) => sibling.versions === 0);
   const [next, setNext] = useState('');
   const [problem, setProblem] = useState('');

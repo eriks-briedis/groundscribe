@@ -119,6 +119,7 @@ describe('the frontend', () => {
       'override_and_approve',
       'validate_final',
       'approve_final',
+      'approve_and_continue',
       'reject_final',
     ];
 

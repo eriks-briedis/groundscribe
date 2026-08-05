@@ -683,6 +683,17 @@ class ArticleWorkspace(BaseModel):
     #: populate that choice would be assembling itself from two reads, which is
     #: the thing one composed read per screen exists to avoid.
     siblings: list[ArticleCard] = Field(default_factory=list)
+    #: Where a refused score is sent back to be corrected, and where this article
+    #: is published while starting another (phase 16).
+    #:
+    #: Their own fields rather than names the interface picks out of
+    #: ``action_links``, because a screen that matched on an action name would be
+    #: deciding which action it was looking at — the thing plan/11 forbids and
+    #: ``guards.test.ts`` enforces. Both need a control of their own: one offers a
+    #: choice between the destinations a category permits, the other needs a
+    #: second article id no action bar can supply.
+    revise_command: ActionLink | None = None
+    continue_command: ActionLink | None = None
     run_id: str
     state: WorkflowState
     available_actions: list[str] = Field(default_factory=list)

@@ -428,6 +428,12 @@ class ProjectionReader:
                 for other in self._articles(article.project_id)
                 if other.id != article.id
             ],
+            revise_command=_offered(
+                WorkflowAction.ROUTE_REVISION, position.state, article_id=article_id
+            ),
+            continue_command=_offered(
+                WorkflowAction.APPROVE_AND_CONTINUE, position.state, article_id=article_id
+            ),
             run_id=run.id,
             state=position.state,
             available_actions=list(available_actions(position.state)),
@@ -1449,6 +1455,29 @@ def _pending_command(
     if endpoint is None or path is None:
         return None
     return ActionLink(action=state.value, method=endpoint.method, path=path)
+
+
+def _offered(action: WorkflowAction, state: WorkflowState, *, article_id: str) -> ActionLink | None:
+    """One action's link, when this state offers it, or nothing.
+
+    Named actions get their own field on a view where the screen needs a control
+    of its own for them — a choice of destination, a second id. The alternative
+    is the interface picking the action out of ``action_links`` by name, which is
+    the frontend deciding which action it is looking at.
+    """
+    if action.value not in available_actions(state):
+        return None
+    endpoint = ACTION_ENDPOINTS.get(action)
+    path = resolve(endpoint, project_id=None, article_id=article_id)
+    if endpoint is None or path is None:
+        return None
+    return ActionLink(
+        action=action.value,
+        method=endpoint.method,
+        path=path,
+        requires_actor=endpoint.requires_actor,
+        taken_by="you",
+    )
 
 
 def _action_or_none(name: str) -> WorkflowAction | None:

@@ -363,16 +363,13 @@ describe('rerunning on a run that has finished', () => {
 describe('continuing to another article', () => {
   const withSiblings = {
     ...articleWorkspace,
-    action_links: [
-      ...(articleWorkspace.action_links ?? []),
-      {
-        action: 'approve_and_continue',
-        method: 'POST',
-        path: `/articles/${ARTICLE_ID}/approve-and-continue`,
-        requires_actor: true,
-        taken_by: 'you',
-      },
-    ],
+    continue_command: {
+      action: 'approve_and_continue',
+      method: 'POST',
+      path: `/articles/${ARTICLE_ID}/approve-and-continue`,
+      requires_actor: true,
+      taken_by: 'you',
+    },
     siblings: [
       { id: 'a2', title: 'Artefacts Beat Chat Threads', status: 'draft', versions: 0 },
       { id: 'a3', title: 'Already Written', status: 'draft', versions: 3 },
@@ -434,15 +431,13 @@ describe('continuing to another article', () => {
 describe('routing a refused score', () => {
   const refused = {
     ...articleWorkspace,
-    action_links: [
-      {
-        action: 'route_revision',
-        method: 'POST',
-        path: `/articles/${ARTICLE_ID}/revise`,
-        requires_actor: true,
-        taken_by: 'pipeline',
-      },
-    ],
+    revise_command: {
+      action: 'route_revision',
+      method: 'POST',
+      path: `/articles/${ARTICLE_ID}/revise`,
+      requires_actor: true,
+      taken_by: 'you',
+    },
   };
 
   it('asks the policy to correct it, naming no destination', async () => {

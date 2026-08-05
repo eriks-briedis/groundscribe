@@ -1755,6 +1755,7 @@ export interface components {
             brief?: {
                 [key: string]: unknown;
             } | null;
+            continue_command?: components["schemas"]["ActionLink"] | null;
             current_version?: components["schemas"]["VersionView"] | null;
             diff?: components["schemas"]["DiffView"] | null;
             /** Findings */
@@ -1763,6 +1764,7 @@ export interface components {
             pending_command?: components["schemas"]["ActionLink"] | null;
             previous_version?: components["schemas"]["VersionView"] | null;
             producing_execution?: components["schemas"]["ExecutionRef"] | null;
+            revise_command?: components["schemas"]["ActionLink"] | null;
             /** Revision Plan */
             revision_plan?: {
                 [key: string]: unknown;
