@@ -40,6 +40,7 @@ from groundscribe.llm.errors import (
     LLMNetworkError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMSchemaRejected,
     LLMTimeoutError,
 )
 from groundscribe.llm.pricing import PricingTable
@@ -308,6 +309,8 @@ class OpenAIClient:
         detail = self._scrub(_error_detail(response))
         if response.status_code == 429:
             raise LLMRateLimitError(f"openai rate-limited the call: {detail}")
+        if schema_rejected(detail):
+            raise LLMSchemaRejected(f"openai refused the schema: {detail}")
         raise LLMProviderError(f"openai returned {response.status_code}: {detail}")
 
     def _scrub(self, text: str) -> str:
@@ -364,6 +367,190 @@ def _sampling(runtime: RuntimeConfig) -> dict[str, Any]:
     return settings
 
 
+#: JSON Schema keywords strict mode rejects outright, as opposed to ignoring.
+#:
+#: Every one of them is a *content* rule — how short a string may be, how few
+#: items a list needs, what a number may not exceed. Strict mode constrains the
+#: shape of the answer and declines to constrain its contents, so these are
+#: dropped from what the provider is told rather than translated into something
+#: it accepts. Nothing is lost by dropping them: the schema they came from is
+#: still what parses the response, so `min_length=1` on a claim list is enforced
+#: on the way in and becomes repair feedback exactly as it does under
+#: ``json_mode``. The difference is only *who* catches it, and how much of a
+#: wrong-shaped answer got paid for first.
+#: How Pydantic spells a reference into the root schema's ``$defs``.
+_DEFS_PREFIX = "#/$defs/"
+
+#: What a 400 says when the schema, rather than the request, was refused.
+#:
+#: Two markers because the two OpenAI-family backends surface different halves
+#: of the same error object: the metered API reduces it to ``message``, and the
+#: subscription backend stringifies the whole mapping, which is where ``code``
+#: survives. Matching either is what makes one predicate serve both.
+_SCHEMA_REJECTED = ("invalid_json_schema", "invalid schema for")
+
+
+def schema_rejected(detail: str) -> bool:
+    """Whether a 400 means the schema was refused rather than the request.
+
+    Public, and imported by ``adapters/chatgpt.py``, for the reason
+    :func:`strict_schema` is: one provider's vocabulary arriving at two doors.
+
+    Read off the message rather than a status code because the status cannot
+    tell them apart — a malformed request and an unacceptable schema are both
+    400, and only one of them is worth retrying.
+    """
+    lowered = detail.lower()
+    return any(marker in lowered for marker in _SCHEMA_REJECTED)
+
+
+_STRICT_UNSUPPORTED = frozenset(
+    {
+        "default",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minProperties",
+        "maxProperties",
+        "patternProperties",
+        #: Only reached when the mapping it constrains could not be expanded into
+        #: explicit properties — see :func:`_expanded_mapping`. Dropping it loses
+        #: the key constraint at the provider, which Pydantic still enforces on
+        #: the way in; keeping it is a 400, which enforces nothing anywhere.
+        "propertyNames",
+    }
+)
+
+
+def strict_schema(schema: Any) -> Any:
+    """A Pydantic JSON schema, rewritten into the subset strict mode accepts.
+
+    Public, and imported by ``adapters/chatgpt.py``. That is the one thing the
+    two OpenAI-family adapters share, and it is deliberate in the same way their
+    *not* sharing an HTTP base class is: strict mode's subset is one provider's
+    requirement arriving at two different doors, so defining it twice would mean
+    fixing it twice. Everything about how the request is framed and sent still
+    differs, and still lives apart.
+
+    Two rules, applied at every level including ``$defs``:
+
+    **Every property is required.** Strict mode has no notion of an optional
+    property — a schema that omits one is refused with a 400. Pydantic marks a
+    field optional whenever it has a default, so ``evidence``, ``quote`` and
+    ``segment_ids`` all arrive optional and all have to be promoted. Promoted
+    rather than made nullable: a field with a list default is answered by ``[]``
+    and one with ``""`` by an empty string, both of which the model already
+    parses back to the default. Nullability would mean teaching every consumer
+    that ``None`` and ``()`` are the same thing.
+
+    **Content constraints are stripped** — see :data:`_STRICT_UNSUPPORTED`.
+
+    **A mapping keyed by an enum becomes its own keys.** Pydantic renders
+    ``Mapping[ScoreDimension, DimensionScore]`` as an open object: the value
+    schema under ``additionalProperties`` and the permitted keys under
+    ``propertyNames``. Strict mode accepts neither — it wants every key named as
+    a property and ``additionalProperties: false`` — so the seven names are read
+    off the enum and written out. The constraint is not weakened by this, it is
+    stated in the spelling the provider understands; and it is the one rewrite
+    here that *preserves* a constraint rather than deferring it to Pydantic,
+    because a closed set of keys is exactly what strict mode is good at.
+
+    Why this exists at all: without it ``native_schema`` is unusable here, and
+    the pipeline pays for the difference. Under ``json_mode`` the provider
+    guarantees well-formed JSON and nothing about the fields, so a model that
+    calls a claim's body ``statement`` instead of ``text`` produces a full-length,
+    fully-billed answer that fails validation — twice over, on the extraction
+    that measured this, for 68% of the run's cost and no result.
+    """
+    return _strict(schema, _definitions(schema))
+
+
+def _definitions(schema: Any) -> dict[str, Any]:
+    """The root schema's ``$defs``, which is where an enum's members live.
+
+    Read once at the top and carried down, rather than looked up per node: by the
+    time a nested ``propertyNames`` is reached its ``$ref`` still points at the
+    root, and a node that only knows itself cannot follow it.
+    """
+    if not isinstance(schema, dict):
+        return {}
+    defs = schema.get("$defs")
+    return defs if isinstance(defs, dict) else {}
+
+
+def _strict(schema: Any, defs: dict[str, Any]) -> Any:
+    if isinstance(schema, list):
+        return [_strict(item, defs) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    schema = _expanded_mapping(schema, defs)
+    rewritten = {
+        key: _strict(value, defs) for key, value in schema.items() if key not in _STRICT_UNSUPPORTED
+    }
+    properties = rewritten.get("properties")
+    if isinstance(properties, dict):
+        # sorted, so the schema sent for one model is byte-identical between
+        # runs: it is recorded in the request snapshot, and a set's ordering
+        # would make two identical calls look like two different ones.
+        rewritten["required"] = sorted(properties)
+        rewritten.setdefault("additionalProperties", False)
+    return rewritten
+
+
+def _expanded_mapping(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """An enum-keyed mapping written out as the properties strict mode wants.
+
+    Returns ``schema`` unchanged when this is not one: a mapping whose keys are
+    open, or whose values have no schema, has nothing to expand into, and its
+    ``propertyNames`` is dropped by :data:`_STRICT_UNSUPPORTED` instead.
+
+    The keys are sorted for the reason ``required`` is: the expanded schema is
+    recorded in the request snapshot, and two identical calls must not read as
+    two different ones because a mapping iterated in a different order.
+    """
+    names = _key_names(schema.get("propertyNames"), defs)
+    values = schema.get("additionalProperties")
+    if names is None or not isinstance(values, dict):
+        return schema
+    expanded = {key: value for key, value in schema.items() if key != "propertyNames"}
+    expanded["properties"] = dict.fromkeys(names, values)
+    expanded["additionalProperties"] = False
+    return expanded
+
+
+def _key_names(constraint: Any, defs: dict[str, Any]) -> list[str] | None:
+    """The keys a ``propertyNames`` constraint permits, if it names a closed set.
+
+    ``None`` for anything else — a pattern, a bare string type, a ``$ref`` to
+    something that is not an enum. Only a closed set can be written out as
+    properties, and guessing at an open one would send the provider a schema
+    that forbids keys the pipeline accepts.
+    """
+    if not isinstance(constraint, dict):
+        return None
+    members = constraint.get("enum")
+    if members is None:
+        ref = constraint.get("$ref")
+        if isinstance(ref, str) and ref.startswith(_DEFS_PREFIX):
+            target = defs.get(ref.removeprefix(_DEFS_PREFIX))
+            members = target.get("enum") if isinstance(target, dict) else None
+    if not isinstance(members, list) or not members:
+        return None
+    if not all(isinstance(member, str) for member in members):
+        return None
+    return sorted(members)
+
+
 def _response_format(mode: StructuredOutputMode, request: LLMRequest) -> dict[str, Any] | None:
     """How the schema is enforced, in the provider's own spelling.
 
@@ -379,7 +566,7 @@ def _response_format(mode: StructuredOutputMode, request: LLMRequest) -> dict[st
             "json_schema": {
                 "name": request.schema_name or request.call_key or "response",
                 "strict": True,
-                "schema": request.output_schema,
+                "schema": strict_schema(request.output_schema),
             },
         }
     if mode in (StructuredOutputMode.NATIVE_SCHEMA, StructuredOutputMode.JSON_MODE):
@@ -470,4 +657,5 @@ __all__ = [
     "UNPARSED_ARGUMENTS_KEY",
     "MissingAPIKey",
     "OpenAIClient",
+    "strict_schema",
 ]

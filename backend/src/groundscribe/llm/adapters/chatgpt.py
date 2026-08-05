@@ -48,12 +48,13 @@ from typing import Any, ClassVar, Final
 
 import httpx
 
-from groundscribe.llm.adapters.openai import strict_schema
+from groundscribe.llm.adapters.openai import schema_rejected, strict_schema
 from groundscribe.llm.enums import StructuredOutputMode
 from groundscribe.llm.errors import (
     LLMNetworkError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMSchemaRejected,
     LLMTimeoutError,
 )
 from groundscribe.llm.pricing import PricingTable
@@ -336,6 +337,8 @@ class ChatGPTClient:
             raise LLMRateLimitError(
                 f"chatgpt refused the call, subscription limit reached: {detail}"
             )
+        if schema_rejected(detail):
+            raise LLMSchemaRejected(f"chatgpt refused the schema: {detail}")
         raise LLMProviderError(f"chatgpt returned {status}: {detail}")
 
     # ------------------------------------------------------------------

@@ -14,6 +14,7 @@ from groundscribe.llm.errors import (
     LLMNetworkError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMSchemaRejected,
     LLMTimeoutError,
 )
 from groundscribe.llm.fake import (
@@ -45,6 +46,7 @@ __all__ = [
     "LLMRateLimitError",
     "LLMRequest",
     "LLMResponse",
+    "LLMSchemaRejected",
     "LLMScriptError",
     "LLMTimeoutError",
     "ProviderMetadata",

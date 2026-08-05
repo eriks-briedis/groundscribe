@@ -37,3 +37,19 @@ class LLMRateLimitError(LLMError):
 
 class LLMProviderError(LLMError):
     """The provider answered with an error (5xx, invalid request, overload)."""
+
+
+class LLMSchemaRejected(LLMProviderError):
+    """The provider refused the *schema*, before it ever read the prompt.
+
+    A provider error by status, and the opposite of one in kind: an overloaded
+    backend answers differently a second later, and a schema outside strict
+    mode's subset is refused identically forever. The distinction is what stops
+    the ladder climbing — retrying, feeding back errors and falling back all
+    re-send the same schema, so three attempts arrive at the same 400 having
+    learned nothing and asked no model anything.
+
+    A subclass rather than a sibling, so the transport table's provider-error
+    entry still classifies it: what it is *recorded* as has not changed, only
+    what the ladder does next.
+    """

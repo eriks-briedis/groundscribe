@@ -47,6 +47,7 @@ from groundscribe.llm.errors import (
     LLMNetworkError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMSchemaRejected,
     LLMTimeoutError,
 )
 from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig, TokenUsage, ToolCall
@@ -322,6 +323,20 @@ class StructuredGenerator:
                     execution, request, runtime, transport.outcome, "", parent, retry_type, str(exc)
                 )
                 attempts.append(invocation)
+                if isinstance(exc, LLMSchemaRejected):
+                    # Recorded, then escalated — never retried, for the reason a
+                    # truncated response is not. Every rung re-sends the schema
+                    # the provider just refused: feedback has no model to reach,
+                    # and the fallback rung changes which model would have read a
+                    # prompt that was never accepted. Three attempts, no
+                    # generation, same 400.
+                    raise self._escalate(
+                        execution,
+                        stage,
+                        transport.outcome.value,
+                        _schema_reason(exc),
+                        tuple(attempts),
+                    ) from exc
                 transport_attempts += 1
                 if transport_attempts >= runtime.retry_policy.max_attempts:
                     raise self._escalate(
@@ -709,17 +724,45 @@ def _classify_transport(exc: LLMError) -> _Transport:
 
 #: What a person is told when a stage's answer did not fit in its budget.
 #:
-#: It names the file and the setting because that is the whole fix, and because
-#: the message it replaces — "response is not valid JSON: unterminated string" —
-#: sends a reader to the prompt, the schema and the model before they think to
-#: look at a number. Nothing about the JSON was wrong; there was simply less of it
-#: than the answer needed.
+#: It names the setting because that is the whole fix, and because the message it
+#: replaces — "response is not valid JSON: unterminated string" — sends a reader
+#: to the prompt, the schema and the model before they think to look at a number.
+#: Nothing about the JSON was wrong; there was simply less of it than the answer
+#: needed.
+#:
+#: It no longer names ``config/model-routing.yaml``. Since profiles (phase 15) a
+#: project can be running under ``model-routing.<name>.yaml``, and the reader who
+#: most needs this message is the one who just moved, whose edit to the file named
+#: here would change nothing and look like the fix had failed. The routing policy
+#: is not in scope at this point in the ladder, so the message says how to ask
+#: rather than guessing.
 _TRUNCATED_MESSAGE = (
     "the model stopped because it reached this stage's output budget, so the "
     "answer is cut off mid-value and cannot be parsed. Raise max_output_tokens "
-    "for this stage in config/model-routing.yaml (keeping it inside the "
-    "context_window, which the prompt shares), or give the stage less to produce."
+    "for this stage in the routing policy this project runs under — "
+    "`writer project routing <project-id>` names it, and 'default' means "
+    "config/model-routing.yaml — keeping it inside the context_window where the "
+    "policy sets one, since the prompt shares it. Or give the stage less to "
+    "produce."
 )
+
+
+def _schema_reason(exc: LLMSchemaRejected) -> str:
+    """The provider's complaint, with what to do about it attached.
+
+    The provider names the offending field and stops there, which is the half a
+    person cannot act on: the schema it refused is not the one in the repository
+    but the rewrite ``strict_schema`` produced, and the fix is a rule there
+    rather than an edit to the stage's Pydantic model.
+    """
+    return (
+        f"{exc}. The provider refused the schema itself, so no model read the prompt and "
+        "retrying cannot help. Strict mode accepts a subset of JSON Schema; "
+        "`strict_schema` in llm/adapters/openai.py rewrites into it, and a construct it "
+        "does not yet handle is a rule missing there. Setting this stage's "
+        "structured_output_mode to json_mode in its routing profile is the way past it "
+        "meanwhile, at the cost strict mode is there to avoid."
+    )
 
 
 @dataclass(frozen=True)

@@ -69,7 +69,20 @@ async def test_records_the_effective_request() -> None:
     assert client.last_request.params == {"temperature": 0.0}
 
 
-def test_there_are_exactly_the_eight_specified_failure_kinds() -> None:
+def test_there_are_exactly_the_specified_failure_kinds() -> None:
+    """Phase 01 specified eight. The ninth is here because a real run produced a
+    failure none of the eight could express: the provider refusing the *schema*,
+    before any model read the prompt.
+
+    It is not ``provider_error`` — that one is retried, and this one is a 400
+    that will be a 400 forever — and it is not ``invalid_schema``, which is a
+    model returning the wrong fields and is the thing the ladder exists for.
+    Folding it into either would have made the harness unable to script the
+    failure the ladder now branches on.
+
+    The list stays exhaustive so the next addition is a decision somebody makes
+    rather than a drift nobody notices.
+    """
     assert {f.value for f in InjectableFailure} == {
         "invalid_schema",
         "invalid_enum",
@@ -79,6 +92,7 @@ def test_there_are_exactly_the_eight_specified_failure_kinds() -> None:
         "refusal",
         "tool_call",
         "fallback_trigger",
+        "schema_rejected",
     }
 
 

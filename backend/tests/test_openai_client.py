@@ -38,17 +38,48 @@ from groundscribe.llm.adapters.openai import (
     OPENAI_API_KEY_ENV,
     MissingAPIKey,
     OpenAIClient,
+    strict_schema,
 )
 from groundscribe.llm.enums import StructuredOutputMode
 from groundscribe.llm.errors import (
     LLMNetworkError,
     LLMProviderError,
     LLMRateLimitError,
+    LLMSchemaRejected,
     LLMTimeoutError,
 )
 from groundscribe.llm.pricing import ModelPrice, PricingTable
 from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig
 from groundscribe.provenance.schemas import Message, ToolDefinition
+from groundscribe.scoring.rubric import ScoreDimension
+from groundscribe.stages.schemas import (
+    ArchitectureProposal,
+    ArticleBriefDocument,
+    ArticleDraft,
+    ArticleScore,
+    GapReport,
+    RevisionPlanDocument,
+    RewrittenArticle,
+    SourceModel,
+    SubstantiveReview,
+    VoicePass,
+)
+
+#: Every schema a stage asks a model for. Listed rather than discovered, so a new
+#: stage output is added here by the person who wrote it — a set built by walking
+#: the package would grow silently and prove nothing about the one just added.
+STAGE_SCHEMAS = (
+    SourceModel,
+    GapReport,
+    ArchitectureProposal,
+    ArticleBriefDocument,
+    ArticleDraft,
+    SubstantiveReview,
+    RevisionPlanDocument,
+    RewrittenArticle,
+    VoicePass,
+    ArticleScore,
+)
 
 KEY = "sk-test-not-a-real-key"
 
@@ -266,6 +297,96 @@ async def test_json_mode_asks_for_json_and_native_schema_asks_for_the_schema() -
     assert native["type"] == "json_schema"
     assert native["json_schema"]["strict"] is True
     assert native["json_schema"]["schema"] == schema
+
+
+async def test_a_pydantic_schema_is_rewritten_into_the_subset_strict_mode_accepts() -> None:
+    """Strict mode refuses an optional property and refuses a content constraint,
+    and Pydantic emits both for any schema with a default or a `min_length`.
+
+    Sent unrewritten, `native_schema` is a 400 on every call — which is why this
+    profile ran on `json_mode`, and why a claim came back as `statement` where the
+    schema says `text`, twice, at full price.
+
+    What is dropped is not lost. `minItems` still holds, enforced by the schema
+    that parses the response rather than by the provider; only the shape moves
+    from repairable to unrepresentable.
+    """
+    client, recorder = build_client()
+    schema = SourceModel.model_json_schema()
+
+    await client.complete(request(mode=StructuredOutputMode.NATIVE_SCHEMA, schema=schema))
+
+    sent = recorder.sent["response_format"]["json_schema"]["schema"]
+    claim = sent["$defs"]["ExtractedClaim"]
+    assert claim["required"] == sorted(claim["properties"]), "strict mode has no optional property"
+    assert "evidence" in claim["required"], "a defaulted field is promoted, not dropped"
+    assert "default" not in claim["properties"]["evidence"]
+    assert "minItems" not in sent["$defs"]["Evidence"]["properties"]["segment_ids"]
+    assert sent["additionalProperties"] is False
+    # The pipeline's own schema is untouched: it is what still parses the answer.
+    assert "minItems" in SourceModel.model_json_schema()["$defs"]["Evidence"]["properties"][
+        "segment_ids"
+    ]
+
+
+async def test_a_mapping_keyed_by_an_enum_is_written_out_as_its_own_keys() -> None:
+    """`Mapping[ScoreDimension, DimensionScore]` is an open object to Pydantic:
+    the value schema under `additionalProperties`, the permitted keys under
+    `propertyNames`. Strict mode accepts neither, and said so — a 400 on every
+    `score_article` call, three times in 1.3 seconds, on a real run.
+
+    Expanded rather than stripped, because the keys *are* a closed set and that is
+    what strict mode is good at. This is the one rewrite here that keeps a
+    constraint instead of handing it back to Pydantic.
+    """
+    client, recorder = build_client()
+
+    await client.complete(
+        request(
+            mode=StructuredOutputMode.NATIVE_SCHEMA,
+            schema=ArticleScore.model_json_schema(),
+        )
+    )
+
+    sent = recorder.sent["response_format"]["json_schema"]["schema"]
+    dimensions = sent["properties"]["dimensions"]
+    assert "propertyNames" not in json.dumps(sent), "strict mode refuses it anywhere"
+    assert dimensions["additionalProperties"] is False
+    assert dimensions["required"] == sorted(dimension.value for dimension in ScoreDimension)
+    assert dimensions["properties"]["factual_fidelity"] == {"$ref": "#/$defs/DimensionScore"}
+
+
+async def test_every_stage_schema_survives_the_rewrite_into_strict_mode() -> None:
+    """The audit `score_article` was found by, kept as a test.
+
+    A construct strict mode refuses is a 400 on *every* call of the stage that
+    uses it — never intermittent, never partial, and discovered halfway through a
+    run where it reads as a pipeline fault. One schema had one, and nothing said
+    so until the provider did.
+
+    Asserted over the rewritten schema, not the Pydantic one: the pipeline's
+    schemas are allowed their constraints, and this is about what leaves.
+    """
+    for model in STAGE_SCHEMAS:
+        sent = strict_schema(model.model_json_schema())
+        assert "propertyNames" not in json.dumps(sent), model.__name__
+        for node in _objects(sent):
+            assert node["required"] == sorted(node["properties"]), model.__name__
+            assert node.get("additionalProperties") is False, model.__name__
+
+
+def _objects(node: Any) -> list[dict[str, Any]]:
+    """Every object in a schema that declares properties, at any depth."""
+    found: list[dict[str, Any]] = []
+    if isinstance(node, dict):
+        if isinstance(node.get("properties"), dict):
+            found.append(node)
+        for value in node.values():
+            found += _objects(value)
+    elif isinstance(node, list):
+        for value in node:
+            found += _objects(value)
+    return found
 
 
 async def test_native_schema_without_a_schema_falls_back_to_asking_for_json() -> None:
@@ -492,6 +613,39 @@ async def test_a_timeout_is_a_timeout_and_a_dead_socket_is_a_network_error() -> 
         await timed_out.complete(request())
     with pytest.raises(LLMNetworkError):
         await unreachable.complete(request())
+
+
+async def test_a_refused_schema_is_typed_apart_from_any_other_bad_request() -> None:
+    """Both are 400, and only one is worth a second attempt.
+
+    An overloaded backend answers differently a second later; a schema outside
+    strict mode's subset is refused identically forever, so the ladder has to be
+    able to tell them apart before it decides to climb.
+    """
+    rejected = Recorder(
+        httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": (
+                        "Invalid schema for response_format 'ArticleScore': In context="
+                        "('properties', 'dimensions'), 'propertyNames' is not permitted."
+                    ),
+                    "code": "invalid_json_schema",
+                }
+            },
+        )
+    )
+    malformed = Recorder(httpx.Response(400, json={"error": {"message": "unknown parameter"}}))
+
+    client, _ = build_client(rejected)
+    with pytest.raises(LLMSchemaRejected):
+        await client.complete(request())
+
+    other, _ = build_client(malformed)
+    with pytest.raises(LLMProviderError) as generic:
+        await other.complete(request())
+    assert not isinstance(generic.value, LLMSchemaRejected), "not every 400 is the schema's fault"
 
 
 async def test_the_key_never_appears_in_a_failure_message() -> None:

@@ -20,7 +20,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from groundscribe.llm.errors import LLMProviderError, LLMRateLimitError, LLMTimeoutError
+from groundscribe.llm.errors import (
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMSchemaRejected,
+    LLMTimeoutError,
+)
 from groundscribe.llm.protocol import (
     LENGTH_STOP,
     LLMRequest,
@@ -36,10 +41,11 @@ from groundscribe.llm.protocol import (
 class InjectableFailure(StrEnum):
     """The failure modes the harness can inject on demand.
 
-    Values mirror the phase-01 deliverable list. ``TOOL_CALL`` and
-    ``FALLBACK_TRIGGER`` are not errors in production, but at the harness level
-    every non-normal outcome is surfaced uniformly as an injected failure; their
-    real control-flow semantics are defined in phase 04.
+    Values mirror the phase-01 deliverable list, plus ``SCHEMA_REJECTED``, which
+    a real run added. ``TOOL_CALL`` and ``FALLBACK_TRIGGER`` are not errors in
+    production, but at the harness level every non-normal outcome is surfaced
+    uniformly as an injected failure; their real control-flow semantics are
+    defined in phase 04.
     """
 
     INVALID_SCHEMA = "invalid_schema"
@@ -50,6 +56,10 @@ class InjectableFailure(StrEnum):
     REFUSAL = "refusal"
     TOOL_CALL = "tool_call"
     FALLBACK_TRIGGER = "fallback_trigger"
+    #: The provider refusing the schema, which is a transport failure by shape
+    #: and a permanent one by nature. Distinct from ``INVALID_SCHEMA``, which is
+    #: a *model* returning the wrong fields and is what the ladder exists for.
+    SCHEMA_REJECTED = "schema_rejected"
 
 
 class LLMScriptError(Exception):
@@ -86,6 +96,10 @@ class InjectedProviderError(InjectedFailureError, LLMProviderError):
     """An injected provider error, indistinguishable from a real one to the ladder."""
 
 
+class InjectedSchemaRejected(InjectedFailureError, LLMSchemaRejected):
+    """An injected schema refusal, indistinguishable from a real one to the ladder."""
+
+
 #: Injected kinds that map onto a provider-neutral transport failure. The
 #: content kinds (invalid schema/enum, refusal, tool call) are absent on
 #: purpose: they are things a provider *returns*, and scripting them as
@@ -94,6 +108,7 @@ _TRANSPORT_ERRORS: dict[InjectableFailure, type[InjectedFailureError]] = {
     InjectableFailure.TIMEOUT: InjectedTimeoutError,
     InjectableFailure.RATE_LIMIT: InjectedRateLimitError,
     InjectableFailure.PROVIDER_ERROR: InjectedProviderError,
+    InjectableFailure.SCHEMA_REJECTED: InjectedSchemaRejected,
 }
 
 

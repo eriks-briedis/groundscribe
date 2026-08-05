@@ -337,6 +337,34 @@ async def test_a_truncated_response_is_not_sent_back_round_the_ladder(
     assert excinfo.value.attempts[0].outcome is InvocationOutcome.TRUNCATED
 
 
+async def test_a_refused_schema_is_not_sent_back_round_the_ladder(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: FakeLLMClient,
+) -> None:
+    """Every rung re-sends the schema the provider just refused.
+
+    A schema outside strict mode's subset is a 400 before any model reads the
+    prompt, so feedback has nobody to reach and the fallback rung only changes
+    which model would have declined to see it. Observed on a real run: three
+    attempts in 1.3 seconds, three identical 400s, nothing generated.
+
+    Distinct from ``INVALID_SCHEMA``, which is a model returning the wrong
+    fields — that one *is* what the ladder exists for, and is retried below.
+    """
+    _, stage_execution = execution
+    for _ in range(5):
+        client.script_failure(STAGE, InjectableFailure.SCHEMA_REJECTED)
+
+    with pytest.raises(GenerationFailed) as excinfo:
+        await _generate(generator, stage_execution)
+
+    assert len(excinfo.value.attempts) == 1, "one attempt, then a person"
+    assert excinfo.value.attempts[0].outcome is InvocationOutcome.PROVIDER_ERROR
+    assert "retrying cannot help" in excinfo.value.reason
+    assert "strict_schema" in excinfo.value.reason, "the reason names where the fix goes"
+
+
 async def test_a_truncated_body_that_happens_to_parse_is_still_accepted(
     generator: StructuredGenerator,
     execution: tuple[ProvenanceRecorder, models.StageExecution],
