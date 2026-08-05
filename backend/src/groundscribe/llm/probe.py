@@ -39,7 +39,16 @@ from groundscribe.provenance.schemas import TokenUsage
 #: establishes that a call *works*, not that the model is any good at editing. A
 #: pre-flight that cost real money is a pre-flight nobody runs before the run
 #: that needed it.
-PROBE_PROMPT = "Reply with the single word: ready."
+#:
+#: It asks for JSON, and the word matters rather than the shape. ``_demanding``
+#: sends whatever ``structured_output_mode`` the stages set, and OpenAI's
+#: ``json_object`` refuses with a 400 unless the word "json" appears somewhere in
+#: the messages. A plain-text probe therefore failed every ``json_mode`` route on
+#: that provider — always, including configurations that ran fine — under a
+#: message telling the reader to delete the parameter, which would have broken a
+#: working file. Providers that do not care are unaffected: it is still one short
+#: answer.
+PROBE_PROMPT = 'Reply with this json object and nothing else: {"status": "ready"}'
 
 #: A ceiling low enough that a probe of a whole routing policy is rounding error.
 PROBE_MAX_TOKENS = 16

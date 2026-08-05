@@ -52,20 +52,65 @@ GAP_STAGE = "generate_gap_questions"
 ANSWER_STAGE = "answer_source_questions"
 
 
+def _rounds_already_asked(context: PipelineContext, execution: models.StageExecution) -> int:
+    """How many times this run has already put questions to the author.
+
+    Counted from the executions the run already recorded rather than kept in a
+    column, for the reason phase 15 gave about routing profiles: two records of
+    one fact eventually disagree, and the one a person is shown is not
+    necessarily the one that decided anything. The executions are the fact.
+
+    Counted from the *gaps*, not from the executions that made them, because
+    only a round that surfaced something actually asked the author anything. A
+    gap analysis that found nothing blocking never put a question on screen, and
+    charging it against the budget would let a clean first pass silently consume
+    the only round a later one needed. A surfaced gap row names the execution
+    that surfaced it, so "how many rounds asked" is a count of distinct such
+    executions and needs no counter of its own.
+    """
+    asked = context.session.scalars(
+        select(domain_models.SourceGap.created_by_execution_id)
+        .where(
+            domain_models.SourceGap.project_id == context.project_id,
+            domain_models.SourceGap.surfaced.is_(True),
+            domain_models.SourceGap.created_by_execution_id.is_not(None),
+            domain_models.SourceGap.created_by_execution_id != execution.id,
+        )
+        .distinct()
+    )
+    return len(set(asked))
+
+
 def surfaced_gaps(
-    report: GapReport, *, selected_high_value: Collection[str] = ()
+    report: GapReport,
+    *,
+    selected_high_value: Collection[str] = (),
+    limit: int | None = None,
 ) -> tuple[SourceGapQuestion, ...]:
     """The questions to put to the author, and only those.
 
-    Blocking gaps always surface: the article cannot be written honestly without
-    them. Everything else surfaces only if the author selected it — including
+    Blocking gaps qualify first: the article cannot be written honestly without
+    them. Everything else qualifies only if the author selected it — including
     optional gaps, because a question the author asked for is a question they
     want, whatever the model graded it.
+
+    ``limit`` then caps what actually reaches them, blocking gaps first. The
+    module docstring above has always named over-questioning as the risk here,
+    but the suppression policy only covered high-value and optional gaps, so a
+    report with fifteen blocking gaps put fifteen questions on the screen and got
+    none of them answered. A cap is what makes "blocking gaps always surface"
+    survivable — the rest are still stored, still unresolved, and still say what
+    the run does not know.
     """
     chosen = set(selected_high_value)
-    return tuple(
+    qualifying = [
         gap for gap in report.gaps if gap.priority is GapPriority.BLOCKING or gap.id in chosen
-    )
+    ]
+    # Blocking first, and otherwise in the order the model produced them: it
+    # ordered them itself, and re-sorting on anything else would be this function
+    # inventing a priority the report does not carry.
+    qualifying.sort(key=lambda gap: gap.priority is not GapPriority.BLOCKING)
+    return tuple(qualifying if limit is None else qualifying[:limit])
 
 
 @dataclass(frozen=True)
@@ -129,7 +174,26 @@ class GenerateGapQuestions:
             override=self._override,
         )
         report = generated.value
-        surfaced = {gap.id for gap in surfaced_gaps(report, selected_high_value=self._selected)}
+        limits = context.engine.policy.source_questions
+        rounds_taken = _rounds_already_asked(context, execution)
+        may_ask = rounds_taken < limits.max_rounds
+
+        # Nothing surfaces once the rounds are spent. Surfacing questions the run
+        # will not wait for would put a queue on screen that answering cannot
+        # affect, which is worse than the silence: the gaps are still stored, and
+        # still unresolved, so what is missing stays visible where it is true.
+        surfaced = (
+            {
+                gap.id
+                for gap in surfaced_gaps(
+                    report,
+                    selected_high_value=self._selected,
+                    limit=limits.max_surfaced_per_round,
+                )
+            }
+            if may_ask
+            else set()
+        )
         rows = self._store(context, execution, report, surfaced)
 
         context.recorder.record_decision(
@@ -141,11 +205,24 @@ class GenerateGapQuestions:
             inputs={
                 "gaps": [{"id": gap.id, "priority": gap.priority.value} for gap in report.gaps],
                 "selected_high_value": list(self._selected),
+                "rounds_already_asked": rounds_taken,
+                "max_rounds": limits.max_rounds,
+                "max_surfaced_per_round": limits.max_surfaced_per_round,
             },
             outcome=f"{len(surfaced)} of {len(report.gaps)} surfaced",
             rationale=(
-                "blocking gaps always surface; high-value and optional ones only when the "
-                "author selected them, because over-questioning is what stops answers coming"
+                (
+                    "blocking gaps surface first, capped per round because "
+                    "over-questioning is what stops answers coming; high-value and "
+                    "optional ones only when the author selected them"
+                )
+                if may_ask
+                else (
+                    f"the question rounds are spent ({rounds_taken} of "
+                    f"{limits.max_rounds}), so extraction completes on what is known "
+                    "and the remaining gaps stay recorded as unresolved rather than "
+                    "parking the run again"
+                )
             ),
         )
         snapshot = context.recorder.record_output(
@@ -165,13 +242,22 @@ class GenerateGapQuestions:
             invocations=generated.attempts,
             usage=generated.usage,
             # Where the run goes next is this stage's finding, not its declaration:
-            # a blocking gap parks it for the author, nothing blocking completes it.
+            # a surfaced gap parks it for the author, nothing surfaced completes
+            # it. With the rounds spent nothing surfaces, so the second branch is
+            # also what ends the loop — the cap is expressed as "stop asking",
+            # not as a separate exit, because a run that asked its last question
+            # and a run that had none left to ask are in the same position.
             exit_action=(
                 WorkflowAction.REQUEST_ANSWERS
                 if analysis.blocking
                 else WorkflowAction.COMPLETE_EXTRACTION
             ),
-            detail={"gaps": len(rows), "surfaced": len(analysis.surfaced)},
+            detail={
+                "gaps": len(rows),
+                "surfaced": len(analysis.surfaced),
+                "round": rounds_taken + 1,
+                "rounds_allowed": limits.max_rounds,
+            },
         )
 
     def _store(

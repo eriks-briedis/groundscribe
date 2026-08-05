@@ -24,11 +24,15 @@ through for being local.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from groundscribe.app.bootstrap import provider_clients
 from groundscribe.domain.enums import ArticleDepth
 from groundscribe.domain.schemas import EditorialConstraints
+from groundscribe.llm.adapters.chatgpt import CODEX_AUTH_FILE_ENV, ChatGPTClient
 from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV, OllamaClient
 from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
 from groundscribe.llm.pricing import ModelPrice, PricingTable
@@ -39,14 +43,41 @@ ADDRESS = "http://localhost:11434"
 
 
 @pytest.fixture(autouse=True)
-def _no_ambient_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_ambient_configuration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Start every test from an unconfigured machine.
 
     Without this the suite would pass or fail depending on the developer's own
     shell, and the "nothing configured" test would be the first to go.
+
+    ``chatgpt`` needed the rule extended past the environment, because its
+    configuration is not an environment variable: it is a *file*, at a
+    well-known path, put there by a different tool. On any machine whose owner
+    has ever run ``codex login`` the provider was already configured before the
+    suite started — which is a fair description of the risk the adapter carries,
+    and a terrible property for a test to have.
     """
     monkeypatch.delenv(OPENAI_API_KEY_ENV, raising=False)
     monkeypatch.delenv(OLLAMA_BASE_URL_ENV, raising=False)
+    monkeypatch.setenv(CODEX_AUTH_FILE_ENV, str(tmp_path / "no-such-auth.json"))
+
+
+def codex_login(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """What `codex login` leaves behind, minus the part that is real."""
+    path = tmp_path / "auth.json"
+    path.write_text(
+        json.dumps(
+            {
+                "tokens": {
+                    "access_token": "header.body.signature",
+                    "refresh_token": "refresh",
+                    "account_id": "acct-1",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(CODEX_AUTH_FILE_ENV, str(path))
+    return path
 
 
 def constraints(*allowed: str) -> EditorialConstraints:
@@ -124,6 +155,48 @@ def test_both_can_be_configured_at_once(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv(OLLAMA_BASE_URL_ENV, ADDRESS)
 
     assert set(provider_clients()) == {"openai", "ollama"}
+
+
+def test_a_codex_login_makes_chatgpt_reachable_under_the_name_routing_uses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Configured by a file rather than a variable, because that is where the
+    credential already lives — and registered under the name a route names."""
+    codex_login(tmp_path, monkeypatch)
+
+    clients = provider_clients()
+
+    assert set(clients) == {"chatgpt"}
+    assert isinstance(clients["chatgpt"], ChatGPTClient)
+
+
+def test_a_half_written_credential_does_not_register_chatgpt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An interrupted or partial login leaves a file that parses and cannot be
+    used. Registering on its mere presence would turn "no account id" into a
+    stage failure halfway through a run, rather than a provider that was never
+    offered."""
+    path = codex_login(tmp_path, monkeypatch)
+    path.write_text(json.dumps({"tokens": {"access_token": "a.b.c"}}), encoding="utf-8")
+
+    assert provider_clients() == {}
+
+
+def test_chatgpt_is_reachable_without_being_permitted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gate that matters most for this provider, because its credential is
+    not this application's — it belongs to the Codex CLI and is sitting at a
+    well-known path on any machine whose owner has ever logged in there. Finding
+    it says nothing about whether this pipeline was meant to spend it, so a
+    project still has to name `chatgpt` before a single segment moves."""
+    codex_login(tmp_path, monkeypatch)
+
+    assert "chatgpt" in provider_clients()
+    assert constraints().permits_provider("chatgpt") is False
+    assert constraints("openai").permits_provider("chatgpt") is False
+    assert constraints("chatgpt").permits_provider("chatgpt") is True
 
 
 @pytest.mark.parametrize(

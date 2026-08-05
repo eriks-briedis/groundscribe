@@ -189,6 +189,26 @@ async def test_the_probe_call_is_deliberately_tiny() -> None:
     assert len(probed.prompt) < 200
 
 
+async def test_the_probe_prompt_satisfies_the_json_mode_it_sends() -> None:
+    """`_demanding` forwards the stages' ``structured_output_mode``, and OpenAI's
+    ``json_object`` refuses with a 400 unless the messages mention json.
+
+    So the two have to agree. When they did not, every ``json_mode`` route on that
+    provider failed its pre-flight — including working ones — and the failure
+    advised deleting the parameter, which would have broken the file it was run to
+    protect.
+    """
+    client = Answering()
+
+    await probe_models(
+        two_model_policy(), clients={"test-provider": client}, pricing=PricingTable()
+    )
+
+    probed = client.payload_for(JUDGE)
+    assert probed.runtime is not None
+    assert "json" in probed.prompt.lower(), "the probe sends json mode; the prompt must earn it"
+
+
 async def test_a_failure_is_reported_with_the_providers_own_words() -> None:
     """Reported, not raised: an exception on the first bad model would hide every
     model after it, which is precisely what somebody configuring an installation

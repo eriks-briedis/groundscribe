@@ -7,10 +7,11 @@
 # whenever a route, limit or threshold changes — superseded versions live in git
 # history, and a run that cannot name its policy version cannot be explained
 # afterwards. Phase 08's scoring loop resolves through this same file.
-version: "1"
+version: "2"
 description: >
   Bounded revision: send each failure to the stage that can actually correct it,
   cap the automatic rounds, and hand the run to a person when it stops improving.
+  Version 2 adds `source_questions`, which bounds the one loop that was not.
 
 # Failure class → correcting stage. `target` is the default; `alternatives` are
 # the other ends the same rule legitimately has, chosen by the caller when it
@@ -67,6 +68,27 @@ limits:
   substantive: 3
   style: 2
   architecture: 1
+
+# How much the pipeline may ask the author about the source before it proceeds.
+#
+# The gap loop was the one cycle here with no bound at all. Answers do not patch
+# the source model — they re-enter extraction, which regenerates the gap report,
+# which finds fresh blocking gaps and parks the run again. Any real source always
+# has something absent, so it ended only when the model ran out of things to ask,
+# which on a 47-claim source model it does not.
+#
+# Both numbers bound the machine, not the author. Gaps that are not asked are
+# still stored and still visible as unresolved: the run proceeds knowing what it
+# does not know, and a person who wants another round can answer more and re-run
+# extraction on purpose.
+source_questions:
+  # One pass. A second round exists to catch a blocking gap that only became
+  # visible once the first answers were folded in — real, but it costs a full
+  # re-extraction, and it is the round that reopens the loop.
+  max_rounds: 1
+  # Few enough to answer in one sitting. The gap module's own docstring names
+  # this as the failure: "an author faced with fifteen questions answers none."
+  max_surfaced_per_round: 5
 
 # When to stop and ask a human. These are the numbers plan/05's six stagnation
 # conditions compare against.

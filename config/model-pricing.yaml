@@ -34,18 +34,53 @@
 # Bump `version` when you change a price. A run recorded under the old numbers
 # should still be explicable, and git holds the previous table.
 
-version: "1"
+version: "2"
 description: >
-  Empty until an operator enters their own rates. Cost is reported as unknown
-  rather than guessed.
+  Standard-tier OpenAI list prices. gpt-5 is corroborated against this
+  installation's own metered spend; gpt-5-mini is not yet. Check both against
+  your billing page before trusting a cost figure to two decimal places.
 currency: usd
 
-models: {}
-  # gpt-5:
-  #   input_per_million: 0.00
-  #   output_per_million: 0.00
-  #   note: copied from the pricing page on YYYY-MM-DD
+models:
+  gpt-5:
+    input_per_million: 1.25
+    output_per_million: 10.00
+    note: >
+      Reconstructed from a real run on 2026-08-05 and corroborated, not copied
+      from the pricing page. The extraction of project cc6c4be4 spent 161,017
+      input and 77,690 output tokens across three attempts; these rates put that
+      at $0.978, against an observed charge of "almost $1". Two unknowns cancel
+      in that check — a negotiated rate would show up here as a wrong number that
+      happens to fit, and cached input is billed lower than the input rate, so a
+      run with cache hits would imply a slightly higher true rate. Replace with
+      the figures from your billing page when you next have it open.
+
+  # Reached over a ChatGPT subscription (`chatgpt` provider), never metered.
   #
-  # gpt-5-mini:
-  #   input_per_million: 0.00
-  #   output_per_million: 0.00
+  # Zero here is a *measurement*, not the absence of one, which is the one case
+  # the rest of this file's rule does not cover: an unpriced model reports null
+  # because nobody knows what it costs, and this one reports 0.00 because the
+  # marginal cost of the next call is genuinely nothing. It is already paid for.
+  #
+  # What that hides is that the call is not free of *consequence* — the
+  # subscription's rate limit is the resource it spends, and a run can exhaust
+  # that while every cost figure reads $0.00. `writer llm quota` is where that
+  # shows up; this entry exists so a project mixing profiles still totals.
+  gpt-5.5:
+    input_per_million: 0.00
+    output_per_million: 0.00
+    note: >
+      Subscription, not metered: zero is the real marginal price. Capacity is
+      counted instead — see `writer llm quota` and llm/quota.py. Do NOT copy
+      this entry for a metered gpt-5.5 reached with an API key; that model costs
+      money and would need its own table under a different provider.
+
+  gpt-5-mini:
+    input_per_million: 0.25
+    output_per_million: 2.00
+    note: >
+      List price, NOT corroborated: nothing in this installation has billed a
+      mini call yet, so unlike the entry above there is no spend to check it
+      against. It is here because every fallback rung routes to this model and an
+      unpriced fallback makes the cost of a *failed* run unknowable — which is
+      the run whose cost most wants explaining. Treat it as provisional.

@@ -29,6 +29,7 @@ from groundscribe.provenance.redaction import Redactor
 from groundscribe.stages.base import PipelineContext
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.engine import WorkflowEngine
+from groundscribe.workflow.policy import WorkflowPolicy
 from groundscribe.workflow.states import WorkflowState
 from provenance_helpers import make_recorder, seed_project
 
@@ -82,6 +83,7 @@ def scripted_context(
     constraints: EditorialConstraints | None = None,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
     redactor: Redactor | None = None,
+    policy: WorkflowPolicy | None = None,
 ) -> tuple[PipelineContext, FakeLLMClient]:
     """A context plus the fake behind it, for tests that script model answers.
 
@@ -97,6 +99,7 @@ def scripted_context(
         constraints=constraints if constraints is not None else DEFAULT_CONSTRAINTS,
         state=state,
         redactor=redactor,
+        policy=policy,
     )
     return context, fake
 
@@ -109,6 +112,7 @@ def build_context(
     constraints: EditorialConstraints = DEFAULT_CONSTRAINTS,
     state: WorkflowState = WorkflowState.SOURCE_INGESTED,
     redactor: Redactor | None = None,
+    policy: WorkflowPolicy | None = None,
 ) -> PipelineContext:
     """A pipeline context over a seeded project, a live run, and a fake transport.
 
@@ -118,7 +122,9 @@ def build_context(
     project_id = seed_project(session)
     recorder = make_recorder(session, snapshots, redactor=redactor)
     run = recorder.start_run(project_id=project_id)
-    engine = WorkflowEngine(recorder=recorder, snapshots=snapshots, run=run, state=state)
+    engine = WorkflowEngine(
+        recorder=recorder, snapshots=snapshots, run=run, state=state, policy=policy
+    )
     return PipelineContext(
         engine=engine,
         recorder=recorder,

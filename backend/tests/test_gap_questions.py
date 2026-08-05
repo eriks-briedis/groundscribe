@@ -46,9 +46,32 @@ from groundscribe.stages.questions import (
 )
 from groundscribe.stages.schemas import GapReport, SourceGapQuestion, SourceModel
 from groundscribe.storage.snapshot_store import SnapshotStore
-from groundscribe.workflow.states import WorkflowState
+from groundscribe.workflow.policy import (
+    SourceQuestionLimits,
+    WorkflowPolicy,
+    default_workflow_policy,
+)
+from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from stage_helpers import scripted_context
 from test_extraction import ingest_golden, script
+
+
+def policy_allowing(*, rounds: int = 1, surfaced: int = 5) -> WorkflowPolicy:
+    """The shipped policy with the question limits moved.
+
+    Named rather than inlined because two very different kinds of test want it:
+    one that needs *more* questions than the cap allows to exercise something
+    else, and one whose whole subject is the cap. Both should be reading the
+    shipped policy and changing one field, so neither drifts from what actually
+    ships.
+    """
+    return default_workflow_policy().model_copy(
+        update={
+            "source_questions": SourceQuestionLimits(
+                max_rounds=rounds, max_surfaced_per_round=surfaced
+            )
+        }
+    )
 
 
 def gap(
@@ -179,6 +202,99 @@ async def test_no_blocking_gap_completes_the_extraction(
     assert context.engine.state is WorkflowState.SOURCE_MODEL_READY
 
 
+def test_a_round_puts_a_bounded_number_of_questions_on_screen() -> None:
+    """The module has always named over-questioning as the risk — "an author
+    faced with fifteen questions answers none" — and then capped only the
+    high-value and optional gaps. Six blocking gaps meant six questions.
+
+    Blocking gaps still come first; the cap decides how many of them arrive.
+    """
+    report = GapReport.model_validate(SIX_GAPS)
+
+    surfaced = surfaced_gaps(report, limit=5)
+
+    assert len(surfaced) == 5
+    assert [item.id for item in surfaced] == [f"g{n}" for n in range(1, 6)]
+
+
+def test_the_cap_takes_blocking_gaps_before_selected_ones() -> None:
+    """Which five arrive is not arbitrary. A selected high-value question is one
+    the author asked for, but a blocking one is what the article cannot be
+    written honestly without, so it goes first when only some fit."""
+    report = GapReport.model_validate(
+        {
+            "schema_version": 1,
+            "gaps": [
+                gap("h1", "high_value", "Chosen but not blocking?", "The author asked."),
+                gap("b1", "blocking", "Blocking one?", "Cannot write without it."),
+                gap("b2", "blocking", "Blocking two?", "Cannot write without it."),
+            ],
+        }
+    )
+
+    surfaced = surfaced_gaps(report, selected_high_value=("h1",), limit=2)
+
+    assert [item.id for item in surfaced] == ["b1", "b2"]
+
+
+async def test_a_second_round_of_questions_is_not_asked(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The loop this closes.
+
+    Answers do not patch the source model — they re-enter extraction, which
+    regenerates the gap report, which finds fresh blocking gaps and parks the run
+    again. Nothing counted the rounds, and a real source always has something
+    absent, so the cycle ended only if the model ran out of things to ask. On a
+    47-claim source model it does not: the run that prompted this had been round
+    three and climbing.
+    """
+    context, model_client = scripted_context(
+        db_session, snapshot_store, policy=policy_allowing(rounds=1)
+    )
+    first = await extract_and_analyse(context, model_client)
+    assert context.engine.state is WorkflowState.SOURCE_QUESTIONS_REQUIRED
+    assert [row.ref for row in first.analysis.surfaced] == ["g1"], "round one asks"
+
+    # The same source asked again after the answers came back, and the model
+    # still finds something blocking — which it will, on any real source.
+    model_client.script_response(GAP_STAGE, GAPS)
+    second = await StageRunner(context).run(
+        GenerateGapQuestions(source_model=first.model), transitions=False
+    )
+
+    assert second.value.surfaced == (), "round two asks nothing"
+    assert second.exit_action is WorkflowAction.COMPLETE_EXTRACTION
+    # The gaps are not lost by not being asked: the run proceeds knowing what it
+    # does not know, which is the honest version of proceeding.
+    assert len(second.value.gaps) == len(GAPS["gaps"])
+    assert all(not row.surfaced for row in second.value.gaps)
+
+
+async def test_a_round_that_asked_nothing_does_not_spend_the_budget(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Only rounds that surfaced something count against the cap.
+
+    A gap analysis finding nothing blocking never put a question on screen. If
+    that consumed the single allowed round, a clean first pass would silently
+    spend the round a later one — after re-extraction, over a bigger source
+    model — actually needed.
+    """
+    context, model_client = scripted_context(
+        db_session, snapshot_store, policy=policy_allowing(rounds=1)
+    )
+    first = await extract_and_analyse(context, model_client, NO_BLOCKING_GAPS)
+    assert first.analysis.surfaced == (), "nothing was asked"
+
+    model_client.script_response(GAP_STAGE, GAPS)
+    second = await StageRunner(context).run(
+        GenerateGapQuestions(source_model=first.model), transitions=False
+    )
+
+    assert [row.ref for row in second.value.surfaced] == ["g1"], "the round was still available"
+
+
 async def test_gaps_are_persisted_with_their_priority_question_and_reason(
     db_session: Session, snapshot_store: SnapshotStore
 ) -> None:
@@ -207,8 +323,15 @@ async def test_the_queue_offers_the_surfaced_questions_and_takes_all_six_respons
     Five of the six close the question. ``DEFERRED`` deliberately does not: a
     postponed question is still pending, and marking it resolved would lose the
     only record that the author meant to come back to it.
+
+    Runs with the per-round cap raised, because the subject here is the six
+    *responses* and it needs six questions on screen to exercise one of each.
+    Under the shipped cap of five this test would silently be testing five of
+    them — which is exactly what a cap is for, and exactly not what this asserts.
     """
-    context, model_client = scripted_context(db_session, snapshot_store)
+    context, model_client = scripted_context(
+        db_session, snapshot_store, policy=policy_allowing(surfaced=len(AnswerResponse))
+    )
     await extract_and_analyse(context, model_client, SIX_GAPS)
 
     queue = open_question_queue(context)

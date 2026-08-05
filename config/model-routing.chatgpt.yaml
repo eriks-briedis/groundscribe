@@ -1,0 +1,283 @@
+# Per-stage model routing — the `chatgpt` profile (plan/04, phase 15).
+#
+# Runs every stage against a ChatGPT subscription through the Codex Responses
+# backend, so a run spends plan capacity instead of API credits. Selected with
+# `writer project routing <project-id> --profile chatgpt`.
+#
+# Derived from the `openai` profile — same stages, same order, same per-stage
+# reasoning about which need judgement and which need prose. What changed is
+# everything the backend does not let you say, and that is most of the file.
+#
+# ---------------------------------------------------------------------------
+# What this backend takes away, and why the file looks so bare
+# ---------------------------------------------------------------------------
+#
+# Each of these was established by asking it, not by reading a page.
+#
+# **No `max_output_tokens`, anywhere.** Sending one is `400 Unsupported
+# parameter: max_output_tokens`. So the entire sizing rule the `openai` profile
+# is built on — answer plus reasoning headroom — has nothing to attach to here.
+# That cuts both ways and it is worth being clear about which:
+#
+#   - truncation-by-budget stops being a failure mode, because there is no
+#     budget to exceed. The failure that cost this project two afternoons cannot
+#     happen on this profile.
+#   - and nothing bounds a runaway answer either. On the metered profile a
+#     ceiling is also a spend limit; here the only limits are the model's own
+#     sense of when it is finished and the stage's `timeout_seconds`. A stage
+#     that should be brief has to be told so by its prompt.
+#
+# **One model.** `gpt-5.5` is served and nothing else is: `gpt-5`, `gpt-5-mini`,
+# `gpt-5-codex`, `gpt-5.5-codex`, `gpt-5.5-mini`, `o3` and `gpt-4.1` each answer
+# *"not supported when using Codex with a ChatGPT account"*. So the
+# flagship/mini split the `openai` profile is organised around does not exist,
+# and a fallback rung has nowhere to escalate to. Fallbacks are therefore
+# omitted rather than pointed at the same model — a second identical attempt is
+# what the transport retry already does, and a rung that changes nothing would
+# read as a second chance the run does not actually have.
+#
+# The exception is `extract_source_truth`, which keeps one, for the reason its
+# note in the `openai` profile gives: it is the artefact nothing downstream can
+# correct, and a genuine second attempt at the same call is worth having there
+# even when it cannot be a *better* call.
+#
+# **No `context_window`, no `temperature`, no `top_p`** — as on the `openai`
+# profile, and for the same reasons. `reasoning_effort` carries the gradient.
+#
+# ---------------------------------------------------------------------------
+# `native_schema` everywhere, and it is the reason this profile is worth using
+# ---------------------------------------------------------------------------
+#
+# The backend honours strict `json_schema`. Asked with a schema it returns that
+# schema; asked without one, the same prompt came back naming a claim's body
+# `metric_change` with `before`/`after` objects nobody asked for. Strict mode is
+# what makes a stage validate first time instead of paying for two wrong shapes,
+# and on a plan that pays in rate limit rather than dollars, "paying" means
+# capacity you cannot buy more of until the window rolls.
+#
+# ---------------------------------------------------------------------------
+# Before your first run on this profile
+# ---------------------------------------------------------------------------
+#
+#   codex login                                  # writes ~/.codex/auth.json
+#   uv run writer llm probe --profile chatgpt    # calls the model, once
+#   uv run writer llm quota                      # what you have spent lately
+#
+# Three gates, not one, exactly as with the metered provider. The credential
+# file makes `chatgpt` *reachable*; a project naming `chatgpt` in
+# `allowed_providers` makes it *permitted*; selecting this profile decides where
+# the calls go. The credential is the one to think hardest about: it is not this
+# application's, it is the Codex CLI's, and it is sitting in a well-known path
+# on any machine whose owner has ever logged in there.
+#
+# Costs no money and is not free. `config/model-pricing.yaml` prices `gpt-5.5`
+# at 0.00, which is the true marginal price, so every cost figure on this
+# profile reads $0.00 and means it. What a run actually spends is subscription
+# capacity, and `writer llm quota` is the only place that shows.
+version: "1-chatgpt"
+description: >
+  A ChatGPT subscription over the Codex Responses backend. One model, no output
+  ceilings, strict schemas. Capacity is the budget, not money.
+
+# Unrouted stages land here. There is only one model, so this is conservative in
+# the only dimension left: the lowest reasoning effort.
+default:
+  primary:
+    provider: chatgpt
+    model: gpt-5.5
+    reasoning_effort: low
+    structured_output_mode: native_schema
+    timeout_seconds: 300.0
+
+stages:
+  # Structure matters more than style here, and a schema violation costs a
+  # repair round-trip. No seed: the backend takes none, so re-runs of the same
+  # source are not reproducible on this profile in the way they are on the
+  # others. That is a real loss, and it is the price of the subscription.
+  extract_claims:
+    rationale: >
+      Structured fidelity dominates; strict schema is what supplies it here,
+      since determinism cannot be.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # Extraction is the one place a mistake is permanent — everything downstream
+  # is checked against the source model, so a claim misclassified here is wrong
+  # in every article that follows. The highest reasoning effort in the file, and
+  # the longest timeout: with no output ceiling, a long answer is bounded by the
+  # clock and nothing else, and this stage's answer has measured 22–35k tokens.
+  extract_source_truth:
+    rationale: >
+      Source truth is the one artefact that is not disposable; structured
+      fidelity and reproducibility dominate everything else.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 1800.0
+    # The only fallback in this file. It cannot escalate — there is nowhere to
+    # escalate to — so it is a genuine second attempt at the same call, which is
+    # what helps against the transient failure that actually reaches it. Kept
+    # because this is the artefact nothing downstream can correct.
+    fallback:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 1800.0
+
+  # Gap analysis is a judgement about *absence*, which is harder than extraction
+  # and much cheaper to get wrong in the safe direction: an unnecessary question
+  # costs the author a moment, a missed blocking gap costs the article's honesty.
+  generate_gap_questions:
+    rationale: >
+      Judging what is missing needs the model's full attention; the cost of a
+      false positive is one ignored question, of a false negative a misleading
+      article.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # Architecture is where breadth earns its keep: the point is to surface
+  # *alternatives*, and the decision record is only worth reading if the
+  # alternatives were real. Bought with reasoning effort, the sampling knobs
+  # being unavailable here as on the metered profile.
+  propose_content_architecture:
+    rationale: >
+      Comparing competing shapes needs some exploration; the decision record is
+      only worth reading if the alternatives were real.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # The brief is a contract the drafter is bound by and the validator checks
+  # against. On the other profiles it takes a fixed seed so two drafts of the
+  # same article stay comparable; that is not available here, so the brief will
+  # vary between runs and comparisons across them are worth less.
+  generate_article_brief:
+    rationale: >
+      A contract the draft is judged against; the creativity belongs in the
+      draft, not in the specification.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # The phase-06 placeholder for what phase 07 now routes as
+  # `generate_initial_draft`; kept so a run recorded under it can still be
+  # explained. Nothing routes here.
+  draft_article:
+    rationale: Voice and readability dominate; the draft is disposable.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: prompted
+      timeout_seconds: 1200.0
+
+  # The draft is the one stage whose output is mostly prose, and the only one
+  # that writes thousands of words in a single call — hence the long timeout,
+  # which on this profile is the only bound there is.
+  generate_initial_draft:
+    rationale: >
+      Readability dominates and the draft is disposable; the declarations around
+      the prose are what the pipeline actually checks.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      timeout_seconds: 1200.0
+
+  # Review judges rather than creates, and reads the draft *and* the source
+  # model it is checked against.
+  review_substantively:
+    rationale: >
+      Judging fidelity is the hardest thing asked of the model; without a seed,
+      round-to-round comparisons carry more noise here than elsewhere.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # Planning is a judgement about *other* judgements — which feedback wins when
+  # two disagree — and this is the reasoning read most often afterwards.
+  create_revision_plan:
+    rationale: >
+      Reconciling contradictory feedback is the hardest judgement in the loop and
+      the one whose reasoning is read most often afterwards.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # The rewrite is prose again, and bound by a plan and a previous version.
+  rewrite_substantively:
+    rationale: >
+      Prose quality matters, but the rewrite is constrained by a plan; less
+      latitude than the first draft, for the same reason.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      timeout_seconds: 1200.0
+
+  # The voice pass is the one stage whose whole job is how the prose sounds.
+  # Every edit it makes is quoted back and checked against the text it claims to
+  # have replaced, so latitude costs a refused pass rather than a silent rewrite.
+  align_voice:
+    rationale: >
+      Style judgement wants range; the edit-level checks are what make that safe
+      here, not determinism.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      timeout_seconds: 1200.0
+
+  # Scoring is the most consequential judging call in the pipeline: it decides
+  # whether the loop runs again. It is also the stage that loses most by having
+  # no seed — scores are compared against each other, and the stagnation
+  # detection that decides when to stop reads those comparisons. Worth knowing
+  # before running a long revision loop on this profile.
+  score_article:
+    rationale: >
+      Scores are compared against each other, so noise between runs costs more
+      here than anywhere else — and this profile cannot pin it down.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
+
+  # Validation must be boring and repeatable. It judges, it does not create, and
+  # it runs on every loop — so it is the one stage at low effort. On the other
+  # profiles it also drops to the cheap model; there is no cheap model here.
+  validate_article:
+    rationale: Deterministic judging; it runs on every loop, so it stays cheap.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: low
+      structured_output_mode: native_schema
+      timeout_seconds: 480.0

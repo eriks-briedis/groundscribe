@@ -147,6 +147,41 @@ class StagnationThresholds(BaseModel):
     voice_pass_rounds: int = Field(default=2, ge=1)
 
 
+class SourceQuestionLimits(BaseModel):
+    """How much the pipeline may ask the author before it gets on with it.
+
+    The gap loop is the one cycle in this workflow that had no bound. Answers do
+    not patch the source model — they re-enter extraction, which regenerates the
+    gap report, which finds fresh blocking gaps and parks the run again. A source
+    of any size always has *something* absent, so the cycle terminated only if the
+    model happened to run out of things to ask.
+
+    Two separate ceilings, because two separate things were unbounded:
+
+    ``max_rounds`` bounds how many times a person is sent back to the queue.
+    ``max_surfaced_per_round`` bounds how many questions arrive at once, which
+    the gap module's own docstring already identified as the thing that stops
+    answers coming: "an author faced with fifteen questions answers none". It had
+    a suppression policy for high-value and optional gaps and none for blocking
+    ones, which is how a round of fifteen happens.
+
+    Unasked gaps are not lost. They are stored like every other, with
+    ``surfaced`` false, and stay visible as unresolved — a run proceeds *knowing*
+    what it does not know, which is the honest version of proceeding. Same
+    principle as the rewrite limits above: the numbers bound the machine, not the
+    author, who can always answer more and re-run extraction deliberately.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: Rounds of questions before extraction completes regardless. Zero means
+    #: never ask, which is a legitimate configuration for a source nobody can
+    #: add to — an archive, someone else's document — and not the default.
+    max_rounds: int = Field(default=1, ge=0)
+    #: How many questions one round may put to the author.
+    max_surfaced_per_round: int = Field(default=5, ge=1)
+
+
 @dataclass(frozen=True)
 class RoutingOutcome:
     """One routing resolution, with everything its decision record needs.
@@ -174,6 +209,7 @@ class WorkflowPolicy(BaseModel):
     routing: dict[FailureCategory, RoutingRule]
     limits: RewriteLimits = RewriteLimits()
     stagnation: StagnationThresholds = StagnationThresholds()
+    source_questions: SourceQuestionLimits = SourceQuestionLimits()
 
     @model_validator(mode="after")
     def _routes_every_failure_to_a_reachable_stage(self) -> Self:
@@ -263,6 +299,7 @@ __all__ = [
     "RewriteLimits",
     "RoutingOutcome",
     "RoutingRule",
+    "SourceQuestionLimits",
     "StagnationThresholds",
     "WorkflowPolicy",
     "WorkflowPolicyError",

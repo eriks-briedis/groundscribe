@@ -108,17 +108,36 @@ def test_the_shipped_table_loads_and_names_its_version() -> None:
     assert table.version
 
 
-def test_the_shipped_table_ships_no_prices_at_all() -> None:
-    """Deliberate, and the reason is worth failing a test over.
+def test_every_shipped_price_says_where_it_came_from() -> None:
+    """This replaces `test_the_shipped_table_ships_no_prices_at_all`, deleted on
+    2026-08-05 when the table was filled in — as that test's own docstring asked,
+    rather than adjusted around.
 
-    Nobody preparing this repository can know what a given account pays. A price
-    written in on a guess produces a cost metric that is confidently wrong, which
-    is worse than one that is honestly absent — the first gets believed. The file
-    carries the format and where to find the real numbers; the first person who
-    needs cost fills in two lines.
+    Its reasoning was that nobody preparing this repository can know what an
+    account pays, so a guessed price produces a cost metric that is confidently
+    wrong. That still holds. What changed is that this installation stopped
+    having to guess: a metered run spent 161,017 input and 77,690 output tokens
+    and was charged almost exactly what these rates predict.
 
-    If prices are ever shipped, this test should be deleted along with the
-    reasoning above, not quietly adjusted.
+    So the guard moves rather than disappears. An empty table made a wrong number
+    impossible by making every number impossible; what makes it checkable now is
+    that each entry carries the provenance of its figures, including which of
+    them is corroborated and which is still list price. A rate nobody can trace
+    is the one that gets believed.
     """
-    assert default_pricing().models == {}
-    assert default_pricing().price(USAGE, model="gpt-5") is None
+    table = default_pricing()
+
+    assert table.models, "the table is filled in; an empty one is now a regression"
+    for model, entry in table.models.items():
+        assert entry.note, f"{model} carries a price with no account of where it came from"
+
+
+def test_an_unpriced_model_is_still_unknown_rather_than_free() -> None:
+    """The rule the empty table used to enforce for everything, kept for whatever
+    is not in the table: a model nobody has priced costs `None`, never `0.00`.
+
+    Filling in two models does not make the third one free, and a fallback that
+    silently costed zero would understate exactly the runs — the ones that failed
+    over to another model — whose cost most wants explaining.
+    """
+    assert default_pricing().price(USAGE, model="some-model-nobody-priced") is None

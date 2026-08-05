@@ -22,6 +22,11 @@ from sqlalchemy.engine import Engine
 from groundscribe.app.runtime import Runtime
 from groundscribe.db import create_engine, read_only, session_factory
 from groundscribe.jobs.queue import JobQueue
+from groundscribe.llm.adapters.chatgpt import (
+    CODEX_AUTH_FILE_ENV,
+    ChatGPTClient,
+    has_credentials,
+)
 from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV, OllamaClient
 from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
 from groundscribe.llm.generation import StructuredGenerator
@@ -94,13 +99,22 @@ def provider_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMCli
     never be found, and the failure would read as "no client for ollama" on a
     machine that had configured one.
 
-    The two providers are configured by different *kinds* of fact, which is not an
-    inconsistency but the difference between them: OpenAI needs a credential, and
-    Ollama needs an address. Neither is registered by default. Requiring
-    ``OLLAMA_BASE_URL`` even though the adapter would default to localhost is the
-    same decision plan/00 made about silent network calls — a machine that happens
-    to be running Ollama for something else has not thereby volunteered it to this
-    application.
+    The three providers are configured by different *kinds* of fact, which is not
+    an inconsistency but the difference between them: OpenAI needs a credential,
+    Ollama needs an address, and ChatGPT needs a login someone else's tool
+    performed. None is registered by default. Requiring ``OLLAMA_BASE_URL`` even
+    though the adapter would default to localhost is the same decision plan/00
+    made about silent network calls — a machine that happens to be running Ollama
+    for something else has not thereby volunteered it to this application.
+
+    ``chatgpt`` is that rule at its sharpest, and the reason it is a separate
+    provider rather than a mode of ``openai``. Its credential is not this
+    application's: it belongs to the Codex CLI, it is sitting in a well-known
+    path on any machine whose owner has ever run ``codex login``, and finding it
+    there says nothing about whether this pipeline was meant to spend it. So the
+    file's presence registers the provider and nothing more — a project still has
+    to name ``chatgpt`` in ``allowed_providers``, and a routing profile still has
+    to send a stage there. Both are decisions a person makes, in that order.
     """
     table = pricing if pricing is not None else default_pricing()
     # A label, not a decision: the model each call uses comes from the stage's
@@ -113,6 +127,11 @@ def provider_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMCli
         clients[OpenAIClient.provider] = OpenAIClient(model=fallback_model, pricing=table)
     if os.environ.get(OLLAMA_BASE_URL_ENV, "").strip():
         clients[OllamaClient.provider] = OllamaClient(model=fallback_model, pricing=table)
+    if has_credentials():
+        # Not ``fallback_model``: this backend serves exactly one model and
+        # refuses every other id, so the label that would be a harmless
+        # placeholder elsewhere would name something that cannot answer.
+        clients[ChatGPTClient.provider] = ChatGPTClient(pricing=table)
     return clients
 
 
@@ -163,6 +182,7 @@ def build_runtime(*, clients: dict[str, LLMClient] | None = None, reading: bool 
 
 __all__ = [
     "BLOB_ROOT_ENV",
+    "CODEX_AUTH_FILE_ENV",
     "DATABASE_URL_ENV",
     "DEFAULT_DATABASE_URL",
     "KEY_ROOT_ENV",
