@@ -95,6 +95,7 @@ class JobQueue:
         returned job is always the one to watch.
         """
         key = dedupe_key or f"{run.id}:{job_type.value}"
+        self._free_stale(key)
         existing = self.active(key)
         if existing is not None and (not supersede or existing.status is JobStatus.RUNNING):
             return existing
@@ -131,8 +132,26 @@ class JobQueue:
         return job
 
     def active(self, dedupe_key: str) -> Job | None:
-        """The claimable job for ``dedupe_key``, if there is one."""
-        return self.session.scalars(select(Job).where(Job.active_key == dedupe_key)).one_or_none()
+        """The claimable job for ``dedupe_key``, if there is one.
+
+        Terminal jobs are excluded by status as well as by key. Freeing the key
+        is :meth:`_release`'s job and every path inside the queue goes through
+        it, so in principle the two can never disagree — but a row that reaches a
+        terminal status any other way keeps its key, and this lookup would then
+        hand back a job no worker will ever claim. What that produces is a queue
+        that accepts the work, reports the same finished job every time, and runs
+        nothing: the work becomes permanently unrequestable and nothing says so.
+
+        Observed after a job was cancelled by writing its status directly to stop
+        a runaway loop. The key survived, and every later attempt to queue that
+        stage returned the cancelled row.
+        """
+        return self.session.scalars(
+            select(Job).where(
+                Job.active_key == dedupe_key,
+                Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+            )
+        ).one_or_none()
 
     def get(self, job_id: str) -> Job | None:
         return self.session.get(Job, job_id)
@@ -302,6 +321,30 @@ class JobQueue:
         job.status = status
         job.active_key = None
         job.completed_at = at
+
+    def _free_stale(self, key: str) -> None:
+        """Release a key still held by a job that has already finished.
+
+        Releasing is :meth:`_release`'s job and every path in here goes through
+        it, so the two cannot disagree from inside the queue. A row that reaches
+        a terminal status any other way keeps its key, and the key is unique —
+        so the work becomes unqueueable: the lookup hands back a job no worker
+        will claim, and inserting a replacement violates the constraint.
+
+        Repaired rather than refused, because the row is finished and the key
+        means "this work is in flight". Holding a key on behalf of something that
+        will never run is not a state worth preserving.
+        """
+        stale = self.session.scalars(
+            select(Job).where(
+                Job.active_key == key,
+                Job.status.notin_((JobStatus.PENDING, JobStatus.RUNNING)),
+            )
+        ).all()
+        for job in stale:
+            job.active_key = None
+        if stale:
+            self.session.flush()
 
 
 __all__ = ["DEFAULT_LEASE", "WORKER_LOST", "JobQueue"]

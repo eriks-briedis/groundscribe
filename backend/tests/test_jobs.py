@@ -428,3 +428,34 @@ def test_the_workflows_own_execution_is_never_orphaned(
     make_recorder(db_session, snapshot_store).start_stage(run, stage=WORKFLOW_STAGE)
 
     assert queue.orphaned_executions() == ()
+
+
+def test_a_terminal_job_that_kept_its_key_does_not_block_the_work(
+    db_session: Session, queue: JobQueue, run: models.PipelineRun
+) -> None:
+    """Freeing the key belongs to ``_release``; the lookup does not rely on it.
+
+    Every path inside the queue moves a job to a terminal status through
+    ``_release``, which clears the key, so the two cannot disagree from in here.
+    A row that reaches a terminal status any other way keeps it — and this lookup
+    would then return a job no worker will ever claim.
+
+    What that produces is the worst shape a queue has: the work is accepted, the
+    same finished job is handed back every time, nothing runs, and nothing says
+    so. Observed after a job was cancelled by writing its status directly to stop
+    a runaway loop; every later attempt to queue that stage returned the
+    cancelled row, and the run could not be moved again.
+    """
+    job = queue.enqueue(job_type=JobType.ALIGN_VOICE, run=run, payload={"article_id": "a1"})
+    key = job.active_key
+    assert key is not None
+
+    # Terminal, with the key still on it — the state the queue cannot reach on
+    # its own and has to survive anyway.
+    job.status = JobStatus.CANCELLED
+    db_session.flush()
+
+    assert queue.active(key) is None
+    replacement = queue.enqueue(job_type=JobType.ALIGN_VOICE, run=run, payload={"article_id": "a1"})
+    assert replacement.id != job.id
+    assert replacement.status is JobStatus.PENDING
