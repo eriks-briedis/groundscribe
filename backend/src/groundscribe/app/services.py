@@ -81,7 +81,12 @@ from groundscribe.privacy.traces import TraceDeletion, TraceExport, delete_trace
 from groundscribe.privacy.visibility import ProviderVisibility, provider_visibility
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, InterventionType
-from groundscribe.scoring.loop import high_water_version, score_history
+from groundscribe.scoring.loop import (
+    claims_to_correct,
+    high_water_version,
+    latest_evaluation,
+    score_history,
+)
 from groundscribe.stages.base import PipelineContext, StageRunner
 from groundscribe.stages.ingestion import IngestSource
 from groundscribe.stages.override import (
@@ -932,15 +937,7 @@ class ApplicationService:
         same source for the second is a loop.
         """
         resumed = self._resume(self.project_for_article(article_id))
-        evaluation = self._runtime.session.scalars(
-            select(models.EvaluationRun)
-            .join(
-                models.StageExecution,
-                models.StageExecution.id == models.EvaluationRun.stage_execution_id,
-            )
-            .where(models.StageExecution.pipeline_run_id == resumed.run.id)
-            .order_by(models.EvaluationRun.created_at.desc())
-        ).first()
+        evaluation = latest_evaluation(self._runtime.session, resumed.run)
         routed_as = evaluation.scores.get("routed_as") if evaluation is not None else None
         if not routed_as:
             # A failing score is the usual reason to be here and not the only
@@ -970,6 +967,32 @@ class ApplicationService:
         if stagnation.check.stalled:
             self._select_high_water(resumed)
             return self._settle(resumed)
+
+        # Before routing, and therefore before a round is charged, which is the
+        # whole point (IMPROVEMENTS §11). When the only thing standing between
+        # this article and publication is a sentence the source does not support,
+        # the remedy is the delete key: every floor is clear, nothing is
+        # blocking, and the score has already localised the defect to a span.
+        # Sending that back round costs a review, a plan, a rewrite, a voice pass
+        # and a score — the measured shape was 31 minutes, six model calls, 315k
+        # input tokens and ten triage decisions, to remove six words — and the
+        # rewrite churns enough prose on the way to earn fresh voice deductions
+        # the article was never sent back for.
+        #
+        # `prefer` is honoured over this. A person who has named a destination
+        # has looked at the article, and the trigger's own conservatism is an
+        # argument for letting them.
+        if prefer is None and (claims := claims_to_correct(evaluation)):
+            resumed.engine.apply(
+                A.CORRECT_CLAIMS,
+                actor_id=requested_by,
+                rationale=(
+                    f"the only failure is {len(claims)} unsupported claim(s) and every floor "
+                    "is clear; cutting them is the remedy, and it is not a revision round"
+                ),
+            )
+            settled = self._settle(resumed)
+            return self.advance(resumed.context.project_id) or settled
 
         resumed.engine.route(
             FailureCategory(routed_as),

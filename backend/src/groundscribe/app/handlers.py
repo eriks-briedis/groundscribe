@@ -43,11 +43,13 @@ from groundscribe.jobs.worker import JobHandler, JobOutcome, JobRequest
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType
+from groundscribe.scoring.loop import claims_to_correct, latest_evaluation
 from groundscribe.scoring.rubric import ScoringRubric, scoring_rubric
 from groundscribe.scoring.scoring import ScoreArticle
 from groundscribe.stages.architecture import ProposeContentArchitecture
 from groundscribe.stages.base import StageResult, StageRunner
 from groundscribe.stages.brief import GenerateArticleBrief
+from groundscribe.stages.claims import CorrectClaims
 from groundscribe.stages.context import ContextStrategy
 from groundscribe.stages.drafting import GenerateInitialDraft
 from groundscribe.stages.extraction import DEFAULT_TOKEN_BUDGET, ExtractSourceTruth
@@ -109,6 +111,7 @@ def stage_handlers(runtime: Runtime) -> dict[JobType, JobHandler]:
         JobType.REVIEW_ARTICLE: _bind(runtime, _review),
         JobType.PLAN_REVISION: _bind(runtime, _plan_revision),
         JobType.REWRITE_ARTICLE: _bind(runtime, _rewrite),
+        JobType.CORRECT_CLAIMS: _bind(runtime, _correct_claims),
         JobType.ALIGN_VOICE: _bind(runtime, _align_voice),
         JobType.SCORE_ARTICLE: _bind(runtime, _score),
     }
@@ -723,6 +726,45 @@ async def _rewrite(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
             voice=rerunning.voice(runtime, resumed, article_id),
+        ),
+        enter=False,
+        on_execution=request.opened,
+        parent=rerunning.parent,
+        transitions=not rerunning.is_rerun,
+    )
+
+
+async def _correct_claims(
+    runtime: Runtime, resumed: Resumed, request: JobRequest
+) -> StageResult[Any]:
+    """Cut the passages the score named, and nothing else (IMPROVEMENTS §11).
+
+    The claims come from the stored evaluation rather than the job payload, for
+    the reason `revise` reads `routed_as` from there: the decision was made when
+    the score was made. `claims_to_correct` is the same predicate `revise` used to
+    choose this edge, so the stage cannot be asked to cut something the run did
+    not qualify for — and if the two ever disagreed, this raises rather than
+    quietly correcting nothing.
+    """
+    session = resumed.context.session
+    article_id = _article_id(request)
+    rerunning = Rerunning.of(runtime, request)
+    version = rerunning.version(runtime, rehydrate.latest_version(session, article_id))
+    version_snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
+    claims = claims_to_correct(latest_evaluation(session, resumed.run))
+    if not claims:
+        raise rehydrate.MissingInput(
+            f"article {article_id} was sent to be corrected, but its last score names no "
+            "removable claim; the score it was routed on is not the score now on file"
+        )
+
+    return await StageRunner(resumed.context).run(
+        CorrectClaims(
+            **rerunning.applied(),
+            previous=rehydrate.article_document(runtime.snapshots, version_snapshot),
+            parent=version,
+            concept=rehydrate.concept(session, article_id),
+            claims=claims,
         ),
         enter=False,
         on_execution=request.opened,

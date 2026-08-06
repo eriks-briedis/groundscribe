@@ -240,6 +240,21 @@ stages:
       structured_output_mode: native_schema
       timeout_seconds: 1200.0
 
+  # Cutting a claim the source does not support, when that is the only thing
+  # standing between the article and publication (IMPROVEMENTS §11). Judgement
+  # rather than prose: the hard part is deciding whether a claim can be removed
+  # at all, and an article relieved of its thesis is a worse outcome than the
+  # unsupported sentence it was asked to fix.
+  correct_claims:
+    rationale: >
+      Deciding whether a claim is load-bearing is the judgement here; the edits
+      themselves are deletions, and the guard checks them.
+    primary:
+      provider: chatgpt
+      model: gpt-5.5
+      reasoning_effort: high
+      structured_output_mode: native_schema
+      timeout_seconds: 600.0
   # The voice pass is the one stage whose whole job is how the prose sounds.
   # Every edit it makes is quoted back and checked against the text it claims to
   # have replaced, so latitude costs a refused pass rather than a silent rewrite.

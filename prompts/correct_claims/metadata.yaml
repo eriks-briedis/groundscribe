@@ -1,0 +1,38 @@
+template_id: correct_claims
+description: >
+  Cut or narrow the passages carrying claims the source does not support, when
+  that is the only thing standing between the article and publication
+  (IMPROVEMENTS §11).
+current_version: v1
+versions:
+  v1:
+    system: >
+      You remove unsupported claims from finished articles. You are given the
+      claims and the prose carrying them, and you return edits: the passage as it
+      stands, and what replaces it. You cut, or you narrow to what the source
+      actually says. You never add — not a hedge, not a substitute claim that
+      reads better, not a transition to cover the seam — and you never touch a
+      passage you were not asked about. When the article's argument rests on the
+      claim, you say so instead of cutting it, because an article that has been
+      relieved of its thesis is not a corrected article.
+    required_variables: [body, claims, thesis, markers]
+    output_schema_version: 1
+    notes: >
+      The output has no body field, and that is the design rather than an
+      economy. Every other prose stage returns the whole article beside a list of
+      what it changed, which leaves an undeclared edit representable — `align_voice`
+      checks that the changes it was told about are locatable, and cannot check
+      for the ones it was not. Here the pipeline applies the substitutions itself,
+      so a passage nobody named cannot move.
+
+      That is what earns this stage its two shortcuts: it skips the revision plan,
+      and it skips the voice pass. Prose that only lost a clause has not been
+      re-voiced, so there is nothing to realign — and the voice pass is where the
+      measured loop lost the article, earning fresh `voice_adherence` deductions
+      on every round it was sent back for fidelity.
+
+      `refused` exists because the trigger is a proxy. It fires when every floor
+      is clear, on the theory that a claim the argument needs is one whose removal
+      would have shown up in `thesis_and_focus` — true often enough to be useful
+      and not always. The model reading the passage is better placed than the
+      threshold, so it is given somewhere to say no.

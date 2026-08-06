@@ -183,6 +183,33 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.REVISION_PLAN_REQUIRED),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.SUBSTANTIVE_REWRITING),
     _policy(S.REVISION_REQUIRED, A.ROUTE_REVISION, S.VOICE_ALIGNING),
+    # The narrow exit from `revision_required` that is not a revision.
+    #
+    # Its own action rather than a ninth `route_revision` destination, and the
+    # distinction is the entire point: routing charges a round against the
+    # rewrite ledger, and this is not a round. The score has already localised
+    # the defect to a span, the article clears every floor, and nothing is
+    # blocking — what is left is a deletion, not a revision, and giving it a
+    # `route_revision` edge would put it on the same budget as the rewrites it
+    # exists to avoid.
+    #
+    # The measured case: an article at 90.55 against a bar of 85, every floor
+    # clear, eight deductions of which none blocking, failed by six words in its
+    # opening paragraph that the source does not support. Three substantive
+    # rounds were spent on that shape of failure and the score fell each time.
+    _policy(
+        S.REVISION_REQUIRED,
+        A.CORRECT_CLAIMS,
+        S.CLAIMS_CORRECTING,
+        "the only failure is claims the source does not support, and they can be cut",
+    ),
+    # Straight back to scoring, with no voice pass in between. Prose that only
+    # lost a clause has not been re-voiced, so there is nothing for the voice
+    # stage to realign — and the guard on what the correction may touch is what
+    # makes that true rather than hopeful. The re-score is the check: an article
+    # that comes back below a floor it was above had a load-bearing claim cut,
+    # and the round was owed after all.
+    _policy(S.CLAIMS_CORRECTING, A.SUBMIT_CLAIM_CORRECTION, S.SCORING),
     _policy(
         S.REVISION_REQUIRED,
         A.STALL,

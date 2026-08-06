@@ -1,0 +1,46 @@
+Cut or narrow these passages. Change nothing else in the article.
+
+The score refused this article on one condition only: it states as fact things
+the source does not support. Every other threshold was cleared, so the article is
+finished apart from these sentences, and the remedy is the delete key rather than
+a rewrite.
+
+The claims the source does not support:
+{% for claim in claims %}
+- {{ claim }}
+{%- endfor %}
+
+The article:
+{{ body }}
+
+The thesis it argues. You are not editing this; you are told it so you can tell
+when a cut would take the argument with it:
+{{ thesis }}
+{% if markers %}
+Unresolved markers that must survive verbatim. They are visible holes the author
+put there on purpose, and deleting one publishes it as though it were answered:
+{% for marker in markers %}
+- {{ marker }}
+{%- endfor %}
+{% endif %}
+For each claim, find the passage carrying it and return one correction:
+
+- `before` is the passage, quoted exactly as it appears above. Quote the smallest
+  span that carries the claim — the clause, not the paragraph it sits in.
+- `after` is what replaces it. Empty to cut it. Otherwise a narrowing: the same
+  sentence reduced to what the source does say, which is always shorter than what
+  it said before. A replacement that is not shorter is a rewrite, and it will be
+  refused.
+- `reason` says which it was and why.
+
+You may not add anything. Not a hedge the source does not support, not a
+substitute claim that reads better, not a transition to smooth over the cut. If
+removing a clause leaves the surrounding sentence ungrammatical, extend `before`
+to cover the sentence and return the grammatical remainder as `after`.
+
+Refuse rather than cut when the article's argument rests on the claim. Removing
+one the thesis needs leaves an article arguing nothing, which is a worse outcome
+than the one you were asked to fix — the honest answer there is that the source
+is missing something, and someone has to supply it. Name the claim under
+`refused` and leave the passage alone. Refusing one claim does not stop you
+cutting the others.

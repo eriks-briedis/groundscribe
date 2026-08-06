@@ -42,6 +42,16 @@ class WorkflowState(StrEnum):
     SUBSTANTIVE_REVIEWING = "substantive_reviewing"
     REVISION_PLAN_REQUIRED = "revision_plan_required"
     SUBSTANTIVE_REWRITING = "substantive_rewriting"
+    #: Cutting or narrowing named passages, and touching nothing else.
+    #:
+    #: Not a small rewrite. A rewrite is briefed by a plan and may reshape
+    #: whatever the plan reaches; this stage is given spans and may only remove
+    #: or qualify them, which is a different permission and therefore a different
+    #: state. It exists because an article can be finished except for a sentence,
+    #: and answering that with a substantive round is what the run of 2026-08-06
+    #: did three times, at 31 minutes and six model calls each, to delete six
+    #: words.
+    CLAIMS_CORRECTING = "claims_correcting"
     VOICE_ALIGNING = "voice_aligning"
     SCORING = "scoring"
     REVISION_REQUIRED = "revision_required"
@@ -101,6 +111,14 @@ class WorkflowAction(StrEnum):
     APPROVE_REVISION_PLAN = "approve_revision_plan"
     SUBMIT_REWRITE = "submit_rewrite"
     AUTHORISE_REWRITE = "authorise_rewrite"
+    #: Send a score that fails on removable claims to be cut rather than rewritten.
+    #:
+    #: Deliberately not a ``ROUTE_REVISION`` destination. Routing charges a round
+    #: against the rewrite ledger, and this is not a revision loop — it is the
+    #: correction of a defect the score has already localised to a span. A claim
+    #: that costs a deletion should not cost a round (IMPROVEMENTS §11).
+    CORRECT_CLAIMS = "correct_claims"
+    SUBMIT_CLAIM_CORRECTION = "submit_claim_correction"
 
     # Voice and scoring.
     SUBMIT_VOICE_PASS = "submit_voice_pass"

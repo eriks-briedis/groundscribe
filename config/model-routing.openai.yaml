@@ -409,6 +409,31 @@ stages:
       max_output_tokens: 24576
       timeout_seconds: 300.0
 
+  # Cutting a claim the source does not support, when that is the only thing
+  # standing between the article and publication (IMPROVEMENTS §11). High effort
+  # on the flagship, which looks expensive for a stage that deletes text — but
+  # the judgement it is being asked for is whether the argument survives the cut,
+  # and getting that wrong publishes an article arguing nothing. It is still the
+  # cheap path: the round it replaces is six calls, this is one.
+  correct_claims:
+    rationale: >
+      Deciding whether a claim is load-bearing is the judgement here; the edits
+      themselves are deletions, and the guard checks them.
+    primary:
+      provider: openai
+      model: gpt-5
+      reasoning_effort: high
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 20480
+      timeout_seconds: 300.0
+    fallback:
+      provider: openai
+      model: gpt-5-mini
+      reasoning_effort: medium
+      structured_output_mode: native_schema
+      max_output_tokens: 12288
+      timeout_seconds: 180.0
   # The voice pass is the one stage whose whole job is how the prose sounds. No
   # seed, because the same prose read twice should be allowed to suggest
   # different phrasings — and every edit it makes is quoted back and checked

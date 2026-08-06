@@ -31,9 +31,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from groundscribe.domain import models as domain_models
 from groundscribe.domain import schemas as domain_schemas
+from groundscribe.domain.enums import IssueSeverity
 from groundscribe.provenance import models
+from groundscribe.scoring.rubric import FailureKind
 from groundscribe.scoring.scoring import SCORE_STAGE, ScoreOutcome
 from groundscribe.stages.base import PipelineContext
 from groundscribe.workflow.engine import RecordedRoute, WorkflowEngine
@@ -231,6 +236,68 @@ def score_history(context: PipelineContext) -> tuple[ScoreRound, ...]:
     )
 
 
+def latest_evaluation(
+    session: Session, run: models.PipelineRun
+) -> models.EvaluationRun | None:
+    """The most recent score of this run, or ``None`` if it has none.
+
+    Extracted from ``Services.revise``, which had it inline, once a second caller
+    needed the same row: the handler that carries out a correction has to read
+    the score that sent it there. Two copies of this query would be two answers
+    to "which score are we acting on" the day one of them grew an ordering
+    subtlety the other did not.
+    """
+    return session.scalars(
+        select(models.EvaluationRun)
+        .join(
+            models.StageExecution,
+            models.StageExecution.id == models.EvaluationRun.stage_execution_id,
+        )
+        .where(models.StageExecution.pipeline_run_id == run.id)
+        .order_by(models.EvaluationRun.created_at.desc())
+    ).first()
+
+
+def claims_to_correct(evaluation: models.EvaluationRun | None) -> tuple[str, ...]:
+    """The unsupported claims a cut would fix, read back from a stored score.
+
+    The read-side twin of
+    :func:`~groundscribe.scoring.scoring.removable_claims`, and the same three
+    conditions: every failure is an unsupported claim, no deduction is blocking,
+    and the claims were named. It reads the evaluation rather than recomputing
+    from the sheet for the reason ``revise`` already reads ``routed_as`` from
+    there — the decision was made when the score was made, by the scorer that saw
+    every deduction, and a second derivation would be a second opinion about a
+    decision already recorded.
+
+    Two callers need this and they need it at different moments: ``revise``, to
+    decide whether to take the correction edge instead of routing, and the
+    handler, to know which claims to ask about. Deriving it twice would let them
+    disagree, and the disagreement would present as a stage asked to cut nothing.
+
+    Empty for a score written before ``kind`` existed on a failure. Those rows
+    have no way to say which condition failed, and guessing from the prose of a
+    message written for a person is how this coupling would break silently later.
+    """
+    if evaluation is None or evaluation.passed:
+        return ()
+    failures = evaluation.scores.get("failures") or []
+    if not failures or not all(isinstance(failure, Mapping) for failure in failures):
+        return ()
+    if any(failure.get("kind") != FailureKind.UNSUPPORTED_CLAIM.value for failure in failures):
+        return ()
+    deductions = evaluation.scores.get("deductions") or []
+    if any(
+        isinstance(deduction, Mapping)
+        and deduction.get("severity") == IssueSeverity.BLOCKING.value
+        for deduction in deductions
+    ):
+        return ()
+    return tuple(
+        subject for failure in failures if (subject := str(failure.get("subject") or ""))
+    )
+
+
 def high_water_version(context: PipelineContext) -> HighWater | None:
     """The best-scoring version this run produced, and what it scored.
 
@@ -335,9 +402,11 @@ __all__ = [
     "Escalation",
     "EscalationOption",
     "HighWater",
+    "claims_to_correct",
     "escalations_at",
     "escalations_for",
     "high_water_version",
+    "latest_evaluation",
     "route_score",
     "score_history",
 ]

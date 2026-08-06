@@ -394,6 +394,35 @@ stages:
       context_window: 32768
       timeout_seconds: 1800.0
 
+  # Cutting a claim the source does not support, when that is the only thing
+  # standing between the article and publication (IMPROVEMENTS §11). Temperature
+  # 0: the same passage read twice should be cut the same way, because this is a
+  # correction rather than a piece of writing. A small output budget, because the
+  # answer is a handful of quoted spans and their replacements — the body never
+  # comes back from the model — but a large window, because it has to read the
+  # whole article to find them.
+  correct_claims:
+    rationale: >
+      Deciding whether a claim is load-bearing is the judgement; the edits are
+      deletions and the guard checks them. Determinism costs nothing here.
+    primary:
+      provider: ollama
+      model: qwen3.6:35b
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 4096
+      context_window: 65536
+      timeout_seconds: 1200.0
+    fallback:
+      provider: ollama
+      model: qwen3.6:35b
+      temperature: 0.0
+      seed: 20260725
+      structured_output_mode: native_schema
+      max_output_tokens: 2048
+      context_window: 32768
+      timeout_seconds: 600.0
   # The voice pass is the one stage whose whole job is how the prose sounds, so it
   # keeps a middling temperature — an ear needs some range. But it is bounded on
   # the other side: every edit it makes is quoted back and checked against the text

@@ -634,3 +634,113 @@ def test_the_round_is_bounded_like_every_other_substantive_one() -> None:
     policy = default_workflow_policy()
     assert policy.rule(FailureCategory.SUBSTANTIVE_ISSUE).limit is LimitKind.SUBSTANTIVE
     assert policy.limits.substantive == 3
+
+
+# ---------------------------------------------------------------------------
+# Correcting a claim instead of spending a round (IMPROVEMENTS §11)
+# ---------------------------------------------------------------------------
+
+
+def test_a_removable_claim_is_not_a_routing_destination() -> None:
+    """The correction edge is its own action, and that is the saving.
+
+    `route_revision` charges a round against the rewrite ledger. Making this a
+    ninth destination of it would put a deletion on the same budget as the three
+    substantive rewrites it exists to avoid — which is the arithmetic
+    IMPROVEMENTS §11 is about: one claim, one round, and the round makes the
+    article worse on the way past.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    routed = targets_for(WorkflowState.REVISION_REQUIRED, WorkflowAction.ROUTE_REVISION)
+    assert WorkflowState.CLAIMS_CORRECTING not in routed
+    assert targets_for(WorkflowState.REVISION_REQUIRED, WorkflowAction.CORRECT_CLAIMS) == (
+        WorkflowState.CLAIMS_CORRECTING,
+    )
+
+
+def test_a_correction_returns_to_scoring_without_a_voice_pass() -> None:
+    """The re-score is the check, and it is the only check the shortcut needs.
+
+    An article that comes back below a floor it was above had a load-bearing
+    claim cut, and the round was owed after all — so the cheap path cannot hide a
+    bad cut, it can only take one and be told.
+    """
+    from groundscribe.workflow.transitions import targets_for
+
+    assert targets_for(WorkflowState.CLAIMS_CORRECTING, WorkflowAction.SUBMIT_CLAIM_CORRECTION) == (
+        WorkflowState.SCORING,
+    )
+
+
+def test_the_trigger_is_computed_and_not_chosen_by_the_scorer() -> None:
+    """`suggested_route` is a field a model fills in. This route is not on it.
+
+    A route that skips the rewrite ledger is not one any scorer should be able to
+    elect, so the vocabulary the scorer answers in stays closed and the decision
+    is made from the rubric's verdict instead.
+    """
+    assert not any(
+        category.value == WorkflowAction.CORRECT_CLAIMS.value for category in FailureCategory
+    )
+
+
+@pytest.mark.parametrize(
+    ("failures", "deductions", "expected"),
+    [
+        ([("unsupported_claim", "u001")], [], ("u001",)),
+        ([("unsupported_claim", "u001"), ("unsupported_claim", "u002")], [], ("u001", "u002")),
+        # A dimension under its floor is a second problem, and cutting a sentence
+        # does not address it.
+        ([("unsupported_claim", "u001"), ("dimension_floor", "")], [], ()),
+        ([("overall", "")], [], ()),
+        # A blocking deduction is the scorer saying this is not publishable
+        # regardless, which is a judgement about the article and not about a span.
+        ([("unsupported_claim", "u001")], ["blocking"], ()),
+        ([("unsupported_claim", "u001")], ["major", "minor"], ("u001",)),
+    ],
+)
+def test_the_trigger_is_narrow_on_purpose(
+    failures: list[tuple[str, str]], deductions: list[str], expected: tuple[str, ...]
+) -> None:
+    """Each rejected case is a different way of being wrong about a cut.
+
+    "Cut the sentence" is the wrong answer whenever the claim is load-bearing,
+    and the floors are the available proxy for that — a claim the argument needs
+    is one whose removal shows up in `thesis_and_focus`. A proxy is what it is,
+    which is why the trigger declines everything it is not sure about.
+    """
+    from groundscribe.provenance import models
+    from groundscribe.scoring.loop import claims_to_correct
+
+    evaluation = models.EvaluationRun(
+        passed=False,
+        scores={
+            "failures": [{"kind": kind, "subject": subject} for kind, subject in failures],
+            "deductions": [{"severity": severity} for severity in deductions],
+        },
+    )
+
+    assert claims_to_correct(evaluation) == expected
+
+
+def test_a_score_written_before_kinds_existed_triggers_nothing() -> None:
+    """Those rows cannot say which condition failed, and guessing is the coupling.
+
+    Matching on the prose of a message written for a person to read is how this
+    breaks silently: reword the message to read better and the matcher stops
+    matching, with no test between the two.
+    """
+    from groundscribe.provenance import models
+    from groundscribe.scoring.loop import claims_to_correct
+
+    legacy = models.EvaluationRun(
+        passed=False,
+        scores={
+            "failures": [{"detail": "the article rests on the unsupported major claim u001"}],
+            "deductions": [],
+        },
+    )
+
+    assert claims_to_correct(legacy) == ()
+    assert claims_to_correct(None) == ()

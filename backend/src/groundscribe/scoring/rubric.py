@@ -139,6 +139,30 @@ class PassingPolicy(BaseModel):
     minimums: Mapping[ScoreDimension, float] = Field(default_factory=dict)
 
 
+class FailureKind(StrEnum):
+    """Which passing condition a failure is, as a value rather than a sentence.
+
+    The conditions have always been distinguishable — they are constructed in
+    five separate blocks — but only their prose survived into the assessment, so
+    anything downstream asking "what *kind* of failure is this" had to match on
+    the wording of a message written for a person to read. That is a coupling
+    that breaks silently: reword the message to read better and the matcher
+    stops matching, with no test between the two.
+
+    It matters now because one condition earns a different answer from the rest.
+    An unsupported claim is a defect the scorer has already localised to a span,
+    and an article failing on nothing else can be corrected by cutting it
+    (:data:`~groundscribe.workflow.states.WorkflowAction.CORRECT_CLAIMS`). A
+    dimension below its floor cannot.
+    """
+
+    OVERALL = "overall"
+    DIMENSION_FLOOR = "dimension_floor"
+    BLOCKING_ISSUE = "blocking_issue"
+    UNSUPPORTED_CLAIM = "unsupported_claim"
+    UNMET_REQUIREMENT = "unmet_requirement"
+
+
 @dataclass(frozen=True)
 class ScoreFailure:
     """One condition the article did not meet.
@@ -146,12 +170,20 @@ class ScoreFailure:
     ``dimension`` is ``None`` for the conditions that are not about a dimension —
     the overall floor, a blocking issue, an unsupported claim — because those are
     failures of the article rather than of one reading of it.
+
+    ``subject`` is what the condition was about, unwrapped from the sentence: the
+    claim, the blocking issue or the requirement, verbatim as the scorer named
+    it. A stage asked to cut an unsupported claim needs the claim, and parsing it
+    back out of ``detail`` would mean parsing a message whose job is to read
+    well.
     """
 
     detail: str
+    kind: FailureKind = FailureKind.OVERALL
     dimension: ScoreDimension | None = None
     threshold: float | None = None
     actual: float | None = None
+    subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -301,6 +333,7 @@ class ScoringRubric(BaseModel):
                         f"the overall score is {overall:.1f}, below the "
                         f"{self.passing.overall:g} this rubric requires"
                     ),
+                    kind=FailureKind.OVERALL,
                     threshold=self.passing.overall,
                     actual=overall,
                 )
@@ -311,6 +344,7 @@ class ScoringRubric(BaseModel):
                     f"{dimension.value} scored {checked[dimension]:.1f}, below its "
                     f"floor of {minimum:g}"
                 ),
+                kind=FailureKind.DIMENSION_FLOOR,
                 dimension=dimension,
                 threshold=minimum,
                 actual=checked[dimension],
@@ -320,11 +354,19 @@ class ScoringRubric(BaseModel):
             and checked[dimension] < minimum
         )
         failures.extend(
-            ScoreFailure(detail=f"a blocking issue is unresolved: {issue}")
+            ScoreFailure(
+                detail=f"a blocking issue is unresolved: {issue}",
+                kind=FailureKind.BLOCKING_ISSUE,
+                subject=issue,
+            )
             for issue in blocking_issues
         )
         failures.extend(
-            ScoreFailure(detail=f"the article rests on the unsupported major claim {claim}")
+            ScoreFailure(
+                detail=f"the article rests on the unsupported major claim {claim}",
+                kind=FailureKind.UNSUPPORTED_CLAIM,
+                subject=claim,
+            )
             for claim in unsupported_claims
         )
         # plan/08: "optional stylistic preferences don't force a rewrite *unless the
@@ -332,7 +374,11 @@ class ScoringRubric(BaseModel):
         # not a preference to be weighed against the score — it either holds or the
         # article is not publishable, however well it reads.
         failures.extend(
-            ScoreFailure(detail=f"a requirement the rubric marks as required is unmet: {unmet}")
+            ScoreFailure(
+                detail=f"a requirement the rubric marks as required is unmet: {unmet}",
+                kind=FailureKind.UNMET_REQUIREMENT,
+                subject=unmet,
+            )
             for unmet in unmet_requirements
         )
 

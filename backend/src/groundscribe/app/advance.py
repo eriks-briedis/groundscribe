@@ -94,6 +94,9 @@ NEXT: dict[WorkflowState, Step] = {
     WorkflowState.SUBSTANTIVE_REVIEWING: Step(JobType.REVIEW_ARTICLE, per_article=True),
     WorkflowState.REVISION_PLAN_REQUIRED: Step(JobType.PLAN_REVISION, per_article=True),
     WorkflowState.SUBSTANTIVE_REWRITING: Step(JobType.REWRITE_ARTICLE, per_article=True),
+    # No entry action: `revise` takes `correct_claims` itself, because choosing
+    # this over routing is the decision that makes it cost no round.
+    WorkflowState.CLAIMS_CORRECTING: Step(JobType.CORRECT_CLAIMS, per_article=True),
     WorkflowState.VOICE_ALIGNING: Step(JobType.ALIGN_VOICE, per_article=True),
     WorkflowState.SCORING: Step(JobType.SCORE_ARTICLE, per_article=True),
 }

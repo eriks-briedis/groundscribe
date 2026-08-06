@@ -118,6 +118,19 @@ class VoiceContractError(StageError):
     """
 
 
+class ClaimCorrectionError(StageError):
+    """A correction pass edited something it was not asked to.
+
+    The stage exists to cut passages a score localised, and it skips both the
+    revision plan and the voice pass on the strength of touching nothing else. So
+    the check is not tidiness — it is the premise. A pass that quoted text the
+    article does not contain, named a claim the score did not fail on, returned a
+    replacement longer than what it replaced, or dropped an unresolved marker has
+    made a rewrite and called it a correction, and a rewrite that skipped the
+    voice pass arrives at scoring un-realigned.
+    """
+
+
 class ScoreContractError(StageError):
     """A score would be stored that nothing could compare against.
 

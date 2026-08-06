@@ -67,6 +67,7 @@ class JobType(StrEnum):
     REVIEW_ARTICLE = "review_article"
     PLAN_REVISION = "plan_revision"
     REWRITE_ARTICLE = "rewrite_article"
+    CORRECT_CLAIMS = "correct_claims"
     ALIGN_VOICE = "align_voice"
     SCORE_ARTICLE = "score_article"
 

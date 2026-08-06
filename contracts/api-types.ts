@@ -4424,7 +4424,7 @@ export interface components {
          *     :func:`~groundscribe.workflow.transitions.human_pause_states`).
          * @enum {string}
          */
-        WorkflowState: "source_ingested" | "source_model_extracting" | "source_questions_required" | "source_model_ready" | "architecture_proposing" | "architecture_review_required" | "architecture_approved" | "brief_generating" | "brief_review_required" | "draft_generating" | "substantive_reviewing" | "revision_plan_required" | "substantive_rewriting" | "voice_aligning" | "scoring" | "revision_required" | "passed" | "final_validating" | "human_approval_required" | "completed" | "failed" | "cancelled" | "stalled";
+        WorkflowState: "source_ingested" | "source_model_extracting" | "source_questions_required" | "source_model_ready" | "architecture_proposing" | "architecture_review_required" | "architecture_approved" | "brief_generating" | "brief_review_required" | "draft_generating" | "substantive_reviewing" | "revision_plan_required" | "substantive_rewriting" | "claims_correcting" | "voice_aligning" | "scoring" | "revision_required" | "passed" | "final_validating" | "human_approval_required" | "completed" | "failed" | "cancelled" | "stalled";
     };
     responses: never;
     parameters: never;

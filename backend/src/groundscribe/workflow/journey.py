@@ -105,6 +105,11 @@ PHASES: tuple[Phase, ...] = (
             S.SUBSTANTIVE_REVIEWING,
             S.REVISION_PLAN_REQUIRED,
             S.SUBSTANTIVE_REWRITING,
+            # Under "review" rather than a phase of its own, because from a
+            # reader's point of view that is what it is: the article is being
+            # corrected. That it costs one call instead of six, and no round, is
+            # a fact about the machine and not about the journey.
+            S.CLAIMS_CORRECTING,
         ),
     ),
     Phase(
@@ -146,6 +151,7 @@ STATE_HEADLINES: Mapping[S, str] = {
     S.SUBSTANTIVE_REVIEWING: "Reviewing the argument, not the prose.",
     S.REVISION_PLAN_REQUIRED: "Your turn: approve the plan for what the rewrite will change.",
     S.SUBSTANTIVE_REWRITING: "Rewriting under the approved plan.",
+    S.CLAIMS_CORRECTING: "Cutting the claims the source does not support.",
     S.VOICE_ALIGNING: "Aligning the prose to your voice profile.",
     S.SCORING: "Grading the article against the rubric.",
     S.REVISION_REQUIRED: "Your turn: the score came back short, so choose to send it round again.",

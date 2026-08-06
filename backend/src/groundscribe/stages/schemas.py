@@ -775,6 +775,57 @@ class VoicePass(_Output):
         return self
 
 
+class ClaimCorrection(BaseModel):
+    """One passage cut or narrowed to what the source actually supports.
+
+    ``before`` is quoted from the article and ``after`` is what replaces it —
+    empty for a cut, shorter for a qualification. Both are checked against the
+    prose rather than trusted, which is what makes "may only remove or qualify"
+    a property of the output instead of a sentence in a prompt.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The unsupported claim this passage was carrying, as the score named it.
+    claim: str = Field(min_length=1)
+    before: str = Field(min_length=1)
+    after: str = ""
+    reason: str = ""
+
+
+class ClaimsCorrected(_Output):
+    """The edits a correction pass made, and nothing else (IMPROVEMENTS §11).
+
+    Conspicuously without a body. Every other prose stage returns the whole
+    article and declares what it changed, which leaves an undeclared edit
+    *representable* — `align_voice` checks that the changes it was told about are
+    locatable, and cannot check for the ones it was not. This stage never sees
+    the body come back, so the finished prose is the previous version with these
+    substitutions applied by the pipeline, and a passage nobody named cannot move.
+
+    That is also what makes skipping the voice pass safe. Prose that only lost a
+    clause has not been re-voiced, so there is nothing for the voice stage to
+    realign — and skipping it is most of the saving, because the voice pass is
+    what earns the fresh deductions that made the measured loop anti-convergent.
+
+    ``refused`` is the other half of the permission. A claim the thesis rests on
+    cannot be deleted — removing it leaves an article arguing nothing — so the
+    stage says so instead of cutting, and the run is routed as a real factual gap.
+    """
+
+    corrections: tuple[ClaimCorrection, ...] = ()
+    refused: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _every_pass_accounts_for_itself(self) -> Self:
+        if not self.corrections and not self.refused:
+            raise ValueError(
+                "a correction pass must either cut something or say which claim it "
+                "would not cut; a pass that did neither has not answered"
+            )
+        return self
+
+
 class DimensionScore(BaseModel):
     """One dimension's score, and why it is that number.
 

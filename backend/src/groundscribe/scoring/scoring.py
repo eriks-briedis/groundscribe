@@ -39,6 +39,7 @@ from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models
 from groundscribe.provenance.schemas import TokenUsage
 from groundscribe.scoring.rubric import (
+    FailureKind,
     ScoreAssessment,
     ScoreDimension,
     ScoringRubric,
@@ -378,6 +379,8 @@ class ScoreArticle:
                 "failures": [
                     {
                         "detail": failure.detail,
+                        "kind": failure.kind.value,
+                        "subject": failure.subject,
                         "dimension": failure.dimension.value if failure.dimension else None,
                         "threshold": failure.threshold,
                         "actual": failure.actual,
@@ -400,6 +403,43 @@ class ScoreArticle:
             },
             passed=assessment.passed,
         )
+
+
+def removable_claims(assessment: ScoreAssessment, scored: ArticleScore) -> tuple[str, ...]:
+    """The claims a cut would fix, when cutting them is the whole remedy.
+
+    Empty unless three things hold at once, and each rules out a different way of
+    being wrong about this:
+
+    * **Every failure is an unsupported claim.** One dimension under its floor
+      means the article has a second problem, and cutting a sentence does not
+      address it.
+    * **No deduction is blocking.** A blocking deduction is the scorer saying
+      this is not publishable regardless, which is a judgement about the article
+      and not about a span.
+    * **The claims name passages.** A claim the scorer could not locate is one
+      nothing can be asked to cut.
+
+    The trigger is computed here rather than chosen by the model, and that is
+    deliberate: `suggested_route` is a field a scorer fills in, and a route that
+    skips the rewrite ledger is not one any scorer should be able to elect. It
+    reads the *assessment* — the rubric's verdict — not the sheet's opinion.
+
+    Conservative on purpose, and the risk is stated in IMPROVEMENTS §11: "cut the
+    sentence" is the wrong answer whenever the claim is load-bearing, and an
+    unsupported claim the thesis rests on cannot be deleted without leaving an
+    article arguing nothing. The floors are the available proxy — a claim the
+    argument needs is one whose removal shows up in `thesis_and_focus` — and they
+    are a proxy. The re-score is the real check: an article that comes back below
+    a floor it was above had a load-bearing claim cut, and the round was owed.
+    """
+    if assessment.passed or not assessment.failures:
+        return ()
+    if any(failure.kind is not FailureKind.UNSUPPORTED_CLAIM for failure in assessment.failures):
+        return ()
+    if any(deduction.severity is IssueSeverity.BLOCKING for deduction in scored.deductions):
+        return ()
+    return tuple(failure.subject for failure in assessment.failures if failure.subject)
 
 
 def failure_category(scored: ArticleScore) -> FailureCategory:

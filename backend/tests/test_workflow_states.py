@@ -48,6 +48,7 @@ EXPECTED_STATES = {
     "SUBSTANTIVE_REVIEWING": "substantive_reviewing",
     "REVISION_PLAN_REQUIRED": "revision_plan_required",
     "SUBSTANTIVE_REWRITING": "substantive_rewriting",
+    "CLAIMS_CORRECTING": "claims_correcting",
     "VOICE_ALIGNING": "voice_aligning",
     "SCORING": "scoring",
     "REVISION_REQUIRED": "revision_required",
@@ -106,9 +107,13 @@ EXPECTED_ACTIONS: dict[WorkflowState, set[WorkflowAction]] = {
     WorkflowState.SCORING: {WorkflowAction.SCORE_PASSED, WorkflowAction.SCORE_FAILED},
     WorkflowState.REVISION_REQUIRED: {
         WorkflowAction.ROUTE_REVISION,
+        # Not a ninth `route_revision` destination, deliberately: routing charges
+        # a round and this is a deletion, not a revision (IMPROVEMENTS §11).
+        WorkflowAction.CORRECT_CLAIMS,
         WorkflowAction.STALL,
         WorkflowAction.OVERRIDE_AND_APPROVE,
     },
+    WorkflowState.CLAIMS_CORRECTING: {WorkflowAction.SUBMIT_CLAIM_CORRECTION},
     WorkflowState.PASSED: {WorkflowAction.VALIDATE_FINAL},
     WorkflowState.FINAL_VALIDATING: {
         WorkflowAction.VALIDATION_PASSED,
