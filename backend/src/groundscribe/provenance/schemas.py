@@ -82,12 +82,37 @@ class TokenUsage(BaseModel):
 
     Cost is optional and stays ``None`` when unreported. Not every provider gives
     one, and zero is a claim that the call was free.
+
+    ``cached_input_tokens`` and ``reasoning_tokens`` are the two breakdowns the
+    OpenAI-family providers report and this system threw away. Both are
+    ``None``-when-unreported for the same reason cost is, and the distinction
+    earns its keep in opposite directions:
+
+    * **Cached input** is billed at a fraction of the input rate, so counting it
+      at full price over-states every run that got a cache hit. The pricing
+      table's own note on `gpt-5` records the consequence — its rates were
+      reconstructed from a real run, and "cached input is billed lower than the
+      input rate, so a run with cache hits would imply a slightly higher true
+      rate".
+    * **Reasoning** is billed at the *output* rate, which is eight times the
+      input rate on `gpt-5`, and it is the half of the output no prompt change
+      can shorten. Six of thirteen stages run at `reasoning_effort: high`. Until
+      this was recorded there was no way to answer what that decision costs,
+      which made it a decision nobody could revisit.
+
+    Neither is subtracted from ``input_tokens`` or ``output_tokens``: providers
+    report them as components of those totals, and a record that quietly
+    redefined the totals would disagree with the provider's own invoice.
     """
 
     model_config = ConfigDict(frozen=True)
 
     input_tokens: int = 0
     output_tokens: int = 0
+    #: Input tokens served from the provider's prompt cache, if it said.
+    cached_input_tokens: int | None = None
+    #: Output tokens spent on reasoning rather than on the answer, if it said.
+    reasoning_tokens: int | None = None
     cost_usd: float | None = None
 
     @property
@@ -243,6 +268,8 @@ class ModelInvocation(_Record):
     validated_response_snapshot_id: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
     cost_usd: float | None = None
     started_at: datetime
     completed_at: datetime | None = None

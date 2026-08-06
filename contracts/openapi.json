@@ -5393,8 +5393,19 @@
         "type": "object"
       },
       "UsageSummary": {
-        "description": "What a set of model calls consumed.\n\n``cost_usd`` stays ``None`` when no call reported one, because zero is the\nclaim that the work was free (phase 03 draws the same distinction, and a\ntotal that flattened it would be the first place it was lost).",
+        "description": "What a set of model calls consumed.\n\n``cost_usd`` stays ``None`` when no call reported one, because zero is the\nclaim that the work was free (phase 03 draws the same distinction, and a\ntotal that flattened it would be the first place it was lost).\n\n``cached_input_tokens`` and ``reasoning_tokens`` follow the same rule and are\ncomponents of the two totals above, never additions to them. They are shown\nbecause they are the two figures that explain a bill rather than merely\nstating it: cached input is the part that was cheap, and reasoning is the\npart no prompt change can shorten.",
         "properties": {
+          "cached_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Input Tokens"
+          },
           "cost_usd": {
             "anyOf": [
               {
@@ -5420,6 +5431,17 @@
             "default": 0,
             "title": "Output Tokens",
             "type": "integer"
+          },
+          "reasoning_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Tokens"
           }
         },
         "title": "UsageSummary",

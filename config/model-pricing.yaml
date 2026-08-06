@@ -31,10 +31,16 @@
 # `gpt-5-2026-01-01`, while a separate `gpt-5-mini` entry keeps the cheap model
 # from being charged at the flagship's rate.
 #
+# `cached_input_per_million` is optional. Set it and the portion a provider
+# reports as cache hits is billed at that rate instead; leave it out and cached
+# tokens are priced as ordinary input, which is the conservative direction — an
+# over-stated cost is a figure somebody questions, and an under-stated one is a
+# figure they believe.
+#
 # Bump `version` when you change a price. A run recorded under the old numbers
 # should still be explicable, and git holds the previous table.
 
-version: "2"
+version: "3"
 description: >
   Standard-tier OpenAI list prices. gpt-5 is corroborated against this
   installation's own metered spend; gpt-5-mini is not yet. Check both against
@@ -45,6 +51,12 @@ models:
   gpt-5:
     input_per_million: 1.25
     output_per_million: 10.00
+    # OpenAI's list rate for input served from its prompt cache: a tenth of the
+    # ordinary input rate. Optional everywhere, and leaving it out prices cached
+    # tokens as ordinary input — which over-states a bill rather than
+    # under-stating one, and is what happened for every run before the breakdown
+    # was recorded at all.
+    cached_input_per_million: 0.125
     note: >
       Reconstructed from a real run on 2026-08-05 and corroborated, not copied
       from the pricing page. The extraction of project cc6c4be4 spent 161,017
@@ -78,6 +90,7 @@ models:
   gpt-5-mini:
     input_per_million: 0.25
     output_per_million: 2.00
+    cached_input_per_million: 0.025
     note: >
       List price, NOT corroborated: nothing in this installation has billed a
       mini call yet, so unlike the entry above there is no spend to check it

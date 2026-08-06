@@ -615,7 +615,23 @@ def _usage(raw: Any) -> TokenUsage:
     return TokenUsage(
         input_tokens=int(raw.get("prompt_tokens") or 0),
         output_tokens=int(raw.get("completion_tokens") or 0),
+        cached_input_tokens=_detail(raw, "prompt_tokens_details", "cached_tokens"),
+        reasoning_tokens=_detail(raw, "completion_tokens_details", "reasoning_tokens"),
     )
+
+
+def _detail(raw: Mapping[str, Any], block: str, key: str) -> int | None:
+    """One figure out of a usage sub-object, or ``None`` if it was not reported.
+
+    ``None`` rather than zero throughout. A provider that did not break the
+    number out and one that broke it out as nothing are different facts, and only
+    the second means "no cache hit" — reporting both as zero is how a run whose
+    cache never fired becomes indistinguishable from a build that stopped asking.
+    """
+    detail = raw.get(block)
+    if not isinstance(detail, Mapping) or key not in detail:
+        return None
+    return int(detail.get(key) or 0)
 
 
 def _error_detail(response: httpx.Response) -> str:

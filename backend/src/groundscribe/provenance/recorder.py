@@ -350,6 +350,8 @@ class ProvenanceRecorder:
             ),
             input_tokens=usage.input_tokens if usage is not None else 0,
             output_tokens=usage.output_tokens if usage is not None else 0,
+            cached_input_tokens=usage.cached_input_tokens if usage is not None else None,
+            reasoning_tokens=usage.reasoning_tokens if usage is not None else None,
             cost_usd=usage.cost_usd if usage is not None else None,
             started_at=self._clock(),
             completed_at=self._clock(),

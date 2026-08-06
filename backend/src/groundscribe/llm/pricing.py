@@ -53,17 +53,45 @@ class PricingConfigError(Exception):
 
 
 class ModelPrice(BaseModel):
-    """What one model charges, per million tokens in and out."""
+    """What one model charges, per million tokens in and out.
+
+    ``cached_input_per_million`` is optional and, when a provider reports cached
+    input at all, is what that portion is billed at. Left unset it changes
+    nothing: cached tokens are priced as ordinary input, which is what happened
+    before the breakdown was recorded and is the safe direction — over-stating a
+    cost is a figure somebody questions, while under-stating one is a figure they
+    believe.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     input_per_million: float = Field(ge=0.0)
     output_per_million: float = Field(ge=0.0)
+    cached_input_per_million: float | None = Field(default=None, ge=0.0)
     note: str = ""
 
     def cost(self, usage: TokenUsage) -> float:
+        """What the call cost, with cached input billed at its own rate if there is one.
+
+        The cached tokens are *subtracted* from the input total rather than added
+        beside it, because providers report them as a component of it. Adding
+        would charge the same tokens twice, which is the arithmetic error this
+        change most invites.
+        """
+        cached = usage.cached_input_tokens or 0
+        rate = self.cached_input_per_million
+        if rate is None or cached <= 0:
+            return (
+                usage.input_tokens * self.input_per_million
+                + usage.output_tokens * self.output_per_million
+            ) / TOKENS_PER_UNIT
+        # Defensive: a provider reporting more cached tokens than input tokens is
+        # reporting something this cannot price, and a negative charge is worse
+        # than an over-estimate.
+        cached = min(cached, usage.input_tokens)
         return (
-            usage.input_tokens * self.input_per_million
+            (usage.input_tokens - cached) * self.input_per_million
+            + cached * rate
             + usage.output_tokens * self.output_per_million
         ) / TOKENS_PER_UNIT
 

@@ -4172,8 +4172,16 @@ export interface components {
          *     ``cost_usd`` stays ``None`` when no call reported one, because zero is the
          *     claim that the work was free (phase 03 draws the same distinction, and a
          *     total that flattened it would be the first place it was lost).
+         *
+         *     ``cached_input_tokens`` and ``reasoning_tokens`` follow the same rule and are
+         *     components of the two totals above, never additions to them. They are shown
+         *     because they are the two figures that explain a bill rather than merely
+         *     stating it: cached input is the part that was cheap, and reasoning is the
+         *     part no prompt change can shorten.
          */
         UsageSummary: {
+            /** Cached Input Tokens */
+            cached_input_tokens?: number | null;
             /** Cost Usd */
             cost_usd?: number | null;
             /**
@@ -4191,6 +4199,8 @@ export interface components {
              * @default 0
              */
             output_tokens: number;
+            /** Reasoning Tokens */
+            reasoning_tokens?: number | null;
         };
         /** ValidationError */
         ValidationError: {

@@ -455,6 +455,57 @@ async def test_the_body_is_preserved_verbatim_with_its_usage() -> None:
     assert answer.usage.output_tokens == 800
 
 
+async def test_the_cached_and_reasoning_halves_of_the_usage_are_kept() -> None:
+    """The provider reported both from the first call, and the adapter dropped them.
+
+    They matter in opposite directions. Cached input is billed below the input
+    rate, so counting it at full price over-states every run that got a hit;
+    reasoning is billed at the *output* rate, eight times input on `gpt-5`, and it
+    is the half of the output no prompt change can shorten. Six of thirteen
+    stages run at `reasoning_effort: high`, and until this was recorded there was
+    no number behind that choice.
+    """
+    client, _ = build_client(
+        Recorder(
+            httpx.Response(
+                200,
+                json=ANSWER
+                | {
+                    "usage": {
+                        "prompt_tokens": 1200,
+                        "completion_tokens": 800,
+                        "prompt_tokens_details": {"cached_tokens": 1024},
+                        "completion_tokens_details": {"reasoning_tokens": 640},
+                    }
+                },
+            )
+        )
+    )
+
+    answer = await client.complete(request())
+
+    assert answer.usage.cached_input_tokens == 1024
+    assert answer.usage.reasoning_tokens == 640
+    # Components of the totals, not additions to them.
+    assert answer.usage.input_tokens == 1200
+    assert answer.usage.output_tokens == 800
+
+
+async def test_a_provider_that_reports_no_breakdown_records_none_not_zero() -> None:
+    """"Did not say" and "said none" are different facts.
+
+    Only the second means the cache never fired, and reporting both as zero is
+    how a run whose cache genuinely missed becomes indistinguishable from a build
+    that stopped asking — which is the state this system was in.
+    """
+    client, _ = build_client()
+
+    answer = await client.complete(request())
+
+    assert answer.usage.cached_input_tokens is None
+    assert answer.usage.reasoning_tokens is None
+
+
 async def test_an_unparseable_body_is_returned_rather_than_raised() -> None:
     """A successful call that produced an unusable result. The repair ladder
     exists for exactly this, and it needs the body to work with."""

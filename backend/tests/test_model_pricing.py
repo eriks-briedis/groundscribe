@@ -141,3 +141,65 @@ def test_an_unpriced_model_is_still_unknown_rather_than_free() -> None:
     over to another model — whose cost most wants explaining.
     """
     assert default_pricing().price(USAGE, model="some-model-nobody-priced") is None
+
+
+# ---------------------------------------------------------------------------
+# Cached input, which is billed at its own rate
+# ---------------------------------------------------------------------------
+
+
+def test_cached_input_is_billed_at_the_cached_rate() -> None:
+    """A tenth of the input rate on `gpt-5`, and it has to actually apply.
+
+    The figure existed on the provider's response from the first call and was
+    dropped by the adapter reading it, so every run that got a cache hit was
+    costed as though it had not. The pricing table's own note on `gpt-5` names
+    the consequence from the other side: its rates were reconstructed from a real
+    run, and a run with cache hits would have implied a higher true rate.
+    """
+    table = default_pricing()
+    plain = TokenUsage(input_tokens=100_000, output_tokens=10_000)
+    cached = TokenUsage(input_tokens=100_000, output_tokens=10_000, cached_input_tokens=90_000)
+
+    assert table.price(plain, model="gpt-5") == pytest.approx(0.225)
+    # 10k at 1.25/M + 90k at 0.125/M + 10k output at 10/M.
+    assert table.price(cached, model="gpt-5") == pytest.approx(0.12375)
+
+
+def test_cached_tokens_are_part_of_the_input_total_not_extra() -> None:
+    """Providers count cached input *inside* `input_tokens`.
+
+    So the cached portion is subtracted and re-priced, never added beside. Adding
+    would charge the same tokens twice, which is the arithmetic error this whole
+    change most invites — and it would look like a plausible bill.
+    """
+    price = ModelPrice(input_per_million=10.0, output_per_million=0.0, cached_input_per_million=0.0)
+    everything_cached = TokenUsage(input_tokens=1_000_000, cached_input_tokens=1_000_000)
+
+    assert price.cost(everything_cached) == pytest.approx(0.0)
+    assert price.cost(TokenUsage(input_tokens=1_000_000)) == pytest.approx(10.0)
+
+
+def test_a_model_with_no_cached_rate_prices_cached_tokens_as_ordinary_input() -> None:
+    """The conservative direction, and the one that needs no migration.
+
+    An over-stated cost is a figure somebody questions; an under-stated one is a
+    figure they believe. So a table that has not been told the cached rate keeps
+    charging full price rather than guessing a discount.
+    """
+    price = ModelPrice(input_per_million=10.0, output_per_million=0.0)
+    cached = TokenUsage(input_tokens=1_000_000, cached_input_tokens=900_000)
+
+    assert price.cost(cached) == pytest.approx(10.0)
+
+
+def test_more_cached_tokens_than_input_cannot_produce_a_negative_charge() -> None:
+    """A provider reporting that is reporting something this cannot price.
+
+    Clamping rather than raising: the figure is an annotation on a call that has
+    already happened and been paid for, and refusing to cost it would lose the
+    call from every total to make a point about the provider's arithmetic.
+    """
+    price = ModelPrice(input_per_million=10.0, output_per_million=0.0, cached_input_per_million=1.0)
+
+    assert price.cost(TokenUsage(input_tokens=1_000, cached_input_tokens=9_999)) >= 0.0

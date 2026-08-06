@@ -1880,10 +1880,20 @@ def _remaining_concerns(
 
 def _usage(invocations: Sequence[models.ModelInvocation]) -> UsageSummary:
     costs = [call.cost_usd for call in invocations if call.cost_usd is not None]
+    cached = [
+        call.cached_input_tokens for call in invocations if call.cached_input_tokens is not None
+    ]
+    reasoning = [call.reasoning_tokens for call in invocations if call.reasoning_tokens is not None]
     return UsageSummary(
         model_calls=len(invocations),
         input_tokens=sum(call.input_tokens for call in invocations),
         output_tokens=sum(call.output_tokens for call in invocations),
+        # Summed over the calls that reported them, and `None` when none did —
+        # the same rule cost keeps. A run mixing a provider that reports the
+        # breakdown with one that does not totals what is known rather than
+        # reporting nothing, which is the behaviour cost already has.
+        cached_input_tokens=sum(cached) if cached else None,
+        reasoning_tokens=sum(reasoning) if reasoning else None,
         cost_usd=sum(costs) if costs else None,
     )
 

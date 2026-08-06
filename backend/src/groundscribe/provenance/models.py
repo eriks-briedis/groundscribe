@@ -288,6 +288,17 @@ class ModelInvocation(ProvenanceRecord, Base):
     # that cost the most, which are the ones that needed repairing.
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Components of the two totals above, not additions to them — a provider
+    # reports cached input as part of its input count, and reasoning as part of
+    # its output count. Nullable for the same reason `cost_usd` is: a provider
+    # that did not break the figure out and one that broke it out as nothing are
+    # different facts, and every row written before this existed is the first
+    # kind. Cached input is billed below the input rate and reasoning at the
+    # output rate, so between them they are the difference between a cost figure
+    # and a guess — and reasoning is the only evidence for what
+    # `reasoning_effort: high` on six stages actually costs.
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Nullable, not zero: not every provider reports cost, and "free" is a
     # different claim from "unknown".
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)

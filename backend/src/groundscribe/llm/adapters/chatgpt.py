@@ -653,14 +653,26 @@ def _usage(raw: Any) -> TokenUsage:
 
     Richer than the metered path, which is worth keeping: this backend breaks
     out reasoning and cached tokens, and reasoning is the half of the output
-    that no prompt change can shorten.
+    that no prompt change can shorten. It said so from the first call and was
+    read by nobody, so the profile whose whole budget is capacity could not say
+    which half of its capacity went on thinking.
     """
     if not isinstance(raw, Mapping):
         return TokenUsage()
     return TokenUsage(
         input_tokens=int(raw.get("input_tokens") or 0),
         output_tokens=int(raw.get("output_tokens") or 0),
+        cached_input_tokens=_detail(raw, "input_tokens_details", "cached_tokens"),
+        reasoning_tokens=_detail(raw, "output_tokens_details", "reasoning_tokens"),
     )
+
+
+def _detail(raw: Mapping[str, Any], block: str, key: str) -> int | None:
+    """One figure out of a usage sub-object, or ``None`` if it was not reported."""
+    detail = raw.get(block)
+    if not isinstance(detail, Mapping) or key not in detail:
+        return None
+    return int(detail.get(key) or 0)
 
 
 def _error_detail(body: bytes) -> str:
