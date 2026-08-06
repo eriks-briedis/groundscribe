@@ -25,7 +25,12 @@ from fastapi.responses import StreamingResponse
 from groundscribe.api import schemas
 from groundscribe.app.reads import ProjectionReader
 from groundscribe.app.runtime import Runtime
-from groundscribe.app.services import ApplicationService, CommandResult, FindingDecision
+from groundscribe.app.services import (
+    ApplicationService,
+    CommandResult,
+    FindingDecision,
+    GapAnswer,
+)
 from groundscribe.app.views import (
     ArchitectureBoard,
     ArticleWorkspace,
@@ -231,6 +236,31 @@ async def extract_source_model(
 ) -> schemas.CommandResponse:
     """Queue the source-model build, and the gap analysis that follows it."""
     return render(await service.extract_source_model(project_id, token_budget=body.token_budget))
+
+
+@router.post("/projects/{project_id}/source-gaps", response_model=schemas.CommandResponse)
+def answer_gaps(
+    project_id: str,
+    body: schemas.AnswerGaps,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Record a sitting's worth of answers. The run stays in the queue.
+
+    The route the question queue uses, because that is the screen where a person
+    works through a round. The single-answer route below stays for the CLI, where
+    a terminal interview is one question at a time — and both go through the same
+    service method.
+    """
+    return render(
+        service.answer_gaps(
+            project_id,
+            answers=[
+                GapAnswer(gap_id=reply.gap_id, text=reply.text, response=reply.response)
+                for reply in body.answers
+            ],
+            answered_by=body.answered_by,
+        )
+    )
 
 
 @router.post(

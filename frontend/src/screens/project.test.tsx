@@ -269,25 +269,29 @@ describe('the question queue', () => {
     expect(answered).toHaveTextContent('ada');
   });
 
-  it('answers where the backend said to answer, and says who answered', async () => {
-    const backend = fakeBackend({
-      [`/projects/${PROJECT_ID}/questions`]: questionQueue,
-      [`/projects/${PROJECT_ID}/source-gaps/g1/answer`]: {
-        project_id: PROJECT_ID,
-        run_id: 'r1',
-        state: 'source_model_extracting',
-        available_actions: [],
-      },
-    });
+  it('records a sitting where the backend said to, in one request', async () => {
+    // Typing an answer holds it; recording sends the sitting. It used to send
+    // each one as it was typed, which cost a request, a stage execution and a
+    // full reload of this screen — one run produced eleven executions over
+    // eighteen minutes for a round of eleven questions.
+    const backend = fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: questionQueue });
 
     render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
     await userEvent.type(await screen.findByLabelText(/your answer/i), 'Cold-cache p99 was 640ms.');
     await userEvent.click(screen.getByRole('button', { name: /record answer/i }));
 
+    // Nothing has gone anywhere yet: the answer is held.
+    expect(backend.commands).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', { name: /record 1 answer/i }));
+
     await waitFor(() => expect(backend.commands).toHaveLength(1));
     expect(backend.commands[0]).toMatchObject({
-      path: `/projects/${PROJECT_ID}/source-gaps/g1/answer`,
-      body: { text: 'Cold-cache p99 was 640ms.', answered_by: 'ada', response: 'answered' },
+      path: `/projects/${PROJECT_ID}/source-gaps`,
+      body: {
+        answered_by: 'ada',
+        answers: [{ gap_id: 'g1', text: 'Cold-cache p99 was 640ms.', response: 'answered' }],
+      },
     });
   });
 
@@ -531,7 +535,7 @@ describe('revising an answer', () => {
     expect(await screen.findByRole('button', { name: /change this answer/i })).toBeInTheDocument();
   });
 
-  it('sends the new text to the same path', async () => {
+  it('carries the revision into the sitting, replacing what was held', async () => {
     const backend = fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: answered });
 
     render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
@@ -540,10 +544,12 @@ describe('revising an answer', () => {
     await userEvent.clear(box);
     await userEvent.type(box, 'Actually 720ms.');
     await userEvent.click(screen.getByRole('button', { name: /save this instead/i }));
+    await userEvent.click(screen.getByRole('button', { name: /record 1 answer/i }));
 
+    expect(backend.commands).toHaveLength(1);
     expect(backend.commands[0]).toMatchObject({
-      path: answered.questions[0]!.answer_path,
-      body: { text: 'Actually 720ms.', answered_by: 'ada' },
+      path: `/projects/${PROJECT_ID}/source-gaps`,
+      body: { answered_by: 'ada', answers: [{ gap_id: 'g1', text: 'Actually 720ms.' }] },
     });
   });
 

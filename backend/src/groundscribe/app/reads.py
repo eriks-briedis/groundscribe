@@ -373,8 +373,20 @@ class ProjectionReader:
         """
         self._project(project_id)
         state = self._position(self._run(project_id)).state
+        offered = WorkflowAction.ANSWER_QUESTIONS.value in available_actions(state)
         return QuestionQueue(
             questions=self._questions(project_id),
+            record=(
+                ActionLink(
+                    action="answer_gaps",
+                    method="POST",
+                    path=f"/projects/{project_id}/source-gaps",
+                    requires_actor=True,
+                    taken_by="you",
+                )
+                if offered
+                else None
+            ),
             submit=(
                 ActionLink(
                     action=WorkflowAction.ANSWER_QUESTIONS.value,
@@ -383,7 +395,7 @@ class ProjectionReader:
                     requires_actor=SUBMIT_ANSWERS.requires_actor,
                     taken_by="you",
                 )
-                if WorkflowAction.ANSWER_QUESTIONS.value in available_actions(state)
+                if offered
                 else None
             ),
         )

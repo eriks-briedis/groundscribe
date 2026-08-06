@@ -77,6 +77,30 @@ class AnswerGap(BaseModel):
     response: AnswerResponse = AnswerResponse.ANSWERED
 
 
+class GapReply(BaseModel):
+    """One answer inside a sitting, naming the question it is about."""
+
+    gap_id: str = Field(min_length=1)
+    text: str = ""
+    response: AnswerResponse = AnswerResponse.ANSWERED
+
+
+class AnswerGaps(BaseModel):
+    """Every answer an author recorded in one sitting.
+
+    Recording was priced per answer: a request, a stage execution and a screen
+    reload each. One run produced eleven `answer_source_questions` executions
+    over eighteen minutes for a round of eleven questions.
+
+    Handing the round *back* is still its own command. Answering and submitting
+    are different acts — an author may answer four now and four tomorrow — and
+    collapsing them would submit whatever happened to be typed so far.
+    """
+
+    answers: list[GapReply] = Field(min_length=1)
+    answered_by: str
+
+
 class UpdateArchitecture(BaseModel):
     """An author's edits to a proposed architecture."""
 

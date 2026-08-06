@@ -531,10 +531,19 @@ class QuestionQueue(BaseModel):
     """plan/11 → *Question queue*."""
 
     questions: list[QuestionView] = Field(default_factory=list)
+    #: Where a sitting's answers are recorded, and ``None`` when the run is not
+    #: taking any. One request for however many the author got through, rather
+    #: than one each — recording was the half of this that was still priced per
+    #: item, and a round of eleven produced eleven stage executions.
+    record: ActionLink | None = None
     #: Where the answered round is handed back, and ``None`` when the run is not
     #: taking answers. One command for the round rather than one per answer: the
     #: rebuild reads every answer on record, so it is worth exactly one model
     #: call however many questions the author got through.
+    #:
+    #: Still separate from :attr:`record`, and deliberately. Answering and handing
+    #: back are different acts — an author may answer four now and four tomorrow —
+    #: and one control that did both would submit whatever happened to be typed.
     submit: ActionLink | None = None
 
 

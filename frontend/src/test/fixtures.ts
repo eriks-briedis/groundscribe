@@ -231,6 +231,13 @@ export const sourceWorkspace: SourceWorkspace = {
 };
 
 export const questionQueue: QuestionQueue = {
+  record: {
+    action: 'answer_gaps',
+    method: 'POST',
+    path: `/projects/${PROJECT_ID}/source-gaps`,
+    requires_actor: true,
+    taken_by: 'you',
+  },
   submit: {
     action: 'answer_questions',
     method: 'POST',

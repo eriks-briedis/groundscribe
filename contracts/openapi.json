@@ -184,6 +184,29 @@
         "title": "AnswerGap",
         "type": "object"
       },
+      "AnswerGaps": {
+        "description": "Every answer an author recorded in one sitting.\n\nRecording was priced per answer: a request, a stage execution and a screen\nreload each. One run produced eleven `answer_source_questions` executions\nover eighteen minutes for a round of eleven questions.\n\nHanding the round *back* is still its own command. Answering and submitting\nare different acts \u2014 an author may answer four now and four tomorrow \u2014 and\ncollapsing them would submit whatever happened to be typed so far.",
+        "properties": {
+          "answered_by": {
+            "title": "Answered By",
+            "type": "string"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/GapReply"
+            },
+            "minItems": 1,
+            "title": "Answers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "answers",
+          "answered_by"
+        ],
+        "title": "AnswerGaps",
+        "type": "object"
+      },
       "AnswerResponse": {
         "description": "What the author did with a question (phase 06 \u00a73).\n\nAll six are answers in the sense that matters: each one tells the pipeline\nsomething it did not know, and each is recorded. They differ in two ways that\nthe code depends on \u2014 whether the question is closed, and whether the text may\nbe sent to a model.\n\n``DEFERRED`` is the only one that leaves the question pending: postponing is\nnot resolving, and marking it closed would erase the record that the author\nmeant to come back. ``CONFIDENTIAL`` is the only one whose text is deliberately\nwithheld from the provider while still being kept locally \u2014 it is an answer to\nthe pipeline and a refusal to the model at the same time.",
         "enum": [
@@ -2812,6 +2835,30 @@
         "title": "ForkVariables",
         "type": "object"
       },
+      "GapReply": {
+        "description": "One answer inside a sitting, naming the question it is about.",
+        "properties": {
+          "gap_id": {
+            "minLength": 1,
+            "title": "Gap Id",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/AnswerResponse",
+            "default": "answered"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gap_id"
+        ],
+        "title": "GapReply",
+        "type": "object"
+      },
       "GuaranteeOut": {
         "description": "One clause of the reproducibility contract (plan/12).\n\nServed rather than documented, because the question it answers is asked\nwhile looking at two executions \u2014 not while reading a README.",
         "properties": {
@@ -3995,6 +4042,16 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "record": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "submit": {
             "anyOf": [
@@ -8401,6 +8458,56 @@
           }
         },
         "summary": "Set Routing Profile"
+      }
+    },
+    "/projects/{project_id}/source-gaps": {
+      "post": {
+        "description": "Record a sitting's worth of answers. The run stays in the queue.\n\nThe route the question queue uses, because that is the screen where a person\nworks through a round. The single-answer route below stays for the CLI, where\na terminal interview is one question at a time \u2014 and both go through the same\nservice method.",
+        "operationId": "answer_gaps_projects__project_id__source_gaps_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerGaps"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Gaps"
       }
     },
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {

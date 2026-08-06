@@ -180,6 +180,20 @@ _DECIDABLE = frozenset({FindingStatus.ACCEPTED, FindingStatus.REJECTED, FindingS
 
 
 @dataclass(frozen=True)
+class GapAnswer:
+    """One answer to one question, on its way into the queue.
+
+    The twin of :class:`FindingDecision`, and for the twin reason: a sitting of
+    answers is validated before any of it is written, so each has to survive the
+    gap between being read and being recorded.
+    """
+
+    gap_id: str
+    text: str = ""
+    response: AnswerResponse = AnswerResponse.ANSWERED
+
+
+@dataclass(frozen=True)
 class FindingDecision:
     """What a person decided about one finding, on its way into the ledger.
 
@@ -393,6 +407,61 @@ class ApplicationService:
             payload={"token_budget": token_budget},
         )
 
+    def answer_gaps(
+        self,
+        project_id: str,
+        *,
+        answers: Sequence[GapAnswer],
+        answered_by: str,
+    ) -> CommandResult:
+        """Record a sitting's worth of answers, and leave the run where it is.
+
+        An author works through the questions the way they were asked — several
+        at a sitting, in whatever order the material comes back to them — and
+        :meth:`submit_answers` is what hands the round back. Recording is
+        deliberately not a transition, so it carries its own gate: the question is
+        still the engine's — *does this run offer* ``answer_questions`` — and
+        asking it that way keeps a cancelled or finished run from accepting
+        answers nothing will ever read.
+
+        One queue execution for the sitting, which is the fix. Recording was
+        priced per answer, so a round of eleven produced eleven
+        ``answer_source_questions`` executions — the run of 2026-08-06 did exactly
+        that, over eighteen minutes — plus a twelfth for the submit. The row
+        records what a person did, and a person answers a round.
+
+        The same shape as :meth:`decide_findings`, and for the same reason: these
+        are the two places the pipeline stops and asks a human for a list of small
+        answers, and both were charging a request, an execution and a screen
+        reload for each item in the list.
+
+        All or nothing. An answer naming a gap this project does not hold records
+        none of it, and the check runs before the queue opens — a queue opened and
+        then abandoned leaves an execution describing a sitting that never
+        happened.
+        """
+        if not answers:
+            raise UnknownProject("an answer submission with nothing in it answers nothing")
+
+        resumed = self._resume(project_id)
+        self._require_offered(resumed, A.ANSWER_QUESTIONS)
+        session = resumed.context.session
+
+        resolved: list[tuple[domain_models.SourceGap, GapAnswer]] = []
+        for answer in answers:
+            gap = session.get(domain_models.SourceGap, answer.gap_id)
+            if gap is None or gap.project_id != project_id:
+                raise UnknownProject(f"no gap {answer.gap_id} in project {project_id}")
+            resolved.append((gap, answer))
+
+        queue = open_question_queue(resumed.context)
+        for gap, answer in resolved:
+            queue.respond(
+                gap, response=answer.response, text=answer.text, answered_by=answered_by
+            )
+        self._runtime.recorder.complete_stage(queue.execution)
+        return self._settle(resumed, detail={"answered": len(resolved)})
+
     def answer_gap(
         self,
         project_id: str,
@@ -404,28 +473,17 @@ class ApplicationService:
     ) -> CommandResult:
         """Record one answer, and leave the run where it is.
 
-        An author works through the questions the way they were asked — several
-        at a sitting, in whatever order the material comes back to them — and
-        :meth:`submit_answers` is what hands the round back. Recording here took
-        the ``answer_questions`` edge once, which meant the first answer left the
-        state its own successors needed: the second was refused as out of order,
-        by the run the author's own first answer had moved.
-
-        Not a transition, so it carries its own gate. The question is still the
-        engine's — *does this run offer* ``answer_questions`` — and asking it
-        that way keeps a cancelled or finished run from accepting answers nothing
-        will ever read.
+        A sitting of one, so there is a single implementation of what recording an
+        answer means. Kept because it is still how the CLI records one — ``writer
+        source answer`` answers a question at a time, which is what a terminal
+        interview looks like — and because the endpoint is in the published
+        contract.
         """
-        resumed = self._resume(project_id)
-        self._require_offered(resumed, A.ANSWER_QUESTIONS)
-        gap = resumed.context.session.get(domain_models.SourceGap, gap_id)
-        if gap is None:
-            raise UnknownProject(f"no gap {gap_id} in project {project_id}")
-
-        queue = open_question_queue(resumed.context)
-        queue.respond(gap, response=response, text=text, answered_by=answered_by)
-        self._runtime.recorder.complete_stage(queue.execution)
-        return self._settle(resumed)
+        return self.answer_gaps(
+            project_id,
+            answers=[GapAnswer(gap_id=gap_id, text=text, response=response)],
+            answered_by=answered_by,
+        )
 
     # ------------------------------------------------------------------
     # Recovery

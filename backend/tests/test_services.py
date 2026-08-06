@@ -738,6 +738,69 @@ async def test_a_finding_can_be_accepted_which_is_what_a_plan_reads(
     assert review.issues[0].decided_by == AUTHOR
 
 
+async def test_a_sitting_of_answers_is_one_execution(harness: Harness) -> None:
+    """The same defect C1 fixed for findings, on the other human queue.
+
+    Recording was priced per answer, so the run of 2026-08-06 produced eleven
+    `answer_source_questions` executions over eighteen minutes for a round of
+    eleven questions — plus a twelfth for the submit. The row records what a
+    person did, and a person answers a round.
+    """
+    from groundscribe.app.services import GapAnswer
+    from groundscribe.provenance import models
+    from groundscribe.stages.questions import ANSWER_STAGE
+
+    project_id, gaps = await parked_on_questions(harness)
+    assert len(gaps) > 1, "the fixture needs more than one question to batch"
+
+    harness.service.answer_gaps(
+        project_id,
+        answers=[GapAnswer(gap_id=gap.id, text=f"about {gap.ref}") for gap in gaps],
+        answered_by=AUTHOR,
+    )
+
+    sittings = [
+        execution
+        for execution in harness.runtime.session.query(models.StageExecution).all()
+        if execution.stage == ANSWER_STAGE
+    ]
+    assert len(sittings) == 1, f"{len(gaps)} answers produced {len(sittings)} executions"
+    assert len(harness.runtime.session.query(domain_models.UserAnswer).all()) == len(gaps)
+
+
+async def test_a_sitting_naming_a_gap_the_project_lacks_records_none_of_it(
+    harness: Harness,
+) -> None:
+    """All or nothing, checked before the queue opens.
+
+    A queue opened and then abandoned leaves an execution describing a sitting
+    that never happened — which is the same reason `decide_findings` resolves
+    everything before touching the ledger.
+    """
+    from groundscribe.app.services import GapAnswer, UnknownProject
+    from groundscribe.provenance import models
+    from groundscribe.stages.questions import ANSWER_STAGE
+
+    project_id, gaps = await parked_on_questions(harness)
+
+    with pytest.raises(UnknownProject):
+        harness.service.answer_gaps(
+            project_id,
+            answers=[
+                GapAnswer(gap_id=gaps[0].id, text="a real answer"),
+                GapAnswer(gap_id="not-a-gap", text="nowhere"),
+            ],
+            answered_by=AUTHOR,
+        )
+
+    assert not harness.runtime.session.query(domain_models.UserAnswer).all()
+    assert not [
+        execution
+        for execution in harness.runtime.session.query(models.StageExecution).all()
+        if execution.stage == ANSWER_STAGE
+    ]
+
+
 async def test_a_whole_review_is_decided_in_one_pass(harness: Harness) -> None:
     """One ledger execution for a triage pass, not one per finding.
 

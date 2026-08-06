@@ -1215,6 +1215,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/source-gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Gaps
+         * @description Record a sitting's worth of answers. The run stays in the queue.
+         *
+         *     The route the question queue uses, because that is the screen where a person
+         *     works through a round. The single-answer route below stays for the CLI, where
+         *     a terminal interview is one question at a time — and both go through the same
+         *     service method.
+         */
+        post: operations["answer_gaps_projects__project_id__source_gaps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/source-gaps/{gap_id}/answer": {
         parameters: {
             query?: never;
@@ -1652,6 +1677,24 @@ export interface components {
              * @default
              */
             text: string;
+        };
+        /**
+         * AnswerGaps
+         * @description Every answer an author recorded in one sitting.
+         *
+         *     Recording was priced per answer: a request, a stage execution and a screen
+         *     reload each. One run produced eleven `answer_source_questions` executions
+         *     over eighteen minutes for a round of eleven questions.
+         *
+         *     Handing the round *back* is still its own command. Answering and submitting
+         *     are different acts — an author may answer four now and four tomorrow — and
+         *     collapsing them would submit whatever happened to be typed so far.
+         */
+        AnswerGaps: {
+            /** Answered By */
+            answered_by: string;
+            /** Answers */
+            answers: components["schemas"]["GapReply"][];
         };
         /**
          * AnswerResponse
@@ -2904,6 +2947,21 @@ export interface components {
             voice_profile?: string | null;
         };
         /**
+         * GapReply
+         * @description One answer inside a sitting, naming the question it is about.
+         */
+        GapReply: {
+            /** Gap Id */
+            gap_id: string;
+            /** @default answered */
+            response: components["schemas"]["AnswerResponse"];
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+        };
+        /**
          * GuaranteeOut
          * @description One clause of the reproducibility contract (plan/12).
          *
@@ -3512,6 +3570,7 @@ export interface components {
         QuestionQueue: {
             /** Questions */
             questions?: components["schemas"]["QuestionView"][];
+            record?: components["schemas"]["ActionLink"] | null;
             submit?: components["schemas"]["ActionLink"] | null;
         };
         /**
@@ -6321,6 +6380,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetRoutingProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_gaps_projects__project_id__source_gaps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerGaps"];
             };
         };
         responses: {

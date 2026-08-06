@@ -22,6 +22,7 @@ import { useState } from 'react';
 import {
   ApiError,
   sendCommand,
+  type ActionLink,
   type QuestionQueue,
   type QuestionView,
   type Schemas,
@@ -43,6 +44,17 @@ export interface QuestionQueueScreenProps {
 
 export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenProps) {
   const resource = useResource<QuestionQueue>(() => fetchQuestions(projectId), [projectId]);
+  // Answers typed and not yet recorded, by question id. Held here so a sitting
+  // is one request rather than one per answer.
+  const [pending, setPending] = useState<Record<string, { text: string; response: string }>>({});
+
+  const hold = (id: string) => (reply: { text: string; response: string } | undefined) =>
+    setPending((current) => {
+      const next = { ...current };
+      if (reply) next[id] = reply;
+      else delete next[id];
+      return next;
+    });
 
   return (
     <Loaded resource={resource}>
@@ -78,11 +90,21 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
                 <Question
                   key={question.id}
                   question={question}
-                  actor={actor}
-                  onAnswered={() => resource.reload()}
+                  pending={pending[question.id]}
+                  onPending={hold(question.id)}
                 />
               ))}
             </div>
+
+            <RecordAnswers
+              record={queue.record}
+              actor={actor}
+              pending={pending}
+              onRecorded={() => {
+                setPending({});
+                resource.reload();
+              }}
+            />
 
             <SubmitRound
               submit={queue.submit}
@@ -100,8 +122,8 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
                     <Question
                       key={question.id}
                       question={question}
-                      actor={actor}
-                      onAnswered={() => resource.reload()}
+                      pending={pending[question.id]}
+                      onPending={hold(question.id)}
                     />
                   ))}
                 </div>
@@ -121,8 +143,8 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
                     <Question
                       key={question.id}
                       question={question}
-                      actor={actor}
-                      onAnswered={() => resource.reload()}
+                      pending={pending[question.id]}
+                      onPending={hold(question.id)}
                     />
                   ))}
                 </div>
@@ -137,33 +159,25 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
 
 interface QuestionProps {
   question: QuestionView;
-  actor: string;
-  onAnswered: () => void;
+  /** What the author has typed for this one and not yet recorded. */
+  pending?: { text: string; response: string };
+  onPending: (reply: { text: string; response: string } | undefined) => void;
 }
 
-function Question({ question, actor, onAnswered }: QuestionProps) {
-  const [text, setText] = useState('');
-  const [response, setResponse] = useState<string>(RESPONSES[0].value);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+function Question({ question, pending, onPending }: QuestionProps) {
+  const [text, setText] = useState(pending?.text ?? '');
+  const [response, setResponse] = useState<string>(pending?.response ?? RESPONSES[0].value);
   //: Whether the form is open over an answer already given. An author works
   //: down a queue and changes their mind halfway, and until the round is handed
   //: back nothing has read what they typed.
   const [editing, setEditing] = useState(false);
 
-  const answer = async () => {
-    if (!question.answer_path) return;
-    setBusy(true);
-    setProblem(null);
-    try {
-      await sendCommand(question.answer_path, { text, answered_by: actor, response });
-      setEditing(false);
-      onAnswered();
-    } catch (error) {
-      setProblem(error instanceof ApiError ? error.detail : String(error));
-    } finally {
-      setBusy(false);
-    }
+  // Held, not sent. Recording was priced per answer — a request, a stage
+  // execution and a full reload of this screen each — and one run produced
+  // eleven executions over eighteen minutes for a round of eleven questions.
+  const answer = () => {
+    onPending({ text, response });
+    setEditing(false);
   };
 
   return (
@@ -222,7 +236,7 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
           className="answer-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void answer();
+            answer();
           }}
         >
           <label>
@@ -241,19 +255,20 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
               </select>
             </label>
             {editing ? (
-              <button type="button" onClick={() => setEditing(false)} disabled={busy}>
+              <button type="button" onClick={() => setEditing(false)}>
                 Keep what I had
               </button>
             ) : null}
-            <button type="submit" disabled={busy}>
-              {busy ? 'Recording…' : editing ? 'Save this instead' : 'Record answer'}
+            {pending ? (
+              <button type="button" onClick={() => onPending(undefined)}>
+                Discard
+              </button>
+            ) : null}
+            <button type="submit">
+              {editing ? 'Save this instead' : pending ? 'Update answer' : 'Record answer'}
             </button>
           </div>
-          {problem ? (
-            <p role="alert" className="failure">
-              {problem}
-            </p>
-          ) : null}
+          {pending ? <p className="muted">Held. Record the round to send it.</p> : null}
         </form>
       )}
     </article>
@@ -311,6 +326,68 @@ function SubmitRound({ submit, actor, answered, open, onSubmitted }: SubmitRound
         onClick={() => void handBack()}
       >
         {busy ? 'Rebuilding…' : 'Rebuild with these answers'}
+      </button>
+      {problem ? (
+        <p role="alert" className="failure">
+          {problem}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+interface RecordAnswersProps {
+  record?: ActionLink | null;
+  actor: string;
+  pending: Record<string, { text: string; response: string }>;
+  onRecorded: () => void;
+}
+
+/**
+ * Recording a sitting's answers, once.
+ *
+ * Separate from handing the round back, and that separation is the point:
+ * answering and submitting are different acts. An author may answer four now and
+ * four tomorrow, and one control that did both would hand over whatever happened
+ * to be typed so far — which is the reason `SUBMIT_ANSWERS` was deliberately kept
+ * out of the action table in the first place.
+ *
+ * What changed is only the price of the first act. It used to be a request, a
+ * stage execution and a full reload of this screen per answer; one run produced
+ * eleven executions over eighteen minutes for a round of eleven questions.
+ */
+function RecordAnswers({ record, actor, pending, onRecorded }: RecordAnswersProps) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const held = Object.entries(pending);
+  if (!record?.path || held.length === 0) return null;
+  const path = record.path;
+
+  const send = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await sendCommand(path, {
+        answered_by: actor,
+        answers: held.map(([gap_id, reply]) => ({
+          gap_id,
+          text: reply.text,
+          response: reply.response,
+        })),
+      });
+      onRecorded();
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.detail : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="record-answers" data-testid="record-answers">
+      <button type="button" className="button--primary" disabled={busy} onClick={() => void send()}>
+        {busy ? 'Recording…' : `Record ${held.length} ${held.length === 1 ? 'answer' : 'answers'}`}
       </button>
       {problem ? (
         <p role="alert" className="failure">
