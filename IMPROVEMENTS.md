@@ -293,3 +293,61 @@ not claiming, two sections both restating the thesis, `should` used where the
 reader needs `does`, and single-sentence paragraphs used often enough to stop
 landing. The brief is generated, so these are brief-prompt questions, and they
 are not addressed by any of the three levers above.
+
+---
+
+## 10. An advisor should draft the triage, not leave it to five cold decisions
+
+**Status:** open, noted only — not designed. **Wanted by:** the author, during
+the run of 2026-08-06, after triaging two consecutive reviews by hand. **Cost:**
+unestimated. **Risk:** high, and the risk is the whole point — see below.
+
+Triage is the pipeline's slowest human step and its least assisted one. A review
+returns findings; each one has to be read, held against the draft, and decided
+accept / reject / accept-with-an-edit, one at a time, with nothing on the screen
+saying which are worth the round. The author's words: *slow, difficult and
+clumsy*.
+
+The measured cost on that run: two triage passes, ten findings. Of the ten,
+**one** changed the article. Every other decision existed to say "no" — and the
+second review's five findings were all `optional`, all reporting that the prior
+score's complaints no longer held, i.e. five deliberate rejections to record
+that there was nothing to do. That is the shape of the complaint: the work does
+not scale with the decisions that matter, it scales with the findings returned.
+
+The asymmetry is that the machine already knows most of what the author is
+reconstructing by hand. The finding carries its severity, its category, its
+confidence, its passage, and its `source_ref`; the score that preceded it
+carries the failing conditions and the deductions; the plan that follows it
+already reasons about which findings to combine, defer and reject — the planner
+on this run deferred an accepted finding with a better rationale than the
+acceptance had. All of that is available *before* the author is asked, and none
+of it is offered to them.
+
+So: an advisor that reads the findings against the score and the draft and
+proposes a triage — a recommended decision per finding, with its reason and the
+round cost — leaving the author to confirm, override, or work only the ones it
+flagged as genuinely theirs.
+
+### Why this is filed rather than built
+
+The triage is the one step in the pipeline that exists specifically to be human.
+Every other human pause approves work the machine did; this one is the machine
+asking to be overruled. An advisor that is usually right is the most effective
+way yet devised to stop someone reading the one finding where it is wrong — and
+the failure is silent, because a confirmed recommendation and a considered
+decision are the same row in the ledger afterwards.
+
+Which means the design question is not "can a model rank findings" — it plainly
+can — but what the author's confirmation has to *be* for it to still mean
+something. At least: the advice arrives as a proposal the author can see the
+reasoning of, the ledger records that a decision was advised and whether it was
+changed, and a blocking finding never carries a pre-filled answer. That last one
+matters most: it is exactly the finding an advisor would be most confident
+about, and exactly the one where being overruled is the point.
+
+Worth noting that the pattern would not be new — `propose_content_architecture`
+already advises a decision that remains the author's, and the architecture board
+exists so the advice can be edited before it binds. The difference is that a
+proposed architecture is one document read as a whole; a triage is ten small
+answers, and ten small confirmations is where attention actually goes.

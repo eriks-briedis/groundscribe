@@ -1,0 +1,71 @@
+Plan the revision of this draft. Verdict under review: {{ verdict }}.
+
+Findings the author accepted — every one must be applied or explained:
+{% for finding in accepted %}
+- [{{ finding.ref }}] ({{ finding.severity }}, {{ finding.category }}) {{ finding.location }}
+  {{ finding.description }}
+  Suggested: {{ finding.recommended_correction }}
+{% endfor %}
+{% if dismissed %}
+
+Findings the author rejected. Do not plan around them, and do not reintroduce
+them:
+{% for finding in dismissed %}
+- [{{ finding.ref }}] {{ finding.description }} (rejected: {{ finding.decision_reason }})
+{% endfor %}
+{% endif %}
+
+The draft:
+{{ draft }}
+
+The brief it is bound by:
+{{ brief }}
+
+The source model — the only thing the article may state as fact:
+{{ source_model }}
+
+Produce a plan that:
+
+- lists each change as an instruction a rewriter can act on, naming the findings
+  it addresses and the sections it touches. Mark a change optional only if the
+  revision is complete without it.
+- names the sections to preserve as they are. A rewrite that touches everything
+  is a redraft, and it throws away work that was already right.
+- names the claims that must not change, **by claim id and nothing else** —
+  `claim_04`, not the sentence it stands for and not a description of it. Take
+  the ids from the draft's own `claims_used` list above; that is the set of
+  claims this article rests on, and an id outside it names something the draft
+  does not use. These are the facts the rewrite may rephrase around but not
+  alter.
+- says whether anything must be removed or moved.
+- reconciles findings that pull in different directions. For each, say whether
+  you combined them, deferred one, or rejected one, and give the reason. The
+  brief settles scope disputes; the source model settles factual ones.
+- says what you expect this to do to the article's scores.
+
+Your instructions are prose the rewrite will carry out, so anything you write as
+replacement text is a factual assertion you are making on the article's behalf.
+It is bound by the source model exactly as the draft is. Before you write a
+replacement sentence, find the claim that supports it and satisfy yourself that
+the claim says what your sentence says — not something adjacent, and not
+something the claim would be consistent with. A claim establishing that a
+category of thing happens does not establish a specific mechanism by which it
+happens, a specific consequence of it, or an example of it. Those are new
+assertions, and the source either contains them or it does not.
+
+Where a finding says the draft claims more than the source supports, the safe
+correction is to cut or to qualify down to what the source does say, and the
+dangerous one is to replace the passage with a different specific claim that
+reads better. The second is what happened on the run that prompted this
+instruction: a plan removed one unsupported mechanism and wrote two more into its
+own replacement text, and the article came back failing on both.
+
+If a change needs a fact the source model does not contain, say so plainly in the
+change description rather than supplying the fact. That is a `factual_gap` and it
+is the author's to close.
+
+If the feedback shows the problem is the brief or the architecture rather than
+the prose, say so with `reopen_brief` or `reopen_architecture` instead of planning
+a rewrite that cannot fix it.
+
+Return a single JSON object matching the required schema.

@@ -45,6 +45,7 @@ from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
     RevisionPlanDocument,
+    SourceModel,
     SubstantiveReview,
 )
 from groundscribe.workflow.states import WorkflowAction
@@ -91,6 +92,7 @@ class CreateRevisionPlan:
         findings: Sequence[domain_models.ReviewIssue],
         draft: ArticleDraft,
         brief: ArticleBriefDocument,
+        source_model: SourceModel,
         template_version: str | None = None,
         override: RouteOverride | None = None,
     ) -> None:
@@ -100,6 +102,7 @@ class CreateRevisionPlan:
         self._findings = tuple(findings)
         self._draft = draft
         self._brief = brief
+        self._source_model = source_model
         self._template_version = template_version
         self._override = override
 
@@ -125,6 +128,7 @@ class CreateRevisionPlan:
                 "dismissed": [_finding_view(finding) for finding in dismissed],
                 "draft": self._draft.model_dump(mode="json"),
                 "brief": self._brief.model_dump(mode="json"),
+                "source_model": self._source_model.model_dump(mode="json"),
                 "verdict": self._review.verdict,
             },
             schema=RevisionPlanDocument,

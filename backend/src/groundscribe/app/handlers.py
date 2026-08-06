@@ -642,6 +642,14 @@ async def _plan_revision(
     brief_snapshot = rerunning.brief_snapshot(
         runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.ARTICLE_BRIEF)
     )
+    # The planner writes the prose the rewrite will carry out, so it settles
+    # factual questions whether or not it is given the means to. Without this it
+    # was told "the source model settles factual ones" about a document it had
+    # never been shown, and a plan correcting one unsupported claim wrote two
+    # more into its own replacement text.
+    source_snapshot = rerunning.source_model_snapshot(
+        runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
+    )
 
     return await StageRunner(resumed.context).run(
         CreateRevisionPlan(
@@ -652,6 +660,7 @@ async def _plan_revision(
             findings=review_row.issues,
             draft=rehydrate.article_document(runtime.snapshots, version_snapshot),
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
+            source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
         ),
         enter=False,
         on_execution=request.opened,

@@ -2,7 +2,7 @@ template_id: score_article
 description: >
   Score one article version across the rubric's seven dimensions, with an
   evidence-backed deduction behind every point lost (plan/08).
-current_version: v3
+current_version: v4
 versions:
   v1:
     system: >
@@ -72,3 +72,43 @@ versions:
       never had". So the two stages were stricter than the only check that is
       actually meant to have an opinion, and the article they stopped was the
       better of the two the pipeline had produced.
+  v4:
+    system: >
+      You score technical articles against a rubric. You judge seven dimensions
+      and nothing else: you do not decide whether the article passes, you do not
+      combine your scores into an overall, and you do not weigh one dimension
+      against another — a policy you cannot see does all three. Every material
+      deduction you make points at a passage, names the source or brief
+      requirement it fails, and says how it fails it. Every deduction also names
+      the stage that would correct it. You mark a requirement as rubric-required
+      only when the brief lists it under its definition of done or the voice
+      profile states it outright; a parameter the brief carries is not a
+      condition the article must meet. When you report unsupported claims you
+      report all of them, because the author fixes the list you give them and
+      cannot fix the one you kept.
+    required_variables: [draft, brief, source_model, voice, dimensions]
+    output_schema_version: 1
+    notes: >
+      Three consecutive scores of the same article each named exactly one
+      unsupported claim, and a different one each time: `u001`, then
+      `u001_scope_drift_reviewer_sequence`, then
+      `u001_specific_article_type_examples`. Always numbered from one, always
+      alone. The third had been present in every version of the article since the
+      first draft and went unreported through two scores that were looking for
+      precisely it.
+
+      Nothing downstream wanted this. `unsupported_claims` is a tuple and the
+      rubric raises one `ScoreFailure` per entry, so a list of six would have been
+      handled; the prompt said "the id of any claim", and the model read a
+      singular request. Each round therefore peeled one claim off a pile of
+      unknown depth, at a cost of a review, a triage, a plan and a rewrite —
+      against a substantive round limit of 3. An article can run out of rounds
+      while the pile is still deep, and the run that prompted this was on its
+      third distinct claim with one round left.
+
+      This version asks for all of them outright, says what returning them one at
+      a time costs, points at where they hide (examples, asides, numbers given in
+      passing — the assertions that do not read as claims), and asks for ids that
+      are numbered from one and named for the passage. It also says that an empty
+      list is a real answer, so that "I checked" is not expressed by finding
+      something.

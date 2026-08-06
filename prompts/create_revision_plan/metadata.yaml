@@ -2,7 +2,7 @@ template_id: create_revision_plan
 description: >
   Turn the review findings the author accepted into a coherent plan the rewrite
   can follow, reconciling the ones that contradict each other (plan/07 §9).
-current_version: v2
+current_version: v3
 versions:
   v1:
     system: >
@@ -43,3 +43,43 @@ versions:
       `source_ref`, and now `claims_that_must_not_change`. A field a schema
       validates and a prompt does not describe is a field the model fills by
       guessing.
+  v3:
+    system: >
+      You turn accepted review feedback into a plan a rewriter will follow exactly.
+      Feedback is not instructions: two findings often disagree, and applying both
+      produces an article that argues with itself. You decide, and you say why.
+      You never invent changes nobody asked for, and you never quietly drop a
+      finding the author accepted — if you cannot apply it, you say whether you
+      combined it, deferred it, or rejected it, and on what grounds. Where you
+      name a claim, you name it by the id the draft uses, never by quoting what
+      it says. The replacement prose you write is bound by the source model
+      exactly as the draft is: you correct an unsupported claim by cutting it or
+      qualifying it down to what the source says, never by substituting a
+      different specific claim that reads better.
+    required_variables: [accepted, dismissed, draft, brief, source_model, verdict]
+    output_schema_version: 1
+    notes: >
+      The planner was told at the foot of its own instructions that "the brief
+      settles scope disputes; the source model settles factual ones" — about a
+      document it had never been given. `required_variables` on v1 and v2 is
+      `[accepted, dismissed, draft, brief, verdict]`, and the stage passed
+      exactly those. Every other stage that writes prose gets the source model;
+      this one composes the replacement text the rewrite carries out, and did not.
+
+      The failure that produced: a plan addressed a blocking finding about an
+      unsupported scope-drift mechanism by dictating its own replacement —
+      "adjacent material can enter, later rewrites can blur the brief's reader
+      question, and the result can become a polished version of the wrong
+      article". The rewrite followed it faithfully. Rescoring the result found
+      those two sentences as `u002` and `u003`, both unsupported: the source
+      establishes weak scope control and unfocused articles, and says nothing
+      about context adjacency, about blurred reader questions, or about the
+      result being polished. One unsupported claim had been removed and two
+      written in its place, by the stage whose job was to remove it.
+
+      This version supplies the source model, states that replacement prose is a
+      factual assertion made on the article's behalf, names the specific error —
+      treating a claim about a category as licence for a mechanism, a
+      consequence, or an example within it — and says that a change needing a
+      fact the source lacks is a `factual_gap` to be reported rather than
+      supplied.

@@ -78,6 +78,7 @@ async def plan(
             findings=reviewed.value.findings,
             draft=drafted.result.value.draft,
             brief=drafted.briefed.brief,
+            source_model=drafted.briefed.source_model,
         )
     )
     return drafted, result
@@ -259,11 +260,54 @@ def test_the_plan_prompt_says_claims_are_named_by_id() -> None:
 
     rendered = PromptStore(prompts_root()).render(
         "create_revision_plan",
-        {"accepted": [], "dismissed": [], "draft": "{}", "brief": "{}", "verdict": "revise"},
+        {
+            "accepted": [],
+            "dismissed": [],
+            "draft": "{}",
+            "brief": "{}",
+            "source_model": "{}",
+            "verdict": "revise",
+        },
     )
 
     assert "claims_used" in rendered.rendered_prompt
     assert "claim id" in rendered.rendered_prompt
+
+
+def test_the_plan_prompt_is_given_the_source_model_it_is_told_to_defer_to() -> None:
+    """The planner writes prose, so it makes factual assertions, so it needs the source.
+
+    v1 and v2 ended with "the brief settles scope disputes; the source model
+    settles factual ones" while declaring
+    ``required_variables: [accepted, dismissed, draft, brief, verdict]`` — an
+    instruction to defer to a document the stage never passed.
+
+    What that cost: a plan correcting one unsupported claim dictated its own
+    replacement prose, the rewrite carried it out faithfully, and the replacement
+    scored as two fresh unsupported claims. The stage whose job was to remove one
+    wrote two.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    store = PromptStore(prompts_root())
+    declared = store.metadata("create_revision_plan").versions["v3"]
+    assert "source_model" in declared.required_variables
+
+    rendered = store.render(
+        "create_revision_plan",
+        {
+            "accepted": [],
+            "dismissed": [],
+            "draft": "{}",
+            "brief": "{}",
+            "source_model": '{"claims": [{"id": "c001"}]}',
+            "verdict": "revise",
+        },
+    )
+
+    assert "c001" in rendered.rendered_prompt
+    assert "the only thing the article may state as fact" in rendered.rendered_prompt
 
 
 # ----------------------------------------------------------------------
