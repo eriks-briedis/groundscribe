@@ -13,7 +13,7 @@ handle rather than one per endpoint.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -103,6 +103,24 @@ class ReviseArticle(ActorAction):
     """
 
     prefer: WorkflowState | None = None
+
+
+class DecideFinding(ActorAction):
+    """What the author decided about one review finding (plan/07 §8).
+
+    Three decisions, because they are the three a person makes. ``proposed`` is
+    where a finding starts and ``suppressed`` is the system holding one back;
+    neither is chosen, so neither is offered.
+
+    ``reason`` is what a rejection is judged by next round — the ledger refuses one
+    without it, because a dismissal with no reason cannot be told from an oversight
+    at exactly the moment that matters.
+    """
+
+    decision: Literal[FindingStatus.ACCEPTED, FindingStatus.REJECTED, FindingStatus.EDITED]
+    reason: str = ""
+    #: What the author would have the rewrite do instead, for an ``edited`` finding.
+    recommended_correction: str = ""
 
 
 class ContinueToArticle(ActorAction):

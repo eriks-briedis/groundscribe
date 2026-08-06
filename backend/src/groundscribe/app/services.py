@@ -44,7 +44,12 @@ from groundscribe.app.advance import (
 )
 from groundscribe.app.runtime import Runtime
 from groundscribe.domain import models as domain_models
-from groundscribe.domain.enums import AnswerResponse, ArtifactType, SourceFormat
+from groundscribe.domain.enums import (
+    AnswerResponse,
+    ArtifactType,
+    FindingStatus,
+    SourceFormat,
+)
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.experiments.datasets import DatasetBuilder
@@ -82,6 +87,7 @@ from groundscribe.stages.override import (
     override_architecture,
 )
 from groundscribe.stages.questions import open_question_queue
+from groundscribe.stages.review import open_review_ledger
 from groundscribe.stages.schemas import (
     ArchitectureProposal,
     ArticleBriefDocument,
@@ -113,6 +119,19 @@ class NothingToRevise(LookupError):
     Its own type because both ways to get here are ordinary: the article has not
     been scored, or its last score passed. Neither is an error in the caller's
     request and neither should read as one.
+    """
+
+
+class UnknownFinding(LookupError):
+    """Asked to decide a finding this review does not hold."""
+
+
+class UndecidableFinding(ValueError):
+    """Asked to set a finding to a status a person does not choose.
+
+    ``proposed`` is where a finding starts and ``suppressed`` is the system
+    holding one back; neither is a decision, and offering them as though they
+    were would let a caller un-decide something the record says was decided.
     """
 
 
@@ -601,6 +620,63 @@ class ApplicationService:
     async def review(self, article_id: str) -> CommandResult:
         """Review the current version against the source and the brief."""
         return self._enqueue_for_article(article_id, JobType.REVIEW_ARTICLE)
+
+    def decide_finding(
+        self,
+        article_id: str,
+        *,
+        ref: str,
+        decision: FindingStatus,
+        decided_by: str,
+        reason: str = "",
+        recommended_correction: str = "",
+    ) -> CommandResult:
+        """Accept, reject or edit one of the review's findings.
+
+        The step the pipeline could not take for itself, and until now could not
+        be taken at all: :class:`~groundscribe.stages.review.ReviewLedger` did the
+        work and nothing outside the tests could reach it.
+
+        What that cost is worth stating, because it is not obvious from any one
+        stage. A finding reaches a revision plan only when it is ``accepted`` or
+        ``edited``; everything arrives ``proposed``. With no way to decide one,
+        every plan was built from an empty set — and a plan with nothing to do
+        satisfies ``check_plan``, and a rewrite that applies nothing satisfies
+        ``check_rewrite``. So the revision loop ran green and returned the article
+        unchanged, which is the one failure mode worse than an error.
+
+        Moves the run nowhere. Deciding is bookkeeping about a review that has
+        already happened, and the run is parked where the review left it.
+        """
+        resumed = self._resume(self.project_for_article(article_id))
+        session = resumed.context.session
+        version = rehydrate.latest_version(session, article_id)
+        review = rehydrate.latest_review(session, version.id)
+
+        finding = next((issue for issue in review.issues if issue.ref == ref), None)
+        if finding is None:
+            offered = ", ".join(sorted(issue.ref for issue in review.issues)) or "none"
+            raise UnknownFinding(f"review {review.id} has no finding {ref!r} (it has: {offered})")
+
+        ledger = open_review_ledger(resumed.context)
+        if decision is FindingStatus.ACCEPTED:
+            ledger.accept(finding, decided_by=decided_by)
+        elif decision is FindingStatus.REJECTED:
+            ledger.reject(finding, decided_by=decided_by, reason=reason)
+        elif decision is FindingStatus.EDITED:
+            ledger.edit(
+                finding,
+                decided_by=decided_by,
+                recommended_correction=recommended_correction,
+                reason=reason,
+            )
+        else:
+            raise UndecidableFinding(
+                f"{decision.value} is not a decision a person makes; "
+                "a finding is accepted, rejected, or accepted with an edit"
+            )
+        self._runtime.recorder.complete_stage(ledger.execution)
+        return self._settle(resumed, detail={"ref": ref, "status": decision.value})
 
     async def plan_revision(self, article_id: str) -> CommandResult:
         """Turn the review's findings into a plan a rewrite is bound by."""
@@ -1344,7 +1420,27 @@ class ApplicationService:
         return Have(
             architecture_approved=resumed.engine.approved_architecture is not None,
             revision_plan=self._revision_plan_exists(article_id),
+            triaged_review=self._review_triaged(article_id),
         )
+
+    def _review_triaged(self, article_id: str | None) -> bool:
+        """Whether anyone has decided anything about the current review's findings.
+
+        True where there is no review and where it raised nothing, because both
+        mean there is nothing waiting on a person — the flag exists to stop a plan
+        being built from findings nobody has read, not to stop planning at all.
+        """
+        if article_id is None:
+            return True
+        session = self._runtime.session
+        try:
+            version = rehydrate.latest_version(session, article_id)
+            review = rehydrate.latest_review(session, version.id)
+        except rehydrate.MissingInput:
+            return True
+        if not review.issues:
+            return True
+        return any(issue.status is not FindingStatus.PROPOSED for issue in review.issues)
 
     def _revision_plan_exists(self, article_id: str | None) -> bool:
         """Whether the current review has already been planned from.

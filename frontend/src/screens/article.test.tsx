@@ -163,7 +163,7 @@ describe('the review history', () => {
   it('shows each round, its verdict, and what each finding did', async () => {
     fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
 
-    render(<ReviewHistoryScreen articleId={ARTICLE_ID} />);
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
 
     const rounds = await screen.findAllByRole('article');
     expect(rounds[0]).toHaveTextContent(/revise/i);
@@ -175,7 +175,7 @@ describe('the review history', () => {
   it('shows the score progression beside the rounds that earned it', async () => {
     fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
 
-    render(<ReviewHistoryScreen articleId={ARTICLE_ID} />);
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
 
     const rows = await screen.findAllByRole('row');
     expect(rows.slice(1)[0]).toHaveTextContent('82');
@@ -185,7 +185,7 @@ describe('the review history', () => {
   it('passes on the stagnation warning the backend raised', async () => {
     fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
 
-    render(<ReviewHistoryScreen articleId={ARTICLE_ID} />);
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
 
     expect(await screen.findByRole('status')).toHaveTextContent(
       /two rounds have not moved the score/i,
@@ -489,5 +489,63 @@ describe('routing a refused score', () => {
     await screen.findByTestId('run-state');
 
     expect(screen.queryByTestId('route-revision')).toBeNull();
+  });
+});
+
+/**
+ * Deciding what the review found (plan/07 §8).
+ *
+ * The step between reviewing and planning, and until now unreachable: the ledger
+ * that records these decisions had no service, no endpoint and no screen, so
+ * every finding stayed `proposed`. A plan is built only from accepted findings,
+ * an empty plan passes every check downstream, and the rewrite it produced was a
+ * copy of the article — green the whole way.
+ */
+describe('deciding a review finding', () => {
+  it('accepts one by the path the backend supplied', async () => {
+    const backend = fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
+
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /^accept$/i }));
+
+    expect(backend.commands[0]).toMatchObject({
+      path: '/articles/art-1/findings/i1',
+      body: { actor_id: 'ada', decision: 'accepted' },
+    });
+  });
+
+  it('will not reject without a reason, because next round cannot tell why', async () => {
+    fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
+
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
+    const reject = await screen.findByRole('button', { name: /^reject$/i });
+
+    expect(reject).toBeDisabled();
+  });
+
+  it('sends the reason with the rejection once there is one', async () => {
+    const backend = fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: reviewHistory });
+
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
+    const reason = await screen.findByLabelText(/why this does not apply/i);
+    await userEvent.type(reason, 'the brief asks for it');
+    await userEvent.click(await screen.findByRole('button', { name: /^reject$/i }));
+
+    expect(backend.commands[0]).toMatchObject({
+      path: '/articles/art-1/findings/i1',
+      body: { decision: 'rejected', reason: 'the brief asks for it' },
+    });
+  });
+
+  it('offers no control on a finding already decided', async () => {
+    const decided = structuredClone(reviewHistory);
+    decided.rounds![1]!.issues![0]!.decide_command = null;
+    decided.rounds![1]!.issues![0]!.status = 'accepted';
+    fakeBackend({ [`/articles/${ARTICLE_ID}/reviews`]: decided });
+
+    render(<ReviewHistoryScreen articleId={ARTICLE_ID} actor="ada" />);
+    await screen.findAllByRole('article');
+
+    expect(screen.queryByRole('button', { name: /^accept$/i })).toBeNull();
   });
 });

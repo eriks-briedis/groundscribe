@@ -206,6 +206,11 @@ class Have:
     architecture_approved: bool = False
     #: The current review has been planned from, so the plan is written.
     revision_plan: bool = False
+    #: Somebody has accepted or rejected at least one of the review's findings.
+    #:
+    #: False on a review nobody has been through, which is where every review
+    #: starts — findings arrive ``proposed`` and only a person moves them.
+    triaged_review: bool = True
 
 
 def startable(step: Step, have: Have) -> bool:
@@ -238,7 +243,13 @@ def startable(step: Step, have: Have) -> bool:
     if step.job_type is JobType.PROPOSE_ARCHITECTURE:
         return not have.architecture_approved
     if step.job_type is JobType.PLAN_REVISION:
-        return not have.revision_plan
+        # Not yet planned, *and* somebody has been through the findings. A plan
+        # built from a review nobody has decided anything about has nothing to
+        # apply, and an empty plan passes every check downstream — see
+        # `check_triaged`. The run parks instead, which is what it should have
+        # been doing all along: accepting a finding is a person's call and there
+        # is no workflow state that says so.
+        return not have.revision_plan and have.triaged_review
     return True
 
 

@@ -109,6 +109,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{article_id}/findings/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Finding
+         * @description Accept, reject or edit one of the review's findings.
+         *
+         *     The step between reviewing and planning, and the one the pipeline cannot take
+         *     for itself: a finding only reaches a revision plan once a person has accepted
+         *     it. Moves the run nowhere — the review has already happened.
+         */
+        post: operations["decide_finding_articles__article_id__findings__ref__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/articles/{article_id}/lineage": {
         parameters: {
             query?: never;
@@ -2084,6 +2108,37 @@ export interface components {
             /** Sensitive Included */
             sensitive_included?: string[];
         };
+        /**
+         * DecideFinding
+         * @description What the author decided about one review finding (plan/07 §8).
+         *
+         *     Three decisions, because they are the three a person makes. ``proposed`` is
+         *     where a finding starts and ``suppressed`` is the system holding one back;
+         *     neither is chosen, so neither is offered.
+         *
+         *     ``reason`` is what a rejection is judged by next round — the ledger refuses one
+         *     without it, because a dismissal with no reason cannot be told from an oversight
+         *     at exactly the moment that matters.
+         */
+        DecideFinding: {
+            /** Actor Id */
+            actor_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "rejected" | "edited";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Recommended Correction
+             * @default
+             */
+            recommended_correction: string;
+        };
         /** DecisionView */
         DecisionView: {
             /**
@@ -2535,6 +2590,7 @@ export interface components {
              * @default
              */
             category: string;
+            decide_command?: components["schemas"]["ActionLink"] | null;
             /**
              * Decided By
              * @default
@@ -4380,6 +4436,42 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_finding_articles__article_id__findings__ref__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideFinding"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

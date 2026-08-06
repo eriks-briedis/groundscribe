@@ -557,6 +557,16 @@ export const reviewHistory: ReviewHistory = {
           decided_by: '',
           decision_reason: '',
           lifecycle: 'repeated',
+          // Undecided, so the backend offers the control. A decided finding
+          // comes back without one — the ledger keeps a decision rather than
+          // letting it be taken back.
+          decide_command: {
+            action: 'decide_finding',
+            method: 'POST',
+            path: '/articles/art-1/findings/i1',
+            requires_actor: true,
+            taken_by: 'you',
+          },
         },
       ],
     },

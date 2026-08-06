@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
+from groundscribe.app import rehydrate
 from groundscribe.app.services import NothingToAbandon, NothingToRetry
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
@@ -670,3 +671,112 @@ async def test_a_state_waiting_on_a_person_has_nothing_to_run_again(
 
     with pytest.raises(NothingToRetry, match="not waiting on work"):
         harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+
+
+# ----------------------------------------------------------------------
+# Deciding what the review found
+# ----------------------------------------------------------------------
+
+
+async def reviewed_article(harness: Harness) -> tuple[str, str]:
+    """An article with a review whose findings nobody has decided yet."""
+    from golden import golden_json as _golden_json
+
+    project_id = await with_source(harness)
+    script_extraction(harness, gaps={"schema_version": 1, "gaps": []})
+    harness.client.script_response(
+        "propose_content_architecture", _golden_json("architecture.json")
+    )
+    await harness.drain()
+    harness.service.approve_architecture(project_id, approved_by=AUTHOR)
+
+    harness.client.script_response("generate_article_brief", _golden_json("brief.json"))
+    await harness.drain()
+    # The architecture proposes two concepts, so approval opens two articles.
+    # The run drives the one the proposal selected.
+    from groundscribe.app.advance import selected_article_id
+
+    article_id = selected_article_id(harness.runtime, project_id)
+    assert article_id is not None
+    harness.service.approve_brief(article_id, approved_by=AUTHOR)
+
+    harness.client.script_response(
+        "generate_initial_draft", _golden_json("draft.json", suite="draft_to_voice")
+    )
+    harness.client.script_response(
+        "review_substantively", _golden_json("review.json", suite="draft_to_voice")
+    )
+    await harness.drain()
+    return project_id, article_id
+
+
+async def test_a_finding_can_be_accepted_which_is_what_a_plan_reads(
+    harness: Harness,
+) -> None:
+    """The step nothing outside the tests could take.
+
+    ``ReviewLedger`` did the work and had no service, no endpoint and no screen,
+    so every finding stayed ``proposed`` — and a plan built from none of them is
+    an empty plan that passes every check downstream.
+    """
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    ref = review.issues[0].ref
+
+    harness.service.decide_finding(
+        article_id, ref=ref, decision=FindingStatus.ACCEPTED, decided_by=AUTHOR
+    )
+
+    assert review.issues[0].status is FindingStatus.ACCEPTED
+    assert review.issues[0].decided_by == AUTHOR
+
+
+async def test_a_rejection_without_a_reason_is_refused(harness: Harness) -> None:
+    """Next round cannot tell a considered dismissal from an oversight."""
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+
+    with pytest.raises(ValueError, match="needs a reason"):
+        harness.service.decide_finding(
+            article_id,
+            ref=review.issues[0].ref,
+            decision=FindingStatus.REJECTED,
+            decided_by=AUTHOR,
+        )
+
+
+async def test_deciding_a_finding_that_is_not_there_says_which_are(
+    harness: Harness,
+) -> None:
+    """A ref that does not resolve is a caller's typo, and the answer is the list."""
+    from groundscribe.app.services import UnknownFinding
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+
+    with pytest.raises(UnknownFinding, match="it has:"):
+        harness.service.decide_finding(
+            article_id, ref="SR-999", decision=FindingStatus.ACCEPTED, decided_by=AUTHOR
+        )
+
+
+async def test_an_untouched_review_does_not_auto_start_the_plan(harness: Harness) -> None:
+    """Auto-advance walked straight past a step only a person can take.
+
+    ``revision_plan_required`` is in the map, so the run planned the moment it
+    arrived — before anybody had read the findings. The plan was empty and the
+    rewrite was a copy, and every check passed.
+    """
+    from groundscribe.app.advance import NEXT as STEPS
+    from groundscribe.app.advance import Have, startable
+
+    plan_step = STEPS[S.REVISION_PLAN_REQUIRED]
+
+    assert not startable(plan_step, Have(triaged_review=False))
+    assert startable(plan_step, Have(triaged_review=True))

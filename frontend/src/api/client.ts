@@ -75,6 +75,7 @@ export type ExecutionComparison = Schemas['ExecutionComparison'];
 export type CommandResponse = Schemas['CommandResponse'];
 export type Job = Schemas['Job'];
 export type FindingView = Schemas['FindingView'];
+export type ActionLink = Schemas['ActionLink'];
 export type ScoreView = Schemas['ScoreView'];
 export type DiffView = Schemas['DiffView'];
 export type QuestionView = Schemas['QuestionView'];

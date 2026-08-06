@@ -264,3 +264,52 @@ def test_the_plan_prompt_says_claims_are_named_by_id() -> None:
 
     assert "claims_used" in rendered.rendered_prompt
     assert "claim id" in rendered.rendered_prompt
+
+
+# ----------------------------------------------------------------------
+# A plan built from a review nobody has read
+# ----------------------------------------------------------------------
+
+
+async def test_planning_from_an_untouched_review_is_refused(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The silent failure, and the reason it was silent.
+
+    A finding reaches a plan only once it is accepted or edited, and every finding
+    arrives ``proposed``. With none decided, the accepted set is empty — and an
+    empty plan satisfies ``check_plan``, because "address every accepted finding"
+    is trivially true of none. The rewrite that applies nothing then satisfies
+    ``check_rewrite`` for the same reason.
+
+    So the loop ran green and handed back the article unchanged. Observed on a
+    real run: review, plan and rewrite all reported success, and the new version
+    was identical to its parent to the word.
+    """
+    with pytest.raises(PlanContractError, match="have been decided"):
+        await plan(db_session, snapshot_store, accept=())
+
+
+async def test_a_review_the_author_rejected_outright_may_still_be_planned(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Deciding against every finding is a decision, and a real one.
+
+    The guard is about a review nobody has been through — not about the accepted
+    set being empty, which is a legitimate outcome of reading one and disagreeing.
+    """
+    drafted, reviewed = await review(db_session, snapshot_store)
+    ledger = open_review_ledger(drafted.context)
+    for finding in reviewed.value.findings:
+        ledger.reject(finding, decided_by=AUTHOR, reason="the brief asks for this")
+
+    from groundscribe.stages.planning import check_triaged
+
+    check_triaged(reviewed.value.findings)
+
+
+def test_a_review_that_found_nothing_is_not_waiting_on_anybody() -> None:
+    """No findings, nothing to decide — and nothing for the guard to object to."""
+    from groundscribe.stages.planning import check_triaged
+
+    check_triaged([])

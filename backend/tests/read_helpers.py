@@ -245,8 +245,37 @@ class Walkthrough:
         self.script("review_substantively", payload)
         return await self.command("POST", f"/articles/{self.article_id}/review")
 
+    async def accept_findings(self) -> None:
+        """Take the review's findings, which is what a plan is built from.
+
+        The step this walk used to skip, and skipping it was not visible: a
+        finding reaches a plan only once it is accepted, an empty plan satisfies
+        `check_plan`, and a rewrite that applies nothing satisfies
+        `check_rewrite`. So the walk ran green and published a draft nobody had
+        revised — which is what a smoke test exists to notice and did not.
+        """
+        for ref in self.proposed_findings():
+            await self.command(
+                "POST",
+                f"/articles/{self.article_id}/findings/{ref}",
+                json={"actor_id": AUTHOR, "decision": "accepted"},
+            )
+
+    def proposed_findings(self) -> tuple[str, ...]:
+        """The refs of the current review's undecided findings."""
+        history = self.client.get(f"/articles/{self.article_id}/reviews").json()
+        rounds = history.get("rounds") or []
+        if not rounds:
+            return ()
+        return tuple(
+            issue["ref"]
+            for issue in rounds[-1].get("issues") or []
+            if issue.get("status") == "proposed" and issue.get("ref")
+        )
+
     async def revise(self) -> dict[str, Any]:
-        """Plan the revision, approve it, and rewrite under it."""
+        """Accept the findings, plan the revision, approve it, and rewrite under it."""
+        await self.accept_findings()
         self.script("create_revision_plan", self.revision_plan_payload())
         await self.command("POST", f"/articles/{self.article_id}/revision-plan")
         await self.command(

@@ -389,6 +389,31 @@ async def review(article_id: str, service: Service) -> schemas.CommandResponse:
     return render(await service.review(article_id))
 
 
+@router.post("/articles/{article_id}/findings/{ref}", response_model=schemas.CommandResponse)
+def decide_finding(
+    article_id: str,
+    ref: str,
+    body: schemas.DecideFinding,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Accept, reject or edit one of the review's findings.
+
+    The step between reviewing and planning, and the one the pipeline cannot take
+    for itself: a finding only reaches a revision plan once a person has accepted
+    it. Moves the run nowhere — the review has already happened.
+    """
+    return render(
+        service.decide_finding(
+            article_id,
+            ref=ref,
+            decision=body.decision,
+            decided_by=body.actor_id,
+            reason=body.reason,
+            recommended_correction=body.recommended_correction,
+        )
+    )
+
+
 @router.post(
     "/articles/{article_id}/revision-plan",
     response_model=schemas.CommandResponse,

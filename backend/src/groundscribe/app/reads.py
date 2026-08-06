@@ -411,7 +411,11 @@ class ProjectionReader:
         plan = self._latest_plan(versions)
         scores = self._scores(run, article_id)
         validation = self._validation(versions)
-        findings = [_finding_view(issue) for issue in review.issues] if review else []
+        findings = (
+            [_finding_view(issue, article_id=article_id) for issue in review.issues]
+            if review
+            else []
+        )
 
         current_view = self._version_view(current) if current else None
         previous_view = self._version_view(previous) if previous else None
@@ -493,7 +497,7 @@ class ProjectionReader:
         for review in self._reviews(versions):
             issues: list[FindingView] = []
             for issue in review.issues:
-                view = _finding_view(issue)
+                view = _finding_view(issue, article_id=article_id)
                 view.lifecycle = _lifecycle(issue, seen)
                 issues.append(view)
             seen.update(issue.fingerprint for issue in review.issues if issue.fingerprint)
@@ -1598,8 +1602,20 @@ def _job_view(job: Job) -> JobView:
     )
 
 
-def _finding_view(issue: domain_models.ReviewIssue) -> FindingView:
+def _finding_view(issue: domain_models.ReviewIssue, *, article_id: str = "") -> FindingView:
+    decide = (
+        ActionLink(
+            action="decide_finding",
+            method="POST",
+            path=f"/articles/{article_id}/findings/{issue.ref}",
+            requires_actor=True,
+            taken_by="you",
+        )
+        if article_id and issue.ref and issue.status is FindingStatus.PROPOSED
+        else None
+    )
     return FindingView(
+        decide_command=decide,
         id=issue.id,
         ref=issue.ref,
         severity=issue.severity.value,

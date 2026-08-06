@@ -81,7 +81,7 @@ function Screen({ hash }: { hash: string }) {
     return <DashboardScreen projectId={id} actor={ACTOR} />;
   }
   if (route === 'articles' && id) {
-    if (tail === 'reviews') return <ReviewHistoryScreen articleId={id} />;
+    if (tail === 'reviews') return <ReviewHistoryScreen articleId={id} actor={ACTOR} />;
     return <ArticleWorkspaceScreen articleId={id} actor={ACTOR} />;
   }
   if (route === 'executions' && id) {

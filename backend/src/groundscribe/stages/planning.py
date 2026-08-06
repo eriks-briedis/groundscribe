@@ -114,6 +114,7 @@ class CreateRevisionPlan:
         dismissed = tuple(
             finding for finding in self._findings if finding.status is FindingStatus.REJECTED
         )
+        check_triaged(self._findings)
         generated = await context.generator.generate(
             execution,
             stage=PLAN_STAGE,
@@ -250,6 +251,38 @@ def approve_revision_plan(
     return recorded.decision
 
 
+def check_triaged(findings: Sequence[domain_models.ReviewIssue]) -> None:
+    """Refuse to plan from a review nobody has read.
+
+    A finding reaches a plan only once it is ``accepted`` or ``edited``, and every
+    finding arrives ``proposed``. So a review whose findings are all still
+    proposed yields an empty accepted set — and an empty plan then passes
+    ``check_plan``, because "address every accepted finding" is trivially true of
+    none, and the rewrite that applies nothing passes ``check_rewrite`` for the
+    same reason.
+
+    The result was a revision loop that ran green and returned the article
+    unchanged. Every stage reported success; the words were identical. That is
+    worse than a failure, because nothing anywhere says to look.
+
+    Distinguished from a review the author has been through and rejected
+    entirely: that is a real decision, the plan legitimately has nothing to do,
+    and it is not this. What is refused is planning from a review nobody has
+    decided anything about.
+    """
+    if not findings:
+        return
+    if any(finding.status is not FindingStatus.PROPOSED for finding in findings):
+        return
+    refs = ", ".join(sorted(finding.ref for finding in findings if finding.ref))
+    raise PlanContractError(
+        f"none of this review's findings have been decided ({refs}); a plan built from "
+        "them would be empty, and an empty plan is not a shorter revision — it is a "
+        "rewrite that changes nothing while every check passes. Accept or reject them "
+        "first"
+    )
+
+
 def check_plan(
     planned: RevisionPlanDocument,
     *,
@@ -299,4 +332,5 @@ __all__ = [
     "PlanOutcome",
     "approve_revision_plan",
     "check_plan",
+    "check_triaged",
 ]

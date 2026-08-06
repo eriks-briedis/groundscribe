@@ -307,14 +307,22 @@ async def test_a_real_run_reports_what_it_spent_and_what_it_did(
     assert metrics.rewrite_count == 1
     assert metrics.validation_failures == 0
 
-    # The reviewer's findings are still *proposed*, and that is the walk being
-    # reported accurately rather than the metric being wrong: this run planned a
-    # revision straight from the review without going through the acceptance
-    # stage, so nobody has decided about them. A surface that folded "nobody has
-    # looked" into "rejected" would lose the distinction phase 07 built five
-    # finding states to keep.
-    assert metrics.issue_decisions.proposed > 0
-    assert metrics.issue_decisions.accepted == metrics.issue_decisions.rejected == 0
+    # The findings the walk accepted, which is what the rewrite was built from.
+    #
+    # This assertion used to read the other way, and the comment explaining it
+    # described the defect as the walk being reported accurately: the run
+    # "planned a revision straight from the review without going through the
+    # acceptance stage, so nobody has decided about them". True, and it was not
+    # a property of the walk — it was the only thing the product could do. There
+    # was no service, endpoint or screen for deciding a finding, so every plan
+    # was built from an empty accepted set, and an empty plan passes every check
+    # after it. The walk published an unrevised draft and this suite agreed.
+    #
+    # A run with proposed findings left over is still legitimate — a review the
+    # author has not been through yet — which is why the metric keeps the five
+    # states apart. What is not legitimate is planning from one.
+    assert metrics.issue_decisions.accepted > 0
+    assert metrics.issue_decisions.rejected == 0
 
     # Nothing in the happy path repairs, falls back, truncates or calls a tool,
     # so those report the honest zero-of-many rather than the dishonest None.

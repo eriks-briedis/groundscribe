@@ -1481,6 +1481,40 @@
         "title": "DatasetOut",
         "type": "object"
       },
+      "DecideFinding": {
+        "description": "What the author decided about one review finding (plan/07 \u00a78).\n\nThree decisions, because they are the three a person makes. ``proposed`` is\nwhere a finding starts and ``suppressed`` is the system holding one back;\nneither is chosen, so neither is offered.\n\n``reason`` is what a rejection is judged by next round \u2014 the ledger refuses one\nwithout it, because a dismissal with no reason cannot be told from an oversight\nat exactly the moment that matters.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "edited"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "recommended_correction": {
+            "default": "",
+            "title": "Recommended Correction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id",
+          "decision"
+        ],
+        "title": "DecideFinding",
+        "type": "object"
+      },
       "DecisionView": {
         "properties": {
           "decided_at": {
@@ -2438,6 +2472,16 @@
             "default": "",
             "title": "Category",
             "type": "string"
+          },
+          "decide_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "decided_by": {
             "default": "",
@@ -5979,6 +6023,65 @@
           }
         },
         "summary": "Draft"
+      }
+    },
+    "/articles/{article_id}/findings/{ref}": {
+      "post": {
+        "description": "Accept, reject or edit one of the review's findings.\n\nThe step between reviewing and planning, and the one the pipeline cannot take\nfor itself: a finding only reaches a revision plan once a person has accepted\nit. Moves the run nowhere \u2014 the review has already happened.",
+        "operationId": "decide_finding_articles__article_id__findings__ref__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "title": "Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideFinding"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Finding"
       }
     },
     "/articles/{article_id}/lineage": {

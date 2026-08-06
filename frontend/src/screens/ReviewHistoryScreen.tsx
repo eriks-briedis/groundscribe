@@ -11,13 +11,15 @@
  */
 import { fetchReviewHistory, type ReviewHistory } from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
+import { FindingDecision } from '@/components/FindingDecision';
 import { ScoreTable } from '@/components/ScoreTable';
 
 export interface ReviewHistoryScreenProps {
   articleId: string;
+  actor: string;
 }
 
-export function ReviewHistoryScreen({ articleId }: ReviewHistoryScreenProps) {
+export function ReviewHistoryScreen({ articleId, actor }: ReviewHistoryScreenProps) {
   const resource = useResource<ReviewHistory>(() => fetchReviewHistory(articleId), [articleId]);
 
   return (
@@ -56,6 +58,19 @@ export function ReviewHistoryScreen({ articleId }: ReviewHistoryScreenProps) {
                       {issue.status} · confidence {issue.reviewer_confidence}
                       {issue.decision_reason ? ` · ${issue.decision_reason}` : ''}
                     </p>
+                    {issue.recommended_correction ? (
+                      <p className="finding__correction">{issue.recommended_correction}</p>
+                    ) : null}
+                    {/* Offered only while the backend still offers it: a decision
+                        stays on the record rather than being taken back. */}
+                    {issue.decide_command ? (
+                      <FindingDecision
+                        command={issue.decide_command}
+                        actor={actor}
+                        suggestedCorrection={issue.recommended_correction ?? ''}
+                        onDecided={resource.reload}
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>

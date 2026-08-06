@@ -603,6 +603,12 @@ class FindingView(BaseModel):
     decided_by: str = ""
     decision_reason: str = ""
     lifecycle: Lifecycle = Lifecycle.NEW
+    #: Where to post the author's decision, supplied rather than constructed.
+    #:
+    #: Present only while the finding is undecided: the ledger keeps a decision
+    #: on the record rather than letting it be taken back, so an interface that
+    #: offered the control again would be offering something the backend refuses.
+    decide_command: ActionLink | None = None
 
 
 class ActiveInstructionView(BaseModel):

@@ -37,6 +37,8 @@ from groundscribe.app.services import (
     NothingToAbandon,
     NothingToRetry,
     NothingToRevise,
+    UndecidableFinding,
+    UnknownFinding,
     UnknownProject,
 )
 from groundscribe.experiments.datasets import SensitiveProject
@@ -101,6 +103,10 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # fall back to. 409 for the same reason again, and the message names the
     # command that does work there.
     (NothingToAbandon, 409),
+    # Asked to decide a finding this review does not hold, or to set one to a
+    # status a person does not choose.
+    (UnknownFinding, 404),
+    (UndecidableFinding, 422),
     # Something named does not exist.
     (UnknownProject, 404),
     (MissingInput, 404),
