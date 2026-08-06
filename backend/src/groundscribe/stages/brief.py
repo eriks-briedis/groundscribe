@@ -39,6 +39,7 @@ from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import BriefContractError, EvidenceError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import source_model_payload
 from groundscribe.stages.schemas import ArticleBriefDocument, ProposedArticle, SourceModel
 from groundscribe.workflow.states import WorkflowAction
 
@@ -108,7 +109,12 @@ class GenerateArticleBrief:
             template_version=self._template_version,
             variables={
                 "article": self._article.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
+                # The architecture's allocation, which is exactly what this brief
+                # is being written for — the same set line 100 already reads to
+                # work out which qualifications are required.
+                "source_model": source_model_payload(
+                    self._source_model, claim_ids=self._article.supporting_claim_ids
+                ),
                 "audience": context.constraints.audience,
                 "platform": context.constraints.platform,
                 "depth": context.constraints.depth.value,

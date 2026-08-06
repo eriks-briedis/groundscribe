@@ -41,6 +41,7 @@ from groundscribe.provenance.enums import ActorType, InterventionType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import PlanContractError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import claims_in_scope, source_model_payload
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
@@ -128,7 +129,15 @@ class CreateRevisionPlan:
                 "dismissed": [_finding_view(finding) for finding in dismissed],
                 "draft": self._draft.model_dump(mode="json"),
                 "brief": self._brief.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
+                # v4 of the template drops this variable entirely — see the note
+                # in its metadata. Kept scoped here so a run pinned to v3, which
+                # added it and quadrupled the stage's cost, is at least cheap.
+                "source_model": source_model_payload(
+                    self._source_model,
+                    claim_ids=claims_in_scope(
+                        self._draft.claims_used, self._brief.cited_claim_ids()
+                    ),
+                ),
                 "verdict": self._review.verdict,
             },
             schema=RevisionPlanDocument,

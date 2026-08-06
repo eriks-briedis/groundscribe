@@ -40,6 +40,7 @@ from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import DraftContractError, EvidenceError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import source_model_payload
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
@@ -121,7 +122,15 @@ class GenerateInitialDraft:
             template_version=self._template_version,
             variables={
                 "brief": self._brief.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
+                # Compacted but deliberately *not* narrowed. Every stage that
+                # judges a draft can be scoped to what the draft declares; the
+                # stage writing the first one has no such declaration yet, and
+                # narrowing it to the brief's cited claims is how an article ends
+                # up fluent and un-grounded — the failure IMPROVEMENTS §9
+                # measured, where a split allocated 14 of 92 claims and the
+                # article could only be conceptual. This stage runs once or twice
+                # a run; the rounds are where the saving is.
+                "source_model": source_model_payload(self._source_model),
                 "voice": self._voice.model_dump(mode="json"),
                 "first_person_allowed": context.constraints.first_person_allowed,
                 "target_length_words": self._brief.target_length_words,

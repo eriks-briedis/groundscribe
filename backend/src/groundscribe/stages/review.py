@@ -45,6 +45,7 @@ from groundscribe.provenance.enums import InterventionType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import EvidenceError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import claims_in_scope, source_model_payload
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
@@ -152,7 +153,16 @@ class ReviewSubstantively:
             variables={
                 "draft": self._draft.model_dump(mode="json"),
                 "brief": self._brief.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
+                # The union, not the brief alone: a claim the drafter used
+                # without the brief naming it must still reach the reviewer, or
+                # the review reports it unsupported and routes a `factual_gap`,
+                # which is the one route with no round limit.
+                "source_model": source_model_payload(
+                    self._source_model,
+                    claim_ids=claims_in_scope(
+                        self._draft.claims_used, self._brief.cited_claim_ids()
+                    ),
+                ),
                 "dismissed": [
                     {"description": finding.description, "reason": finding.decision_reason}
                     for finding in self._previous

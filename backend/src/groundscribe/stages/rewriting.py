@@ -36,6 +36,7 @@ from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.drafting import DraftOutcome, check_draft, store_version
 from groundscribe.stages.errors import RewriteContractError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import claims_in_scope, source_model_payload
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
@@ -106,7 +107,16 @@ class RewriteSubstantively:
                 "plan": self._plan.model_dump(mode="json"),
                 "previous": self._previous.model_dump(mode="json"),
                 "brief": self._brief.model_dump(mode="json"),
-                "source_model": self._source_model.model_dump(mode="json"),
+                # `check_draft` re-validates the rewrite against the *whole*
+                # model afterwards, so narrowing here cannot let an invented
+                # claim through — it only stops the rewriter being shown material
+                # the architecture routed to another article.
+                "source_model": source_model_payload(
+                    self._source_model,
+                    claim_ids=claims_in_scope(
+                        self._previous.claims_used, self._brief.cited_claim_ids()
+                    ),
+                ),
                 "voice": self._voice.model_dump(mode="json"),
             },
             schema=RewrittenArticle,

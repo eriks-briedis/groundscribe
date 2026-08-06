@@ -39,6 +39,7 @@ from groundscribe.provenance.enums import ActorType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import EvidenceError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import source_model_payload
 from groundscribe.stages.schemas import ArchitectureProposal, SourceModel
 from groundscribe.workflow.states import WorkflowAction
 
@@ -113,7 +114,10 @@ class ProposeContentArchitecture:
             template_id=ARCHITECTURE_STAGE,
             template_version=self._template_version,
             variables={
-                "source_model": self._source_model.model_dump(mode="json"),
+                # Whole model, compacted. This is the stage that *decides* the
+                # allocation every other stage is then scoped by, so it is the
+                # one place narrowing would be circular.
+                "source_model": source_model_payload(self._source_model),
                 "audience": context.constraints.audience,
                 "platform": context.constraints.platform,
                 "depth": context.constraints.depth.value,

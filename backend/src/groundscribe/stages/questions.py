@@ -41,6 +41,7 @@ from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, InterventionType
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import source_model_payload
 from groundscribe.stages.schemas import GapReport, SourceGapQuestion, SourceModel
 from groundscribe.workflow.states import WorkflowAction
 
@@ -166,7 +167,9 @@ class GenerateGapQuestions:
             template_id=GAP_STAGE,
             template_version=self._template_version,
             variables={
-                "source_model": self._source_model.model_dump(mode="json"),
+                # Whole model, compacted. Gap analysis is a judgement about what
+                # the source does *not* say, and no article has been scoped yet.
+                "source_model": source_model_payload(self._source_model),
                 "audience": context.constraints.audience,
                 "depth": context.constraints.depth.value,
             },

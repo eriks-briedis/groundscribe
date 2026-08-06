@@ -47,6 +47,7 @@ from groundscribe.scoring.rubric import (
 from groundscribe.stages.base import PipelineContext, StageResult
 from groundscribe.stages.errors import ScoreContractError
 from groundscribe.stages.extraction import require_permitted_provider
+from groundscribe.stages.payload import claims_in_scope, source_model_payload
 from groundscribe.stages.schemas import (
     ArticleBriefDocument,
     ArticleDraft,
@@ -184,7 +185,17 @@ class ScoreArticle:
                 variables={
                     "draft": self._draft.model_dump(mode="json"),
                     "brief": self._brief.model_dump(mode="json"),
-                    "source_model": self._source_model.model_dump(mode="json"),
+                    # Scoped to what this article is bound by and what it says it
+                    # used. `factual_fidelity` is judged against the claims the
+                    # draft rests on; the other six dimensions need no claim at
+                    # all, and shipping the whole model to reach them was 57% of
+                    # everything a run sent.
+                    "source_model": source_model_payload(
+                        self._source_model,
+                        claim_ids=claims_in_scope(
+                            self._draft.claims_used, self._brief.cited_claim_ids()
+                        ),
+                    ),
                     "voice": self._voice.model_dump(mode="json"),
                     "dimensions": [dimension.value for dimension in self._rubric_dimensions()],
                 },

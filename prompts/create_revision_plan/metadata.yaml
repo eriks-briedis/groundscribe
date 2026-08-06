@@ -83,3 +83,17 @@ versions:
       consequence, or an example within it — and says that a change needing a
       fact the source lacks is a `factual_gap` to be reported rather than
       supplied.
+
+      What it cost, and what was done about it. Adding the variable took the
+      stage from 14,040 input tokens to 59,761 — measured on the two plan calls
+      of the run of 2026-08-06, which is the largest single-line cost increase in
+      the repository's history. The obvious response, dropping it again, would
+      reinstate the defect above, so the stage now passes the source model
+      *scoped* instead: the claims the draft declares it used, unioned with the
+      claims the brief cites, with segment ids stripped
+      (`groundscribe.stages.payload.source_model_payload`). On the same run that
+      is 81 claims down to 44 and 61,933 characters down to 23,293. The planner
+      keeps every claim the article rests on — which is the set it can legitimately
+      qualify a sentence down to — and stops being shown the material the
+      architecture routed to a different article, which it was never entitled to
+      write from anyway.
