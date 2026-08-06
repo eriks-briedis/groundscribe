@@ -67,6 +67,7 @@ from groundscribe.llm.protocol import (
     RuntimeConfig,
     StreamChunk,
     TokenUsage,
+    request_timeout,
 )
 
 #: Where ``codex login`` leaves its tokens. Overridable so a test never reads a
@@ -174,7 +175,7 @@ class ChatGPTClient:
         stop_reason: str | None = None
         refusal: str | None = None
 
-        async for event in self._events(payload):
+        async for event in self._events(payload, request_timeout(request, self._timeout)):
             kind = event.get("type")
             if kind == "response.output_text.delta":
                 text.append(str(event.get("delta") or ""))
@@ -226,7 +227,7 @@ class ChatGPTClient:
         protocol — it is the transport, and :meth:`complete` is the wrapper.
         """
         payload = self.build_payload(request)
-        async for event in self._events(payload):
+        async for event in self._events(payload, request_timeout(request, self._timeout)):
             kind = event.get("type")
             if kind == "response.output_text.delta":
                 yield StreamChunk(text=str(event.get("delta") or ""))
@@ -265,7 +266,9 @@ class ChatGPTClient:
     # Transport
     # ------------------------------------------------------------------
 
-    async def _events(self, payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    async def _events(
+        self, payload: dict[str, Any], timeout: float
+    ) -> AsyncIterator[dict[str, Any]]:
         """Every SSE frame of one call, refreshing once through a 401.
 
         A cached access token can be invalidated server-side — a fresh ``codex
@@ -275,14 +278,14 @@ class ChatGPTClient:
         """
         token = await self._token()
         try:
-            async for event in self._open(payload, token):
+            async for event in self._open(payload, token, timeout):
                 yield event
             return
         except _Unauthorized:
             token = await self._token(force=True)
 
         try:
-            async for event in self._open(payload, token):
+            async for event in self._open(payload, token, timeout):
                 yield event
         except _Unauthorized:
             # A 401 that survives a forced refresh is not a stale token, so
@@ -295,11 +298,13 @@ class ChatGPTClient:
                 "chatgpt rejected the credential even after refreshing it; run `codex login`"
             ) from None
 
-    async def _open(self, payload: dict[str, Any], token: _Token) -> AsyncIterator[dict[str, Any]]:
+    async def _open(
+        self, payload: dict[str, Any], token: _Token, timeout: float
+    ) -> AsyncIterator[dict[str, Any]]:
         try:
             headers = _headers(token)
             async with (
-                self._client() as http,
+                self._client(timeout) as http,
                 http.stream("POST", "/responses", json=payload, headers=headers) as response,
             ):
                 if response.status_code == 401:
@@ -317,10 +322,10 @@ class ChatGPTClient:
         except httpx.HTTPError as exc:
             raise LLMNetworkError(f"chatgpt unreachable: {exc}") from None
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, timeout: float | None = None) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=self._timeout,
+            timeout=self._timeout if timeout is None else timeout,
             transport=self._transport,
         )
 

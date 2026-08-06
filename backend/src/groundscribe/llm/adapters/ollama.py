@@ -52,6 +52,7 @@ from groundscribe.llm.protocol import (
     StreamChunk,
     TokenUsage,
     ToolCall,
+    request_timeout,
 )
 
 #: Where Ollama is listening. One variable, and its presence is what registers the
@@ -135,7 +136,7 @@ class OllamaClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         """One call. Raises only on *transport* failure, never on a bad answer."""
         payload = self.build_payload(request)
-        async with self._client() as http:
+        async with self._client(request_timeout(request, self._timeout)) as http:
             response = await self._send(http, payload)
             return self._interpret(response.json())
 
@@ -148,7 +149,7 @@ class OllamaClient:
         """
         payload = self.build_payload(request) | {"stream": True}
         async with (
-            self._client() as http,
+            self._client(request_timeout(request, self._timeout)) as http,
             http.stream("POST", "/api/chat", json=payload) as response,
         ):
             self._raise_for_status(response, model=str(payload.get("model", "")))
@@ -245,10 +246,10 @@ class OllamaClient:
     # Transport
     # ------------------------------------------------------------------
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, timeout: float | None = None) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=self._timeout,
+            timeout=self._timeout if timeout is None else timeout,
             transport=self._transport,
             headers={"content-type": "application/json"},
         )

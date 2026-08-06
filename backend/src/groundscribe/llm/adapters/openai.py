@@ -53,6 +53,7 @@ from groundscribe.llm.protocol import (
     StreamChunk,
     TokenUsage,
     ToolCall,
+    request_timeout,
 )
 
 #: Where the key comes from. One variable, read at start-up and never persisted.
@@ -158,7 +159,7 @@ class OpenAIClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         """One call. Raises only on *transport* failure, never on a bad answer."""
         payload = self.build_payload(request)
-        async with self._client() as http:
+        async with self._client(request_timeout(request, self._timeout)) as http:
             response = await self._send(http, payload)
             return self._interpret(response.json())
 
@@ -175,7 +176,7 @@ class OpenAIClient:
             "stream_options": {"include_usage": True},
         }
         async with (
-            self._client() as http,
+            self._client(request_timeout(request, self._timeout)) as http,
             http.stream("POST", "/chat/completions", json=payload) as response,
         ):
             self._raise_for_status(response)
@@ -275,10 +276,10 @@ class OpenAIClient:
     # Transport
     # ------------------------------------------------------------------
 
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self, timeout: float | None = None) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=self._timeout,
+            timeout=self._timeout if timeout is None else timeout,
             transport=self._transport,
             headers=self._headers(),
         )

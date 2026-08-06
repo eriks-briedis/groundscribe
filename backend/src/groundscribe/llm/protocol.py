@@ -122,6 +122,28 @@ class RuntimeConfig(BaseModel):
         return self.model_dump(mode="json")
 
 
+def request_timeout(request: LLMRequest, default: float) -> float:
+    """How long this call may take: the route's number, or the client's default.
+
+    The routing config has always carried a per-stage ``timeout_seconds`` and it
+    has always been decoration — resolved, recorded in provenance, and read by
+    nothing. Every client was constructed without one (``app.bootstrap``), so all
+    three sat on their 600s constructor default while the local profile declared
+    3600s for the three stages that write thousands of words in one call. Those
+    stages were being killed mid-generation and billed for everything produced,
+    and the failure arrived wearing a provider error rather than "your timeout is
+    too short".
+
+    A route that names no timeout gets the client's, which is the old behaviour
+    and the right default: a stage nobody has thought about should not be able to
+    hold a connection open indefinitely by omission.
+    """
+    runtime = request.runtime
+    if runtime is None or runtime.timeout_seconds is None:
+        return default
+    return runtime.timeout_seconds
+
+
 #: What both supported providers call "I stopped because the budget ran out".
 #:
 #: Ollama reports it as ``done_reason``, OpenAI as ``finish_reason``, and the two

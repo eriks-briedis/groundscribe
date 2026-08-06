@@ -571,6 +571,30 @@ async def test_a_timeout_is_a_timeout_and_a_dead_socket_is_a_network_error() -> 
     assert OLLAMA_BASE_URL_ENV in str(dead.value) or "11434" in str(dead.value)
 
 
+async def test_the_route_decides_how_long_the_call_may_take() -> None:
+    """The routing config's ``timeout_seconds`` reaches the socket.
+
+    It did not, for the whole of this project's life. Every client was built
+    without a timeout (``app.bootstrap``), so all three sat on the 600s
+    constructor default while this profile declared 3600s for the three stages
+    that write thousands of words in one call — and a 36B model that does not fit
+    in VRAM takes longer than ten minutes to do that. Those stages were killed
+    mid-generation, having produced (and paid for) most of an answer, and the
+    failure arrived as ``LLMTimeoutError`` rather than as "your timeout is too
+    short".
+
+    Asserted on the client the adapter builds, because that is where the number
+    either arrives or does not; a test on ``RuntimeConfig`` would have passed
+    throughout, which is exactly why nothing caught this.
+    """
+    client, _ = build_client(timeout_seconds=600.0)
+
+    assert client._client(None).timeout.read == 600.0
+    assert client._client(3600.0).timeout.read == 3600.0
+
+    await client.complete(request(timeout_seconds=3600.0))
+
+
 # ----------------------------------------------------------------------
 # Cost
 # ----------------------------------------------------------------------
