@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from groundscribe.api.app import create_app
 from groundscribe.provenance import models as provenance_models
 from groundscribe.storage.snapshot_store import SnapshotStore
-from read_helpers import Walkthrough
+from read_helpers import SETTLED_GAPS, Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
 
 
@@ -1022,3 +1022,40 @@ async def test_a_preferred_destination_the_policy_forbids_is_refused(
     )
 
     assert response.status_code >= 400, response.text
+
+
+async def test_a_failure_the_run_got_past_is_marked_as_answered(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """A run carries its failures with it, and this panel is read for the current one.
+
+    Somebody checking why nothing is happening reads this list, and an hour-old
+    failure that was fixed and re-run looks exactly like the answer. Observed
+    three times on one run: a claim-id orphaning shown as current long after the
+    rewrite that replaced it had succeeded.
+
+    Not filtered out — the failed attempt is a true thing about the run, and a
+    panel that dropped it would answer "what is wrong now?" while claiming to
+    answer "what has gone wrong?".
+    """
+    await walk.open_project()
+    client.post(f"/projects/{walk.project_id}/source-model/extract", json={})
+    await walk.harness.drain()
+
+    dashboard = read(client, f"/projects/{walk.project_id}/dashboard")
+    assert [failure["superseded"] for failure in dashboard["recent_failures"]] == [False], (
+        "nothing has replaced it yet"
+    )
+
+    # The same stage again, this time scripted so it works. Through `retry`,
+    # because that is the recovery a stranded `-ing` state actually has.
+    walk.script("extract_source_truth", walk.source_model())
+    walk.script("generate_gap_questions", SETTLED_GAPS)
+    await walk.command("POST", f"/projects/{walk.project_id}/retry", json={"actor_id": AUTHOR})
+
+    dashboard = read(client, f"/projects/{walk.project_id}/dashboard")
+    answered = [item for item in dashboard["recent_failures"] if item["superseded"]]
+    assert [item["stage"] for item in answered] == ["extract_source_truth"]
+    assert all(item["occurred_at"] for item in dashboard["recent_failures"]), (
+        "a failure with no time on it cannot be placed against anything else"
+    )

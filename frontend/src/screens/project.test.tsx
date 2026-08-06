@@ -453,3 +453,30 @@ describe('the trace panel', () => {
     expect(await screen.findByTestId('delete-result')).toHaveTextContent('Kept 30 record');
   });
 });
+
+/**
+ * A run carries its failures with it (found by using the thing).
+ *
+ * The panel is read when somebody wants to know why nothing is happening, and an
+ * hour-old failure that was fixed and re-run reads exactly like the answer.
+ */
+describe('failures the run got past', () => {
+  it('marks the ones a later run of the same stage answered', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+
+    render(<DashboardScreen projectId={PROJECT_ID} actor="ada" />);
+    const answered = await screen.findByText(/ran again since, and worked/i);
+
+    expect(answered).toBeInTheDocument();
+    expect(answered.closest('li')).toHaveAttribute('data-superseded', 'yes');
+  });
+
+  it('leaves a failure nothing has answered unmarked', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+
+    render(<DashboardScreen projectId={PROJECT_ID} actor="ada" />);
+    const current = await screen.findByText(/the provider timed out/i);
+
+    expect(current.closest('li')).not.toHaveAttribute('data-superseded');
+  });
+});

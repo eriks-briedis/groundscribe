@@ -158,6 +158,17 @@ export const dashboard: Dashboard = {
       error_type: 'ProviderError',
       error_message: 'the provider timed out after 30s',
       occurred_at: '2026-07-25T11:00:00Z',
+      superseded: false,
+    },
+    {
+      execution_id: 'e0b',
+      stage: 'align_voice',
+      error_type: 'VoiceContractError',
+      error_message: 'the pass reported an edit it did not make',
+      occurred_at: '2026-07-25T10:00:00Z',
+      // Ran again since and worked, so it is history rather than the reason
+      // nothing is happening.
+      superseded: true,
     },
   ],
   usage: { model_calls: 9, input_tokens: 10800, output_tokens: 7200, cost_usd: 0.108 },

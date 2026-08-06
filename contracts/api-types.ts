@@ -2545,7 +2545,15 @@ export interface components {
             /** Token Budget */
             token_budget?: number | null;
         };
-        /** FailureView */
+        /**
+         * FailureView
+         * @description One failed execution, and whether it is still the run's problem.
+         *
+         *     A run carries its failures with it. Without ``superseded`` the newest one
+         *     looks like the current state of the work however long ago it was fixed — and
+         *     the list is what a person checks when they want to know why nothing is
+         *     happening, which is exactly when a resolved failure misleads.
+         */
         FailureView: {
             /** Error Message */
             error_message?: string | null;
@@ -2560,6 +2568,11 @@ export interface components {
             occurred_at: string;
             /** Stage */
             stage: string;
+            /**
+             * Superseded
+             * @default false
+             */
+            superseded: boolean;
         };
         /**
          * FindingStatus

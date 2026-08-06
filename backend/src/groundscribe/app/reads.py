@@ -247,19 +247,50 @@ class ProjectionReader:
             articles=[self._card(article) for article in self._articles(project_id)],
             questions=[question for question in questions if not question.resolved],
             active_jobs=[_job_view(job) for job in self._active_jobs(run)],
-            recent_failures=[
+            recent_failures=self._failures(run),
+            usage=_usage(self._invocations(run)),
+        )
+
+    def _failures(self, run: models.PipelineRun) -> list[FailureView]:
+        """What has failed under this run, and whether it still matters.
+
+        A failure is *superseded* once the same stage has run again and
+        succeeded. That is the difference between "this is why nothing is
+        happening" and "this happened, and was dealt with" — and the list is
+        read at exactly the moment the second is mistaken for the first.
+
+        Not filtered out. A run whose extraction failed twice before working is
+        a true thing about that run, and a panel that quietly dropped the failed
+        attempts would be answering "what is wrong now?" while claiming to
+        answer "what has gone wrong?".
+        """
+        executions = list(self._executions(run))
+        succeeded_after: dict[str, datetime] = {}
+        for execution in executions:
+            if execution.status is not ExecutionStatus.SUCCEEDED:
+                continue
+            at = execution.completed_at or execution.started_at
+            previous = succeeded_after.get(execution.stage)
+            if previous is None or at > previous:
+                succeeded_after[execution.stage] = at
+
+        failures: list[FailureView] = []
+        for execution in executions:
+            if execution.status is not ExecutionStatus.FAILED:
+                continue
+            at = execution.completed_at or execution.started_at
+            latest_success = succeeded_after.get(execution.stage)
+            failures.append(
                 FailureView(
                     execution_id=execution.id,
                     stage=execution.stage,
                     error_type=execution.error_type,
                     error_message=execution.error_message,
-                    occurred_at=execution.completed_at or execution.started_at,
+                    occurred_at=at,
+                    superseded=latest_success is not None and latest_success > at,
                 )
-                for execution in self._executions(run)
-                if execution.status is ExecutionStatus.FAILED
-            ][-RECENT_FAILURES:],
-            usage=_usage(self._invocations(run)),
-        )
+            )
+        return failures[-RECENT_FAILURES:]
 
     # ------------------------------------------------------------------
     # Source workspace and the question queue

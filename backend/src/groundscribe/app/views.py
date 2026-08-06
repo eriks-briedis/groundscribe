@@ -314,11 +314,21 @@ class JobView(BaseModel):
 
 
 class FailureView(BaseModel):
+    """One failed execution, and whether it is still the run's problem.
+
+    A run carries its failures with it. Without ``superseded`` the newest one
+    looks like the current state of the work however long ago it was fixed — and
+    the list is what a person checks when they want to know why nothing is
+    happening, which is exactly when a resolved failure misleads.
+    """
+
     execution_id: str
     stage: str
     error_type: str | None = None
     error_message: str | None = None
     occurred_at: datetime
+    #: A later run of this same stage succeeded, so this one has been answered.
+    superseded: bool = False
 
 
 class ArticleCard(BaseModel):

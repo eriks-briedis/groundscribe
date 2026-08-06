@@ -217,10 +217,22 @@ export function DashboardScreen({ projectId, actor = 'ada' }: DashboardScreenPro
               <h2>Recent failures</h2>
               {(dashboard.recent_failures ?? []).length ? (
                 <ul className="cards">
+                  {/* A run carries its failures with it, so one that has since
+                      been answered has to say so — read at the moment somebody
+                      is asking why nothing is happening, it otherwise looks
+                      like the reason. */}
                   {(dashboard.recent_failures ?? []).map((failure) => (
-                    <li key={failure.execution_id} className="card">
-                      <a href={`#/executions/${failure.execution_id}`}>{failure.stage}</a>
+                    <li
+                      key={failure.execution_id}
+                      className="card"
+                      data-superseded={failure.superseded ? 'yes' : undefined}
+                    >
+                      <a href={`#/executions/${failure.execution_id}`}>{failure.stage}</a>{' '}
+                      {failure.superseded ? (
+                        <span className="tag tag--resolved">ran again since, and worked</span>
+                      ) : null}
                       <p className="muted">{failure.error_message}</p>
+                      <p className="muted">{new Date(failure.occurred_at).toLocaleString()}</p>
                     </li>
                   ))}
                 </ul>

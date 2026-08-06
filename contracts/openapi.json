@@ -2398,6 +2398,7 @@
         "type": "object"
       },
       "FailureView": {
+        "description": "One failed execution, and whether it is still the run's problem.\n\nA run carries its failures with it. Without ``superseded`` the newest one\nlooks like the current state of the work however long ago it was fixed \u2014 and\nthe list is what a person checks when they want to know why nothing is\nhappening, which is exactly when a resolved failure misleads.",
         "properties": {
           "error_message": {
             "anyOf": [
@@ -2433,6 +2434,11 @@
           "stage": {
             "title": "Stage",
             "type": "string"
+          },
+          "superseded": {
+            "default": false,
+            "title": "Superseded",
+            "type": "boolean"
           }
         },
         "required": [

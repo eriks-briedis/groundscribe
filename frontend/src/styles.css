@@ -585,6 +585,18 @@ pre,
   background: var(--attention-wash);
 }
 
+/* A failure the run has since got past. Quieter than the ones that still
+   matter, because the panel is read when somebody is looking for the reason
+   nothing is happening, and this is not it. */
+.card[data-superseded='yes'] {
+  opacity: 0.6;
+}
+
+.card[data-superseded='yes'] .tag--resolved {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Panels, cards, grid                                                 */
 /* ------------------------------------------------------------------ */
