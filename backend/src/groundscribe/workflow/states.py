@@ -104,6 +104,14 @@ class WorkflowAction(StrEnum):
 
     # Voice and scoring.
     SUBMIT_VOICE_PASS = "submit_voice_pass"
+    #: The voice pass found a fault it must not fix, so it stops instead.
+    #:
+    #: A style pass that restructured an argument would be the failure the stage
+    #: exists to prevent, and a known fault must not travel on to scoring — so
+    #: the pass declines its own exit. Before this it declined into nothing: the
+    #: run stayed in ``voice_aligning``, whose only other edge was the one just
+    #: refused.
+    VOICE_BLOCKED = "voice_blocked"
     SCORE_PASSED = "score_passed"
     SCORE_FAILED = "score_failed"
     ROUTE_REVISION = "route_revision"

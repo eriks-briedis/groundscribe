@@ -268,8 +268,14 @@ async def test_a_structural_problem_routes_back_instead_of_being_fixed(
 
     # The style changes it *could* safely make are still applied and stored…
     assert AFTER in result.value.draft.body
-    # …but the article does not go on to scoring with a known structural problem.
-    assert drafted.context.engine.state is WorkflowState.VOICE_ALIGNING
+    # …and the article does not go on to scoring with a known structural problem.
+    assert drafted.context.engine.state is not WorkflowState.SCORING
+    # It goes where a person can act on it. This assertion used to read
+    # `is VOICE_ALIGNING`, which was true and was the bug: declining the exit
+    # took no edge at all, so the run sat in a state whose only other way out was
+    # the one just refused — and auto-advance queued the same pass again on every
+    # completion. Five ran on a live project.
+    assert drafted.context.engine.state is WorkflowState.REVISION_REQUIRED
 
 
 async def test_the_voice_pass_is_a_new_version_branching_from_its_parent(
@@ -317,3 +323,33 @@ async def test_the_voice_pass_never_touches_the_source_model(
     )
     assert len(models) == 1
     assert snapshot_store.verify(models[0]) is True
+
+
+async def test_a_blocked_pass_can_be_routed_without_a_score(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The pause it lands in has to be one the run can leave.
+
+    ``revision_required`` is reached by a failing score everywhere else, and
+    ``revise`` reads the category from the evaluation that produced it. A voice
+    pass that stops has no evaluation — so routing it needs the route the pass
+    itself asked for, which its structural problems already carry in the same
+    vocabulary the policy speaks.
+
+    Without that, the new edge would trade a state with no way out for a state
+    whose only way out refused to answer.
+    """
+    payload = golden_voice_pass(
+        structural_problems=[
+            {
+                "location": "Section 2",
+                "description": "The section argues against its own opening.",
+                "suggested_route": "substantive_issue",
+            }
+        ]
+    )
+
+    drafted, _result = await align(db_session, snapshot_store, payload)
+
+    assert drafted.context.engine.state is WorkflowState.REVISION_REQUIRED
+    assert WorkflowAction.ROUTE_REVISION in drafted.context.engine.available_actions()

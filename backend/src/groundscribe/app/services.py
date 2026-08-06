@@ -897,33 +897,67 @@ class ApplicationService:
             .where(models.StageExecution.pipeline_run_id == resumed.run.id)
             .order_by(models.EvaluationRun.created_at.desc())
         ).first()
-        if evaluation is None:
-            raise NothingToRevise(f"article {article_id} has not been scored")
-
-        routed_as = evaluation.scores.get("routed_as")
+        routed_as = evaluation.scores.get("routed_as") if evaluation is not None else None
+        if not routed_as:
+            # A failing score is the usual reason to be here and not the only
+            # one: a voice pass that refuses to fix a fault routes here too, and
+            # it has no evaluation behind it. Its structural problems carry a
+            # `suggested_route` in the same vocabulary, which is what makes them
+            # routable rather than merely reportable.
+            routed_as = self._blocked_voice_route(resumed)
         if not routed_as:
             raise NothingToRevise(
-                f"the last score of article {article_id} passed; there is nothing to correct "
-                "and no route that would mean anything"
+                f"article {article_id} has nothing to route: no failing score, and no voice "
+                "pass that stopped on something it would not fix"
             )
 
         resumed.engine.route(
             FailureCategory(routed_as),
             prefer=prefer,
             evidence={
-                "evaluation_id": evaluation.id,
-                "overall": evaluation.scores.get("overall"),
+                "evaluation_id": evaluation.id if evaluation is not None else None,
+                "overall": evaluation.scores.get("overall") if evaluation is not None else None,
                 "requested_by": requested_by,
                 "preferred": prefer.value if prefer is not None else None,
                 "failures": [
                     failure.get("detail")
-                    for failure in evaluation.scores.get("failures", [])
+                    for failure in (evaluation.scores.get("failures", []) if evaluation else [])
                     if isinstance(failure, dict)
                 ],
             },
         )
         settled = self._settle(resumed)
         return self.advance(resumed.context.project_id) or settled
+
+    def _blocked_voice_route(self, resumed: Resumed) -> str | None:
+        """The route a voice pass asked for when it stopped, if one did.
+
+        Read from the decision the stage already records, rather than from a
+        second store: refusing to fix something is a policy decision and is
+        written down as one. The first problem's route is taken because the pass
+        reports them in the order it met them, and a pass that found several is
+        describing one article rather than several destinations.
+        """
+        record = self._runtime.session.scalars(
+            select(models.DecisionRecord)
+            .join(
+                models.StageExecution,
+                models.StageExecution.id == models.DecisionRecord.stage_execution_id,
+            )
+            .where(
+                models.StageExecution.pipeline_run_id == resumed.run.id,
+                models.DecisionRecord.decision_type == "voice_structural_return",
+            )
+            .order_by(models.DecisionRecord.decided_at.desc())
+        ).first()
+        if record is None:
+            return None
+        problems = record.inputs.get("problems") or []
+        for problem in problems:
+            route = problem.get("suggested_route") if isinstance(problem, dict) else None
+            if route:
+                return str(route)
+        return None
 
     def override_and_approve(self, article_id: str, *, approved_by: str) -> CommandResult:
         """Accept an article the score refused, on a person's explicit say-so."""

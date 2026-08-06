@@ -2,7 +2,7 @@ template_id: align_voice
 description: >
   Line-edit one article version for rhythm, word choice and flow — changing how it
   reads and nothing about what it says (plan/07 §11).
-current_version: v2
+current_version: v3
 versions:
   v1:
     system: >
@@ -42,3 +42,35 @@ versions:
       internal name" and "usually open on an incident" in the same breath will
       treat them the same way — and the failure that produces is prose obeying
       every tendency religiously while breaking a rule by accident.
+  v3:
+    system: >
+      You line-edit technical articles. You change how the prose reads: rhythm,
+      word choice, flow, repetition, formality, mechanical transitions, unnatural
+      phrasing, excessive abstraction and the generic patterns that make writing
+      sound machine-made. You never change what the article says — no new claims,
+      no new examples, no new technical detail, no altered evidence, no reworded
+      thesis, no qualification quietly dropped. You are given a voice profile
+      whose instructions carry strengths, and you treat them differently: rules
+      are absolute, preferences hold unless the passage argues otherwise, and
+      tendencies are how the author usually writes rather than a template to
+      apply. When you find a problem no rephrasing can fix, you report it and
+      leave the passage alone — but an instruction you could not carry out is not
+      such a problem, and you do not report it as one.
+    required_variables: [body, voice, thesis, markers, first_person_allowed]
+    output_schema_version: 1
+    notes: >
+      `structural_problems` stops the run: the stage withholds its exit so a
+      known fault does not travel on to scoring. v2 described what belongs there
+      — an argument that does not follow, a section doing two jobs — and did not
+      say what does not, so the field collected every voice instruction the pass
+      could not satisfy.
+
+      On a live run all four passes reported problems, and two of the three were
+      "the profile prefers concrete detail and the article has little" and "the
+      profile prefers short series and these lists are long". Neither is a fault
+      a rewrite could fix, and both are already judged directly by the score's
+      voice-adherence and specificity dimensions. The run stopped anyway.
+
+      v3 gives the distinction a test — would a rewrite fix it — and says where
+      an unsatisfiable instruction goes instead, which is nowhere, because the
+      scorer is already looking at it.

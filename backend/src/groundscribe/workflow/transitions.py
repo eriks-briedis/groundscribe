@@ -139,6 +139,13 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
     ),
     # Voice and scoring.
     _policy(S.VOICE_ALIGNING, A.SUBMIT_VOICE_PASS, S.SCORING),
+    # Where a blocked voice pass goes. `revision_required` rather than a gate of
+    # its own, because it is already the state that means "something is wrong and
+    # somebody has to say where it goes" — and the problems a voice pass refuses
+    # to fix carry a `suggested_route` in the same vocabulary the routing policy
+    # speaks. A second pause with its own vocabulary would be a second way of
+    # answering a question this one already answers.
+    _policy(S.VOICE_ALIGNING, A.VOICE_BLOCKED, S.REVISION_REQUIRED),
     _policy(S.SCORING, A.SCORE_PASSED, S.PASSED),
     _policy(S.SCORING, A.SCORE_FAILED, S.REVISION_REQUIRED),
     # Routing. One action with several destinations: which correcting stage a

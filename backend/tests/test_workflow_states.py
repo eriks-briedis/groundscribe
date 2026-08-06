@@ -96,7 +96,10 @@ EXPECTED_ACTIONS: dict[WorkflowState, set[WorkflowAction]] = {
         WorkflowAction.RETURN_TO_BRIEF,
     },
     WorkflowState.SUBSTANTIVE_REWRITING: {WorkflowAction.SUBMIT_REWRITE},
-    WorkflowState.VOICE_ALIGNING: {WorkflowAction.SUBMIT_VOICE_PASS},
+    WorkflowState.VOICE_ALIGNING: {
+        WorkflowAction.SUBMIT_VOICE_PASS,
+        WorkflowAction.VOICE_BLOCKED,
+    },
     WorkflowState.SCORING: {WorkflowAction.SCORE_PASSED, WorkflowAction.SCORE_FAILED},
     WorkflowState.REVISION_REQUIRED: {
         WorkflowAction.ROUTE_REVISION,

@@ -135,8 +135,14 @@ class AlignVoice:
             invocations=generated.attempts,
             usage=generated.usage,
             # A known structural fault does not travel on to scoring. The pass
-            # applied what it safely could and asked for a person instead.
-            exit_action=None if blocked else WorkflowAction.SUBMIT_VOICE_PASS,
+            # applied what it safely could and hands the run to a person — which
+            # for a long time meant handing it nowhere: taking no edge left the
+            # run in `voice_aligning`, whose only other exit is the one just
+            # declined, and auto-advance then ran the same pass again on every
+            # completion.
+            exit_action=(
+                WorkflowAction.VOICE_BLOCKED if blocked else WorkflowAction.SUBMIT_VOICE_PASS
+            ),
             detail={
                 "changes": len(passed.changes),
                 "structural_problems": len(passed.structural_problems),
