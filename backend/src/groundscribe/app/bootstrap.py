@@ -31,7 +31,7 @@ from groundscribe.llm.adapters.ollama import OLLAMA_BASE_URL_ENV, OllamaClient
 from groundscribe.llm.adapters.openai import OPENAI_API_KEY_ENV, OpenAIClient
 from groundscribe.llm.generation import StructuredGenerator
 from groundscribe.llm.pricing import PricingTable, default_pricing
-from groundscribe.llm.protocol import LLMClient
+from groundscribe.llm.protocol import LLMClient, RetryPolicy
 from groundscribe.llm.routing import default_routing_policy
 from groundscribe.paths import repo_root
 from groundscribe.privacy.encryption import EncryptedBlobStore, KeyFileStore
@@ -40,6 +40,19 @@ from groundscribe.provenance.recorder import ProvenanceRecorder
 from groundscribe.storage.blob_store import BlobStorage, BlobStore
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.position import PositionStore
+
+#: What a *running* installation waits before re-sending a failed call.
+#:
+#: :class:`RetryPolicy` defaults ``backoff_seconds`` to zero so the suite stays
+#: fast, and every client was taking that default — which meant a rate-limited
+#: stage re-sent its whole 45-60k-token prompt three times with no pause at all.
+#: The number is small because the first retry should still be prompt; it doubles
+#: per attempt, so three attempts span roughly six seconds rather than none.
+#:
+#: This is the only place the distinction can be drawn. The policy object cannot
+#: default to a real wait without making every test that exercises a transport
+#: failure sleep for it, and the tests are where that failure is exercised most.
+SHIPPED_RETRY_POLICY = RetryPolicy(backoff_seconds=2.0)
 
 #: Where the local database lives unless a deployment says otherwise.
 DATABASE_URL_ENV = "GROUNDSCRIBE_DATABASE_URL"
@@ -122,16 +135,21 @@ def provider_clients(*, pricing: PricingTable | None = None) -> dict[str, LLMCli
     # shape that keeps a single answer to "which model".
     fallback_model = default_routing_policy().default.primary.model
     clients: dict[str, LLMClient] = {}
+    retry = SHIPPED_RETRY_POLICY
 
     if os.environ.get(OPENAI_API_KEY_ENV, "").strip():
-        clients[OpenAIClient.provider] = OpenAIClient(model=fallback_model, pricing=table)
+        clients[OpenAIClient.provider] = OpenAIClient(
+            model=fallback_model, pricing=table, retry_policy=retry
+        )
     if os.environ.get(OLLAMA_BASE_URL_ENV, "").strip():
-        clients[OllamaClient.provider] = OllamaClient(model=fallback_model, pricing=table)
+        clients[OllamaClient.provider] = OllamaClient(
+            model=fallback_model, pricing=table, retry_policy=retry
+        )
     if has_credentials():
         # Not ``fallback_model``: this backend serves exactly one model and
         # refuses every other id, so the label that would be a harmless
         # placeholder elsewhere would name something that cannot answer.
-        clients[ChatGPTClient.provider] = ChatGPTClient(pricing=table)
+        clients[ChatGPTClient.provider] = ChatGPTClient(pricing=table, retry_policy=retry)
     return clients
 
 

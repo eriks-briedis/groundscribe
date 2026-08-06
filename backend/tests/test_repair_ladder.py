@@ -503,6 +503,65 @@ async def test_transport_retries_are_bounded_by_the_clients_retry_policy(
     assert stage_execution.status is ExecutionStatus.FAILED
 
 
+async def test_a_retried_call_waits_before_re_sending(
+    tmp_path: Path,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``backoff_seconds`` was recorded in provenance and slept on by nobody.
+
+    Which made a 429 — the failure that most wants patience — into three
+    immediate re-sends of a 45-60k-token prompt. Asserted by intercepting the
+    sleep rather than by taking one: the delays are what matters, and a test that
+    actually waited six seconds would be deleted the first time it annoyed
+    somebody.
+    """
+    recorder, stage_execution = execution
+    slept: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr("groundscribe.llm.generation.asyncio.sleep", _record_sleep)
+    client = FakeLLMClient(
+        retry_policy=RetryPolicy(version="test", max_attempts=3, backoff_seconds=2.0)
+    )
+    generator = build_generator(tmp_path, recorder, {"fake": client})
+    for _ in range(5):
+        client.script_failure(STAGE, InjectableFailure.RATE_LIMIT)
+
+    with pytest.raises(GenerationFailed):
+        await _generate(generator, stage_execution)
+
+    # Two waits for three attempts, doubling — and none after the last, which
+    # gives up rather than sleeping on the way out.
+    assert slept == [2.0, 4.0]
+
+
+async def test_a_zero_backoff_does_not_wait_at_all(
+    tmp_path: Path,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default stays a real zero, so the suite neither sleeps nor pretends to."""
+    recorder, stage_execution = execution
+    slept: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr("groundscribe.llm.generation.asyncio.sleep", _record_sleep)
+    client = FakeLLMClient(retry_policy=RetryPolicy(version="test", max_attempts=3))
+    generator = build_generator(tmp_path, recorder, {"fake": client})
+    for _ in range(5):
+        client.script_failure(STAGE, InjectableFailure.RATE_LIMIT)
+
+    with pytest.raises(GenerationFailed):
+        await _generate(generator, stage_execution)
+
+    assert slept == []
+
+
 # ---------------------------------------------------------------------------
 # Refusal
 # ---------------------------------------------------------------------------

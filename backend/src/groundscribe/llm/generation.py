@@ -34,6 +34,7 @@ Two boundaries are deliberate:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -50,7 +51,14 @@ from groundscribe.llm.errors import (
     LLMSchemaRejected,
     LLMTimeoutError,
 )
-from groundscribe.llm.protocol import LLMClient, LLMRequest, RuntimeConfig, TokenUsage, ToolCall
+from groundscribe.llm.protocol import (
+    LLMClient,
+    LLMRequest,
+    RetryPolicy,
+    RuntimeConfig,
+    TokenUsage,
+    ToolCall,
+)
 from groundscribe.llm.routing import ResolvedRoute, RouteOverride, RoutingPolicy
 from groundscribe.prompts import PromptStore, RenderedPrompt
 from groundscribe.provenance import models
@@ -342,6 +350,7 @@ class StructuredGenerator:
                     raise self._escalate(
                         execution, stage, transport.outcome.value, str(exc), tuple(attempts)
                     ) from exc
+                await _wait(runtime.retry_policy, transport_attempts)
                 parent, retry_type = invocation, transport.retry_type
                 continue
 
@@ -720,6 +729,32 @@ class StructuredGenerator:
         return GenerationFailed(
             stage=stage, error_type=error_type, reason=reason, attempts=attempts
         )
+
+
+async def _wait(policy: RetryPolicy, attempt: int) -> None:
+    """Pause before re-sending, doubling each time.
+
+    ``backoff_seconds`` has been on :class:`RetryPolicy` since phase 04,
+    serialised into every provenance record, and slept on by nobody — there was
+    no ``sleep`` anywhere in the package. So a rate-limited call re-sent its whole
+    prompt three times as fast as the event loop could manage it, which is the
+    worst available response to a 429: it is the request that provoked the limit,
+    repeated immediately, at 45-60k tokens a go.
+
+    Doubling rather than a flat wait, because the two things being retried want
+    different patience. A dropped connection clears in a moment; a rate limit does
+    not, and on the ChatGPT profile it is the subscription's own ceiling, where
+    the adapter notes that waiting "helps on a scale of hours rather than
+    seconds". Neither is fixed by trying again in zero seconds, and the first
+    retry is still prompt.
+
+    Zero stays the default so the suite stays fast and deterministic. It is a
+    *test* default, not a recommendation: a deployment sets a real number, which
+    is now a number that does something.
+    """
+    if policy.backoff_seconds <= 0:
+        return
+    await asyncio.sleep(policy.backoff_seconds * (2 ** (attempt - 1)))
 
 
 def _classify_transport(exc: LLMError) -> _Transport:
