@@ -351,6 +351,19 @@ class QuestionQueue:
         """
         return tuple(answer for answer in self.answers if answer.response_type.may_be_sent)
 
+    def _unconsumed_answer(self, gap: domain_models.SourceGap) -> domain_models.UserAnswer | None:
+        """This gap's answer, if one exists and no rebuild has read it yet.
+
+        ``diff_snapshot_id`` is set by extraction when it folds the answer in, so
+        its absence is the precise statement "nothing has acted on this".
+        """
+        return self._context.session.scalars(
+            select(domain_models.UserAnswer).where(
+                domain_models.UserAnswer.gap_id == gap.id,
+                domain_models.UserAnswer.diff_snapshot_id.is_(None),
+            )
+        ).first()
+
     def respond(
         self,
         gap: domain_models.SourceGap,
@@ -360,28 +373,50 @@ class QuestionQueue:
         answered_by: str,
         also_closes: Sequence[domain_models.SourceGap] = (),
     ) -> domain_models.UserAnswer:
-        """Record one response, closing the question unless it was deferred."""
+        """Record one response, closing the question unless it was deferred.
+
+        Answering again before the round is handed back *revises* the answer
+        rather than adding a second one. An author works through a queue of
+        questions over a sitting and changes their mind halfway down it, and two
+        answers to one question would both reach the rebuild — which folds every
+        answer in as source truth, so the model would be handed a contradiction
+        and no way to tell which the author meant.
+
+        Revised in place rather than superseded, because until the rebuild reads
+        it there is no history to keep: an answer nothing has consumed was never
+        a fact about the run. ``diff_snapshot_id`` is what says it has been
+        consumed, and once it is set this appends as it always did.
+        """
         if not answered_by:
             raise ValueError("answered_by is required: an unattributed answer is unreviewable")
 
         closed = [gap, *also_closes] if response.closes_the_gap else []
-        answer = domain_models.UserAnswer(
-            id=uuid.uuid4().hex,
-            gap_id=gap.id,
-            text=text,
-            # Copied, not referenced: a later round may re-word the question, and
-            # an answer that re-pointed at the new wording would misrepresent what
-            # the author was asked.
-            question=gap.question,
-            why_it_matters=gap.why_it_matters,
-            response_type=response,
-            answered_by=answered_by,
-            created_by_execution_id=self._execution.id,
-            gaps=list(closed),
-        )
+        answer = self._unconsumed_answer(gap)
+        if answer is None:
+            answer = domain_models.UserAnswer(
+                id=uuid.uuid4().hex,
+                gap_id=gap.id,
+                # Copied, not referenced: a later round may re-word the question,
+                # and an answer that re-pointed at the new wording would
+                # misrepresent what the author was actually asked.
+                question=gap.question,
+                why_it_matters=gap.why_it_matters,
+                created_by_execution_id=self._execution.id,
+            )
+            self._context.session.add(answer)
+        else:
+            # Whatever the previous wording closed is no longer closed by it.
+            # Deferring a question already answered has to reopen it, or the
+            # queue would show settled something the author has just withdrawn.
+            for previously in answer.gaps:
+                previously.resolved = False
+
+        answer.text = text
+        answer.response_type = response
+        answer.answered_by = answered_by
+        answer.gaps = list(closed)
         for closing in closed:
             closing.resolved = True
-        self._context.session.add(answer)
         self._context.session.flush()
 
         self._context.recorder.record_user_intervention(

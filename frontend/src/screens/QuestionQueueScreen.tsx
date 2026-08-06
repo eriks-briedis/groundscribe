@@ -119,6 +119,10 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
   const [response, setResponse] = useState<string>(RESPONSES[0].value);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  //: Whether the form is open over an answer already given. An author works
+  //: down a queue and changes their mind halfway, and until the round is handed
+  //: back nothing has read what they typed.
+  const [editing, setEditing] = useState(false);
 
   const answer = async () => {
     if (!question.answer_path) return;
@@ -126,6 +130,7 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
     setProblem(null);
     try {
       await sendCommand(question.answer_path, { text, answered_by: actor, response });
+      setEditing(false);
       onAnswered();
     } catch (error) {
       setProblem(error instanceof ApiError ? error.detail : String(error));
@@ -153,7 +158,7 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
       ) : null}
       {question.description ? <p className="muted">{question.description}</p> : null}
 
-      {question.answer ? (
+      {question.answer && !editing ? (
         <div className="answer">
           <p>
             <strong>{question.answer.response_type}</strong>
@@ -162,6 +167,21 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
           <p className="muted">answered by {question.answer.answered_by}</p>
           {question.answer.diff_snapshot_id ? (
             <p className="muted">rebuilt the source model ({question.answer.diff_snapshot_id})</p>
+          ) : null}
+          {/* Only while the round is open. The backend withdraws the path once
+              the rebuild has read the answer, because from there the source
+              model was built from these words. */}
+          {question.answer_path ? (
+            <button
+              type="button"
+              onClick={() => {
+                setText(question.answer?.text ?? '');
+                setResponse(question.answer?.response_type ?? RESPONSES[0].value);
+                setEditing(true);
+              }}
+            >
+              Change this answer
+            </button>
           ) : null}
         </div>
       ) : !question.answer_path ? (
@@ -193,8 +213,13 @@ function Question({ question, actor, onAnswered }: QuestionProps) {
                 ))}
               </select>
             </label>
+            {editing ? (
+              <button type="button" onClick={() => setEditing(false)} disabled={busy}>
+                Keep what I had
+              </button>
+            ) : null}
             <button type="submit" disabled={busy}>
-              {busy ? 'Recording…' : 'Record answer'}
+              {busy ? 'Recording…' : editing ? 'Save this instead' : 'Record answer'}
             </button>
           </div>
           {problem ? (

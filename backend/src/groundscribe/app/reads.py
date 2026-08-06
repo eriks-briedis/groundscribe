@@ -1257,11 +1257,16 @@ class ProjectionReader:
                 surfaced=gap.surfaced,
                 resolved=gap.resolved,
                 answer=_answer_view(answers.get(gap.id)),
-                # Gone once the gap is closed, whether this question's own answer
-                # closed it or another one did: a settled question is a record.
+                # Offered while the round is still open, answered or not. An
+                # answer becomes a record when the rebuild reads it, not when it
+                # is typed — and until then an author working down a queue must
+                # be able to go back and change one. Withdrawn the moment the
+                # round is handed back, because from there the answer is source
+                # truth the model was built from and editing it would describe a
+                # rebuild that never happened.
                 answer_path=(
                     f"/projects/{project_id}/source-gaps/{gap.id}/answer"
-                    if open_for_answers and not gap.resolved
+                    if open_for_answers and not _consumed(answers.get(gap.id))
                     else None
                 ),
             )
@@ -1608,6 +1613,16 @@ def _routing_view(project: domain_models.Project) -> RoutingProfilesView:
             taken_by="you",
         ),
     )
+
+
+def _consumed(answer: domain_models.UserAnswer | None) -> bool:
+    """Whether a rebuild has already folded this answer into the source model.
+
+    ``diff_snapshot_id`` is set by extraction as it reads the answer, so this is
+    the difference between an answer that is still a draft and one the current
+    source model was built from.
+    """
+    return answer is not None and answer.diff_snapshot_id is not None
 
 
 def _answer_view(answer: domain_models.UserAnswer | None) -> AnswerView | None:

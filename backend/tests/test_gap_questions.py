@@ -536,3 +536,92 @@ async def test_a_second_round_may_reuse_a_label_without_colliding(
     ids = [row.id for row in first.analysis.gaps] + [row.id for row in second.value.gaps]
     assert labels.count("g1") == 2, "the same question, asked twice"
     assert len(set(ids)) == len(ids), "and two rows, not one row written over"
+
+
+# ----------------------------------------------------------------------
+# Changing your mind before the round is handed back
+# ----------------------------------------------------------------------
+
+
+async def test_answering_again_revises_rather_than_adding_a_second_answer(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """An author works down a queue and changes their mind halfway.
+
+    Both answers would otherwise reach the rebuild, which folds every answer in
+    as source truth of the same standing as the document — so the model would be
+    handed a contradiction with no way to tell which the author meant.
+
+    Revised in place rather than superseded: until the rebuild reads it, an
+    answer is not yet a fact about the run, so there is no history to keep.
+    """
+    from sqlalchemy import select
+
+    from groundscribe.domain import models as domain_models
+
+    context, model_client = scripted_context(db_session, snapshot_store)
+    await extract_and_analyse(context, model_client)
+    queue = open_question_queue(context)
+    gap = queue.pending[0]
+
+    queue.respond(gap, response=AnswerResponse.ANSWERED, text="first", answered_by=AUTHOR)
+    queue.respond(gap, response=AnswerResponse.ANSWERED, text="second", answered_by=AUTHOR)
+
+    stored = db_session.scalars(
+        select(domain_models.UserAnswer).where(domain_models.UserAnswer.gap_id == gap.id)
+    ).all()
+    assert [answer.text for answer in stored] == ["second"]
+
+
+async def test_an_answer_a_rebuild_has_read_is_not_revised_in_place(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Once extraction has folded it in, the source model was built from it.
+
+    Editing it then would describe a rebuild that never happened, so a further
+    answer is a new one, which the next rebuild folds in beside it.
+    """
+    from sqlalchemy import select
+
+    from groundscribe.domain import models as domain_models
+
+    context, model_client = scripted_context(db_session, snapshot_store)
+    await extract_and_analyse(context, model_client)
+    queue = open_question_queue(context)
+    gap = queue.pending[0]
+
+    first = queue.respond(gap, response=AnswerResponse.ANSWERED, text="first", answered_by=AUTHOR)
+    # A real snapshot, because the column is a foreign key: this is the shape
+    # extraction leaves behind when it folds an answer into a rebuild.
+    snapshot = db_session.scalars(select(ArtifactSnapshot)).first()
+    assert snapshot is not None
+    first.diff_snapshot_id = snapshot.id
+    db_session.flush()
+
+    queue.respond(gap, response=AnswerResponse.ANSWERED, text="second", answered_by=AUTHOR)
+
+    stored = db_session.scalars(
+        select(domain_models.UserAnswer).where(domain_models.UserAnswer.gap_id == gap.id)
+    ).all()
+    assert sorted(answer.text for answer in stored) == ["first", "second"]
+
+
+async def test_withdrawing_an_answer_reopens_the_question(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Deferring one already answered has to un-close it.
+
+    Otherwise the queue shows settled a question the author has just withdrawn,
+    and the rebuild proceeds as though it had been answered.
+    """
+    context, model_client = scripted_context(db_session, snapshot_store)
+    await extract_and_analyse(context, model_client)
+    queue = open_question_queue(context)
+    gap = queue.pending[0]
+
+    queue.respond(gap, response=AnswerResponse.ANSWERED, text="yes", answered_by=AUTHOR)
+    assert gap.resolved is True
+
+    queue.respond(gap, response=AnswerResponse.DEFERRED, text="", answered_by=AUTHOR)
+
+    assert gap.resolved is False

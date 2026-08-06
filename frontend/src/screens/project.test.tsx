@@ -480,3 +480,66 @@ describe('failures the run got past', () => {
     expect(current.closest('li')).not.toHaveAttribute('data-superseded');
   });
 });
+
+/**
+ * Changing an answer before the round is handed back (found by using the thing).
+ *
+ * An author works down a queue of questions and changes their mind halfway. The
+ * screen used to replace the form with the recorded answer the moment it was
+ * given, so there was one shot at each — and nothing had read it yet.
+ */
+describe('revising an answer', () => {
+  const answered = {
+    ...questionQueue,
+    questions: [
+      {
+        ...(questionQueue.questions ?? [])[0]!,
+        resolved: true,
+        answer: {
+          text: 'Cold cache p99 was 690ms.',
+          question: (questionQueue.questions ?? [])[0]!.question,
+          why_it_matters: '',
+          response_type: 'answered',
+          answered_by: 'ada',
+          diff_snapshot_id: null as string | null,
+        },
+      },
+    ],
+  };
+
+  it('offers to change an answer no rebuild has read', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: answered });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+
+    expect(await screen.findByRole('button', { name: /change this answer/i })).toBeInTheDocument();
+  });
+
+  it('sends the new text to the same path', async () => {
+    const backend = fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: answered });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+    await userEvent.click(await screen.findByRole('button', { name: /change this answer/i }));
+    const box = screen.getByLabelText(/your answer/i);
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Actually 720ms.');
+    await userEvent.click(screen.getByRole('button', { name: /save this instead/i }));
+
+    expect(backend.commands[0]).toMatchObject({
+      path: answered.questions[0]!.answer_path,
+      body: { text: 'Actually 720ms.', answered_by: 'ada' },
+    });
+  });
+
+  it('offers nothing once the rebuild has read it', async () => {
+    const consumed = structuredClone(answered);
+    consumed.questions[0]!.answer!.diff_snapshot_id = 'snap-9';
+    consumed.questions[0]!.answer_path = null;
+    fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: consumed });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+    await screen.findByText(/rebuilt the source model/i);
+
+    expect(screen.queryByRole('button', { name: /change this answer/i })).toBeNull();
+  });
+});
