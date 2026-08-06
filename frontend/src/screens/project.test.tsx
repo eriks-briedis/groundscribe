@@ -559,3 +559,22 @@ describe('revising an answer', () => {
     expect(screen.queryByRole('button', { name: /change this answer/i })).toBeNull();
   });
 });
+
+/**
+ * A run waiting on its author (found by using the thing).
+ *
+ * The card announced that the run could go no further on its own, directly above
+ * a headline saying it was the author's turn. What was needed from them was a
+ * grey footnote underneath.
+ */
+describe('what the run needs from you', () => {
+  it('leads with the way to supply it', async () => {
+    fakeBackend({ [`/projects/${PROJECT_ID}/dashboard`]: dashboard });
+
+    render(<DashboardScreen projectId={PROJECT_ID} actor="ada" />);
+    const link = await screen.findByRole('link', { name: /answer 1 question/i });
+
+    expect(link).toHaveAttribute('href', `#/projects/${PROJECT_ID}/questions`);
+    expect(link).toHaveClass('button--primary');
+  });
+});

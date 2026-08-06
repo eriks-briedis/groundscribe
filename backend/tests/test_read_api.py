@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from groundscribe.api.app import create_app
 from groundscribe.provenance import models as provenance_models
 from groundscribe.storage.snapshot_store import SnapshotStore
-from read_helpers import SETTLED_GAPS, Walkthrough
+from read_helpers import BLOCKING_GAPS, SETTLED_GAPS, Walkthrough
 from service_helpers import AUTHOR, Harness, build_harness
 
 
@@ -1100,3 +1100,54 @@ async def test_only_the_article_the_run_is_driving_is_offered_the_next_step(
             f"{article_id} was offered work the run is not doing to it"
         )
     assert driven["state"] == read(client, f"/projects/{walk.project_id}")["state"]
+
+
+async def test_a_run_waiting_on_its_author_is_not_reported_as_stuck(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """A pause a person owns is the state working, not a breakdown.
+
+    The retry offer read the queue alone — a failed job with nothing behind it —
+    and never asked where the run was. So any earlier failure was enough to
+    announce, above a headline saying it was the author's turn, that the run
+    could go no further on its own.
+
+    Observed on a project parked for source questions with an hour-old provider
+    failure on record.
+    """
+    await walk.open_project()
+    # A failure earlier in the run: nothing scripted, so the extraction fails.
+    client.post(f"/projects/{walk.project_id}/source-model/extract", json={})
+    await walk.harness.drain()
+
+    stuck = read(client, f"/projects/{walk.project_id}/dashboard")
+    assert stuck["retry_command"] is not None, "an -ing state with a failed job is stuck"
+
+    # Now let it reach a pause the author owns, with that failure still recorded.
+    walk.script("extract_source_truth", walk.source_model())
+    walk.script("generate_gap_questions", BLOCKING_GAPS)
+    await walk.command("POST", f"/projects/{walk.project_id}/retry", json={"actor_id": AUTHOR})
+
+    waiting = read(client, f"/projects/{walk.project_id}/dashboard")
+    assert waiting["journey"]["waiting_on"] == "you"
+    assert waiting["retry_command"] is None, "a gate is not a run that cannot continue"
+    assert waiting["recent_failures"], "the failure is still on the record, just not the headline"
+
+
+async def test_the_dashboard_counts_the_questions_actually_being_asked(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """Gap analysis finds more than it surfaces, on purpose.
+
+    The policy caps a round because an author faced with fifteen questions
+    answers none, and the rest are recorded so the run proceeds knowing what it
+    does not know. Listing every unresolved gap told an author nine questions
+    were waiting when one had been asked.
+    """
+    await walk.open_project()
+    await walk.extract(blocking=True)
+
+    dashboard = read(client, f"/projects/{walk.project_id}/dashboard")
+
+    assert all(question["surfaced"] for question in dashboard["questions"])
+    assert len(dashboard["questions"]) < dashboard["source"]["unresolved_questions"] + 1

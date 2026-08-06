@@ -479,6 +479,17 @@ pre,
   max-width: 60ch;
 }
 
+/* What the run needs from the author, as a way to go and supply it. First in
+   the card, because a run waiting on a person is not a problem to diagnose. */
+.now__next {
+  margin: 0;
+}
+
+.now__next .button--primary {
+  display: inline-block;
+  text-decoration: none;
+}
+
 /* A run that failed under its own job: said plainly, with the way out. */
 .stranded {
   display: grid;

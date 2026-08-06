@@ -130,7 +130,7 @@ from groundscribe.voice.store import VoiceStore
 from groundscribe.workflow.journey import STATE_HEADLINES, journey_of, waiting_on
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
-from groundscribe.workflow.transitions import TERMINAL_STATES, is_taken_by_user
+from groundscribe.workflow.transitions import TERMINAL_STATES, is_human_pause, is_taken_by_user
 
 #: What counts as an expensive call, in dollars. A threshold has to be a number
 #: somewhere; it is here, named, rather than inside the filter that uses it, so a
@@ -246,7 +246,15 @@ class ProjectionReader:
             privacy=self._privacy_view(project_id, constraints),
             source=self._completeness(project_id, questions),
             articles=[self._card(article) for article in self._articles(project_id)],
-            questions=[question for question in questions if not question.resolved],
+            # Surfaced *and* unresolved: the ones actually being asked. Gap
+            # analysis finds more than it surfaces on purpose — the policy caps
+            # a round, and the rest are recorded so the run proceeds knowing
+            # what it does not know. Listing all of them told an author nine
+            # questions were waiting when the true count was one, on a run that
+            # was not waiting on them at all.
+            questions=[
+                question for question in questions if not question.resolved and question.surfaced
+            ],
             active_jobs=[_job_view(job) for job in self._active_jobs(run)],
             recent_failures=self._failures(run),
             usage=_usage(self._invocations(run)),
@@ -949,6 +957,14 @@ class ProjectionReader:
             self._session.scalars(select(Job.status).where(Job.pipeline_run_id == run.id))
         )
         if JobStatus.FAILED not in statuses or statuses & {JobStatus.PENDING, JobStatus.RUNNING}:
+            return None
+        # Never at a pause a person owns. The run is not stuck there — it is
+        # waiting, which is the state doing its job — and a failure from earlier
+        # in the run is enough to make this fire, so a gate would be presented as
+        # a breakdown. Observed on a run parked for source questions with an
+        # hour-old provider failure on record: the panel said the run could go no
+        # further on its own, above a headline saying it was the author's turn.
+        if is_human_pause(self._position(run).state):
             return None
         return ActionLink(
             action="retry_failed_job",

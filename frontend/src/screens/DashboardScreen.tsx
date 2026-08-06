@@ -81,16 +81,20 @@ export function DashboardScreen({ projectId, actor = 'ada' }: DashboardScreenPro
                 {/* The state's own commands, inside the card that explains the
                     state: a button is easier to trust when the sentence above it
                     says what it will do. */}
-                <PendingCommand command={dashboard.pending_command} onCommand={reload} />
-                <Stranded command={dashboard.retry_command} actor={actor} onCommand={reload} />
-                <ActionBar links={dashboard.action_links ?? []} actor={actor} onCommand={reload} />
+                {/* What is needed, first and as a way to go and do it. A run
+                    waiting on its author is not a problem to diagnose, and the
+                    questions used to be a grey footnote under a panel announcing
+                    that the run could go no further on its own. */}
                 {questions.length ? (
-                  <p className="muted">
-                    <a href={`#/projects/${projectId}/questions`}>
-                      {questions.length} question{questions.length === 1 ? '' : 's'} waiting for you
+                  <p className="now__next">
+                    <a className="button--primary" href={`#/projects/${projectId}/questions`}>
+                      Answer {questions.length} question{questions.length === 1 ? '' : 's'}
                     </a>
                   </p>
                 ) : null}
+                <PendingCommand command={dashboard.pending_command} onCommand={reload} />
+                <Stranded command={dashboard.retry_command} actor={actor} onCommand={reload} />
+                <ActionBar links={dashboard.action_links ?? []} actor={actor} onCommand={reload} />
               </NowCard>
             </div>
 
