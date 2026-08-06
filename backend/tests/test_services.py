@@ -619,3 +619,54 @@ def script_extraction(harness: Harness, *, gaps: dict[str, Any] = GAPS) -> None:
         ),
     )
     harness.client.script_response("generate_gap_questions", gaps)
+
+
+async def test_a_retry_runs_the_step_the_run_is_on_not_the_newest_failure(
+    harness: Harness,
+) -> None:
+    """A run carries its old failures with it, and they are not what to re-run.
+
+    Observed on a real run parked in ``substantive_rewriting`` whose newest failed
+    job was a ``plan_revision`` from an hour before — already succeeded on a later
+    attempt and long since approved. The interface offered "run that step again",
+    which would have re-planned a revision that was already planned.
+
+    Scoped to what the current state is waiting for, so the offer means the step
+    on screen.
+    """
+    project_id = await failed_extraction(harness)
+    resumed = harness.service._resume(project_id)
+    assert resumed.engine.state is S.SOURCE_MODEL_EXTRACTING
+
+    # A failure from a stage this run has no business re-running, newer than the
+    # extraction that actually failed.
+    stale = harness.runtime.queue.enqueue(
+        job_type=JobType.SCORE_ARTICLE, run=resumed.run, payload={}, supersede=False
+    )
+    stale.status = JobStatus.FAILED
+    harness.runtime.session.flush()
+
+    script_extraction(harness)
+    retried = harness.service.retry_failed_job(project_id, requested_by=AUTHOR)
+
+    assert retried.job is not None
+    assert retried.job.job_type == JobType.EXTRACT_SOURCE_MODEL, (
+        "retried the newest failure rather than the step the run is on"
+    )
+
+
+async def test_a_state_waiting_on_a_person_has_nothing_to_run_again(
+    harness: Harness,
+) -> None:
+    """The gates own themselves, and a retry there would be a category error.
+
+    ``source_questions_required`` is waiting for answers, not for work. Offering
+    to re-run something would suggest the pipeline could get past it alone.
+    """
+    project_id = await with_source(harness)
+    script_extraction(harness)
+    await harness.drain()
+    assert harness.service.project_state(project_id).state is S.SOURCE_QUESTIONS_REQUIRED
+
+    with pytest.raises(NothingToRetry, match="not waiting on work"):
+        harness.service.retry_failed_job(project_id, requested_by=AUTHOR)

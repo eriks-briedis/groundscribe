@@ -407,13 +407,35 @@ class ApplicationService:
                 f"{outstanding.job_type} is already {outstanding.status.value} for this run"
             )
 
+        # Scoped to the work this state is waiting for, not merely to the newest
+        # failure. A run carries its failures with it: something that failed an
+        # hour ago, was fixed, and has since been superseded is still the newest
+        # failed row, and retrying it re-runs a stage the run has finished with.
+        #
+        # Seen on a real run parked in `substantive_rewriting` whose newest failed
+        # job was a `plan_revision` from an hour before — already succeeded on a
+        # later attempt. The offer read as "run that step again" and would have
+        # re-planned a revision that was already planned and approved.
+        step = next_step(resumed.engine.state)
+        if step is None:
+            raise NothingToRetry(
+                f"{resumed.engine.state.value} is not waiting on work to run; "
+                "nothing here can be run again"
+            )
+
         failed = session.scalars(
             select(Job)
-            .where(Job.pipeline_run_id == resumed.run.id, Job.status == JobStatus.FAILED)
+            .where(
+                Job.pipeline_run_id == resumed.run.id,
+                Job.status == JobStatus.FAILED,
+                Job.job_type == step.job_type,
+            )
             .order_by(Job.created_at.desc(), Job.id.desc())
         ).first()
         if failed is None:
-            raise NothingToRetry(f"no failed job to run again in project {project_id}")
+            raise NothingToRetry(
+                f"no failed {step.job_type.value} to run again in project {project_id}"
+            )
 
         # The payload as well as the type: a job re-queued without the budget or
         # the options it was given is a different job wearing the same name.
