@@ -2,7 +2,7 @@ template_id: review_substantively
 description: >
   Review one article version for argument and accuracy — not sentence polish —
   producing findings the author can locate, check and act on (plan/07 §8).
-current_version: v3
+current_version: v4
 versions:
   v1:
     system: >
@@ -74,3 +74,34 @@ versions:
       never had". So the two stages were stricter than the only check that is
       actually meant to have an opinion, and the article they stopped was the
       better of the two the pipeline had produced.
+  v4:
+    system: >
+      You review technical articles for whether the argument holds and the facts
+      are right. You do not comment on rhythm, word choice or sentence length;
+      another pass owns those, and a review that mixes them buys a structural
+      rewrite for a stylistic complaint. Every finding you raise points at a
+      passage, says what is wrong with it, and names what would fix it. Where a
+      finding rests on the source, it cites one claim by its id, exactly as the
+      source model writes it. Where a score has already refused the version, you
+      answer what it found — confirming it or saying why it does not hold — and
+      never leave it unmentioned. You grade honestly: a finding you would not stop
+      publication for is not blocking, and a draft landing near its target length
+      is not a reason to stop one.
+    required_variables: [draft, brief, source_model, dismissed, refusals, scored]
+    output_schema_version: 1
+    notes: >
+      A failing score routes a substantive problem here, and until now this stage
+      arrived knowing nothing about why. It re-read the article from scratch,
+      found nothing, took `accept_review`, and the run went on to the voice pass
+      and back to scoring — which refused it again for the same reason.
+
+      Observed end to end: a score failed on one unsupported claim, the review
+      that followed raised no findings at all, and three model calls later the
+      run was where it started with the article unchanged. Bounded only by the
+      substantive round limit, which it would have spent without altering a word.
+
+      v4 shows the score's own deductions and requires each to be answered. The
+      stage pairs it: a review reached this way always ends at the author, because
+      a score and a review that disagree is a question only a person settles, and
+      letting the review accept its way past a recorded failure is what closed the
+      loop.

@@ -544,6 +544,54 @@ async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
 # ----------------------------------------------------------------------
 
 
+def _refused_by_score(runtime: Runtime, resumed: Resumed) -> tuple[list[str], list[dict[str, Any]]]:
+    """Why the last score refused this run, and the passages it named.
+
+    Both, because they are different facts and the reviewer needs each. The
+    *conditions* say what failed — an unsupported claim, a dimension under its
+    floor — and are the reason the run was routed here at all. The *deductions*
+    carry the passages, requirements and suggested corrections, which is what a
+    reviewer can act on.
+
+    Neither on its own is enough. On the run that prompted this, every deduction
+    was minor or optional and the refusal came from a publication condition no
+    deduction mentioned: a reviewer handed only the deductions would have been
+    shown four small things and not the one that failed the article.
+
+    Empty when the newest score passed, which is the ordinary case — a draft has
+    just been written and nothing has scored it yet.
+    """
+    evaluation = runtime.session.scalars(
+        select(models.EvaluationRun)
+        .join(
+            models.StageExecution,
+            models.StageExecution.id == models.EvaluationRun.stage_execution_id,
+        )
+        .where(models.StageExecution.pipeline_run_id == resumed.run.id)
+        .order_by(models.EvaluationRun.created_at.desc())
+    ).first()
+    if evaluation is None or evaluation.passed:
+        return [], []
+
+    refusals = [
+        str(failure.get("detail"))
+        for failure in evaluation.scores.get("failures", [])
+        if isinstance(failure, dict) and failure.get("detail")
+    ]
+    deductions = [
+        {
+            "dimension": str(deduction.get("dimension", "")),
+            "passage": str(deduction.get("passage", "")),
+            "requirement": str(deduction.get("requirement", "")),
+            "mismatch": str(deduction.get("mismatch", "")),
+            "recommended_correction": str(deduction.get("recommended_correction", "")),
+        }
+        for deduction in evaluation.scores.get("deductions", [])
+        if isinstance(deduction, dict)
+    ]
+    return refusals, deductions
+
+
 async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> StageResult[Any]:
     """Review the current version against the source and the brief."""
     session = resumed.context.session
@@ -558,6 +606,7 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
     source_snapshot = rerunning.source_model_snapshot(
         runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
     )
+    refusals, deductions = _refused_by_score(runtime, resumed)
 
     return await StageRunner(resumed.context).run(
         ReviewSubstantively(
@@ -567,6 +616,8 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
             version_snapshot=version_snapshot,
             brief=rehydrate.document(runtime.snapshots, brief_snapshot, ArticleBriefDocument),
             source_model=rehydrate.document(runtime.snapshots, source_snapshot, SourceModel),
+            refusals=refusals,
+            score_findings=deductions,
         ),
         enter=False,
         on_execution=request.opened,

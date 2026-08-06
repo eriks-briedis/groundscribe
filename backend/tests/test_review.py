@@ -25,6 +25,7 @@ suggestions nobody wanted.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -64,8 +65,14 @@ async def review(
     db_session: Session,
     snapshot_store: SnapshotStore,
     payload: dict[str, Any] | None = None,
+    *,
+    refusals: Sequence[str] = (),
 ) -> tuple[Drafted, StageResult[ReviewOutcome]]:
-    """Draft the golden article, then review it."""
+    """Draft the golden article, then review it.
+
+    ``refusals`` is what a score held against the version, which is how a review
+    reached by routing differs from the one that follows a draft.
+    """
     drafted = await draft(db_session, snapshot_store)
     drafted.model_client.script_response(
         REVIEW_STAGE, payload if payload is not None else golden_review()
@@ -77,6 +84,7 @@ async def review(
             version_snapshot=drafted.result.outputs[0],
             brief=drafted.briefed.brief,
             source_model=drafted.briefed.source_model,
+            refusals=refusals,
         )
     )
     return drafted, result
@@ -364,7 +372,14 @@ def test_the_review_prompt_describes_the_field_the_guard_checks() -> None:
 
     rendered = PromptStore(prompts_root()).render(
         "review_substantively",
-        {"draft": "{}", "brief": "{}", "source_model": "{}", "dismissed": []},
+        {
+            "draft": "{}",
+            "brief": "{}",
+            "source_model": "{}",
+            "dismissed": [],
+            "refusals": [],
+            "scored": [],
+        },
     )
 
     for field in ("source_ref", "brief_ref", "evidence"):
@@ -386,10 +401,92 @@ def test_the_review_prompt_does_not_block_publication_over_length() -> None:
         PromptStore(prompts_root())
         .render(
             "review_substantively",
-            {"draft": "{}", "brief": "{}", "source_model": "{}", "dismissed": []},
+            {
+                "draft": "{}",
+                "brief": "{}",
+                "source_model": "{}",
+                "dismissed": [],
+                "refusals": [],
+                "scored": [],
+            },
         )
         .rendered_prompt
     )
 
     assert "target_length_words" in rendered
     assert "not in breach of" in rendered
+
+
+async def test_a_review_reached_by_a_failed_score_always_ends_at_the_author(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The loop, and the property that closes it.
+
+    A failing score routes a substantive problem to review. Until this, the stage
+    arrived knowing nothing about why: it re-read the article, found nothing,
+    took ``accept_review``, and the run went on to the voice pass and back to
+    scoring — which refused it again for the same reason.
+
+    Observed end to end. A score failed on one unsupported claim, the review that
+    followed raised no findings at all, and three model calls later the run was
+    where it started with the article unchanged.
+
+    So a review reached this way cannot accept its way past the refusal. A score
+    and a review that disagree is a question only a person settles.
+    """
+    from groundscribe.workflow.states import WorkflowAction
+
+    payload = golden_review()
+    payload["verdict"] = "pass"
+    payload["issues"] = []
+
+    drafted, result = await review(
+        db_session,
+        snapshot_store,
+        payload,
+        refusals=["the article rests on the unsupported major claim u001"],
+    )
+
+    assert result.exit_action is WorkflowAction.REQUIRE_REVISION_PLAN
+    assert drafted.context.engine.state is WorkflowState.REVISION_PLAN_REQUIRED
+
+
+def test_the_review_prompt_shows_what_the_score_refused() -> None:
+    """A stage told to look again has to be told what at.
+
+    Both halves: the conditions that failed, which is why the run came back, and
+    the deductions, which name the passages. On the run that prompted this every
+    deduction was minor or optional and the refusal came from a publication
+    condition no deduction mentioned — a reviewer handed only the deductions
+    would have been shown four small things and not the one that failed it.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = (
+        PromptStore(prompts_root())
+        .render(
+            "review_substantively",
+            {
+                "draft": "{}",
+                "brief": "{}",
+                "source_model": "{}",
+                "dismissed": [],
+                "refusals": ["the article rests on the unsupported major claim u001"],
+                "scored": [
+                    {
+                        "dimension": "factual_fidelity",
+                        "passage": "A reviewer asks for a stronger opening.",
+                        "requirement": "",
+                        "mismatch": "the sequence is not in the source",
+                        "recommended_correction": "generalise it",
+                    }
+                ],
+            },
+        )
+        .rendered_prompt
+    )
+
+    assert "unsupported major claim u001" in rendered
+    assert "A reviewer asks for a stronger opening." in rendered
+    assert "What you must not do is return nothing." in rendered

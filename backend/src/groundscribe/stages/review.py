@@ -31,8 +31,8 @@ substance is settled and the article goes to voice alignment.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
-from typing import ClassVar
+from collections.abc import Mapping, Sequence
+from typing import Any, ClassVar
 
 from sqlalchemy import func, select
 
@@ -119,6 +119,8 @@ class ReviewSubstantively:
         brief: ArticleBriefDocument,
         source_model: SourceModel,
         previous_findings: Sequence[domain_models.ReviewIssue] = (),
+        refusals: Sequence[str] = (),
+        score_findings: Sequence[Mapping[str, Any]] = (),
         transitions: bool = True,
         template_version: str | None = None,
         override: RouteOverride | None = None,
@@ -129,6 +131,8 @@ class ReviewSubstantively:
         self._brief = brief
         self._source_model = source_model
         self._previous = tuple(previous_findings)
+        self._refusals = tuple(refusals)
+        self._scored = tuple(score_findings)
         self._transitions = transitions
         self._template_version = template_version
         self._override = override
@@ -154,6 +158,8 @@ class ReviewSubstantively:
                     for finding in self._previous
                     if finding.status is FindingStatus.REJECTED
                 ],
+                "refusals": list(self._refusals),
+                "scored": list(self._scored),
             },
             schema=SubstantiveReview,
             override=self._override,
@@ -226,6 +232,18 @@ class ReviewSubstantively:
         """
         if not self._transitions:
             return None
+        # A review reached by routing a failed score always ends at the author.
+        # It cannot accept its way past a failure the score recorded, whatever it
+        # thinks of it — the two readings disagree and only a person settles that.
+        #
+        # Without this the disagreement was a loop. A score failed on an
+        # unsupported claim, routing sent the run here, this stage found nothing
+        # because nothing told it what to look for, `accept_review` carried it to
+        # the voice pass, and scoring failed on the same claim three calls later.
+        # Bounded only by the substantive round limit, which it would have spent
+        # entirely without changing a word.
+        if self._refusals:
+            return WorkflowAction.REQUIRE_REVISION_PLAN
         return (
             WorkflowAction.REQUIRE_REVISION_PLAN
             if assessed.requires_iteration
