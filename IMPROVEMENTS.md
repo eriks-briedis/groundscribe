@@ -351,3 +351,105 @@ already advises a decision that remains the author's, and the architecture board
 exists so the advice can be edited before it binds. The difference is that a
 proposed architecture is one document read as a whole; a triage is ten small
 answers, and ten small confirmations is where attention actually goes.
+
+---
+
+## 11. A claim that costs a deletion should not cost a round
+
+**Status:** open. **Wanted by:** the author, during the run of 2026-08-06, after
+watching three revision rounds make an article worse. **Cost:** one route, one
+prompt, one guard on what it may touch. **Risk:** medium — see below.
+
+`unsupported_claims` is a publication condition, and correctly so: an article
+that states as fact something the source does not support is not publishable,
+whatever it scores. But the condition is binary and the remedy has one size. A
+fabricated mechanism and a six-word rhetorical flourish fail the article
+identically, and both are answered with a full substantive round.
+
+### What that cost, measured
+
+The run of 2026-08-06 ended its third round here:
+
+| dimension | score | floor | |
+|---|---|---|---|
+| factual_fidelity | 96.0 | 90 | clear |
+| thesis_and_focus | 93.0 | 80 | clear |
+| scope_discipline | 93.0 | 80 | clear |
+| structure_and_coherence | 90.0 | — | |
+| reader_value | 90.0 | — | |
+| evidence_and_specificity | 88.0 | — | |
+| voice_adherence | 76.0 | 75 | clear by one |
+| **overall** | **90.55** | **85** | clear by 5.55 |
+
+Every threshold cleared. Eight deductions, seven `minor` and one `optional`,
+none blocking. One publication condition failed it:
+
+> `u001_draft_beats_blank_page` — "The draft beats the blank page."
+
+Six words in the opening paragraph. The source supports that the repeated manual
+workflow beat a single prompt; it does not support that a draft beats nothing.
+The scorer is right. The fix is the delete key.
+
+The round that produced this article ran 31 minutes, six model calls across
+`review_substantively` (twice), `create_revision_plan`, `rewrite_substantively`,
+`align_voice` and `score_article`, 315k input tokens, and ten triage decisions
+by hand — to arrive at a draft failing on a sentence a person removes in four
+seconds.
+
+### The loop is anti-convergent for this article
+
+Overall score by round: **91.75 → 92.05 → 91.1 → 90.55**. The high-water mark
+was two rounds before the end. Each round removed the unsupported claim it was
+sent back for and churned enough prose to earn fresh voice deductions — three of
+the final eight were `voice_adherence`, which sat at 76 against a floor of 75.
+One more round of the same trade would have failed the article on voice, having
+been sent back for fidelity.
+
+That is the part worth naming, because it is not a prompt defect. The rewrite is
+doing what it was asked. A stage told to correct an argument rewrites paragraphs,
+and rewritten paragraphs are re-voiced; the rubric charges for the churn under a
+dimension nobody sent the article back for. So the loop trades a fixed cost in
+voice for a variable gain in fidelity, and when the fidelity gain is one clause,
+the trade is a loss.
+
+### Shape
+
+A route the score can take when its **only** failure is unsupported claims,
+every dimension is above its floor, and no deduction is blocking — the case
+where the article is finished and one or more sentences are not.
+
+It goes to a stage that may only *remove or qualify*: given the claims and their
+passages, it returns the same article with those passages cut or narrowed to what
+the source says, and touches nothing else. One call, no plan, no triage, no voice
+pass, and — this is the point — **no round**. Rounds are charged in `route()` for
+a revision loop, and this is not one; it is the correction of a defect the score
+has already localised to a span.
+
+Guarded rather than instructed, on the lesson §2 records: a diff that touches
+anything outside the named passages is refused, so "may only remove or qualify"
+is a property of the output and not a sentence in a prompt. That guard is also
+what makes skipping the voice pass safe — prose that only lost a clause has not
+been re-voiced, so there is nothing for the voice stage to realign.
+
+### Why it is a route and not a manual edit
+
+Both should exist and the manual one is easier, but the manual one does not close
+the loop. `manual_edits` records a person's change; it does not produce a version
+the score can re-run against without a person driving each step. An article that
+fails only on a removable clause should be able to finish without anybody being
+asked — that is the same reasoning that makes approving a brief queue the draft.
+
+### Risk
+
+The condition it triggers on has to be narrow, because "cut the sentence" is the
+wrong answer whenever the claim is load-bearing. An unsupported claim that the
+thesis rests on cannot be deleted; removing it leaves an article arguing nothing,
+and the honest outcome there is a `factual_gap` for the author to close with more
+source material. The floors are the available proxy — a claim the argument needs
+is one whose removal shows up in `thesis_and_focus` — but they are a proxy, and
+the run that motivates this had a claim so peripheral that no dimension moved.
+
+So the trigger should be conservative and say what it did: the route applies to a
+score with no blocking deduction and every floor clear, it names the spans it
+cut, and the re-score is the check. If the article comes back below a floor it
+was above, the cut was load-bearing and the round was owed after all.
