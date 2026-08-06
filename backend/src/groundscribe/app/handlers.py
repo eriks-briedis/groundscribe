@@ -544,8 +544,10 @@ async def _draft(runtime: Runtime, resumed: Resumed, request: JobRequest) -> Sta
 # ----------------------------------------------------------------------
 
 
-def _refused_by_score(runtime: Runtime, resumed: Resumed) -> tuple[list[str], list[dict[str, Any]]]:
-    """Why the last score refused this run, and the passages it named.
+def _refused_by_score(
+    runtime: Runtime, resumed: Resumed, version_id: str
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Why the last score refused *this version*, and the passages it named.
 
     Both, because they are different facts and the reviewer needs each. The
     *conditions* say what failed — an unsupported claim, a dimension under its
@@ -558,10 +560,24 @@ def _refused_by_score(runtime: Runtime, resumed: Resumed) -> tuple[list[str], li
     deduction mentioned: a reviewer handed only the deductions would have been
     shown four small things and not the one that failed the article.
 
-    Empty when the newest score passed, which is the ordinary case — a draft has
-    just been written and nothing has scored it yet.
+    Matched to ``version_id`` through the linkage the score recorded — phase 08
+    refuses to store an evaluation that cannot say which version it scored — the
+    same way :meth:`ProjectionReader._scores` does, and for the reason that one
+    gives: the newest evaluation of a *run* is not the score of the version in
+    front of you. This asked the run and got the wrong answer at the only moment
+    it matters. A rewrite produces a version nothing has scored yet; the newest
+    score is of the version the rewrite replaced, so its refusals name sentences
+    that are no longer in the article. Handing those to the review of the new
+    version asked it to re-litigate a fixed draft — and because refusals force
+    the plan exit in :meth:`ReviewSubstantively._exit_for`, a review that passed
+    with nothing blocking still parked the run at the plan gate and made somebody
+    triage nine findings that all said "already fixed".
+
+    Empty when the version in front of us has not been scored, or its score
+    passed. That is the ordinary case on the way *in* to a review: a draft has
+    just been written, and there is no refusal to carry.
     """
-    evaluation = runtime.session.scalars(
+    evaluations = runtime.session.scalars(
         select(models.EvaluationRun)
         .join(
             models.StageExecution,
@@ -569,7 +585,15 @@ def _refused_by_score(runtime: Runtime, resumed: Resumed) -> tuple[list[str], li
         )
         .where(models.StageExecution.pipeline_run_id == resumed.run.id)
         .order_by(models.EvaluationRun.created_at.desc())
-    ).first()
+    ).all()
+    evaluation = next(
+        (
+            candidate
+            for candidate in evaluations
+            if candidate.scores.get("linkage", {}).get("article_version_id") == version_id
+        ),
+        None,
+    )
     if evaluation is None or evaluation.passed:
         return [], []
 
@@ -606,7 +630,7 @@ async def _review(runtime: Runtime, resumed: Resumed, request: JobRequest) -> St
     source_snapshot = rerunning.source_model_snapshot(
         runtime, rehydrate.require_snapshot(session, resumed.run, ArtifactType.SOURCE_MODEL)
     )
-    refusals, deductions = _refused_by_score(runtime, resumed)
+    refusals, deductions = _refused_by_score(runtime, resumed, version.id)
 
     return await StageRunner(resumed.context).run(
         ReviewSubstantively(

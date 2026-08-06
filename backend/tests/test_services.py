@@ -1041,3 +1041,55 @@ async def test_deciding_the_last_finding_starts_the_plan_when_one_is_wanted(
 
     assert harness.service.project_state(project_id).state is S.REVISION_PLAN_REQUIRED
     assert harness.runtime.queue.pending_count() == 1, "the plan the author asked for"
+
+
+async def test_a_review_is_not_handed_the_refusals_of_a_version_it_is_not_reading(
+    harness: Harness,
+) -> None:
+    """A score refuses a version, not a run — and a rewrite makes the difference.
+
+    ``_refused_by_score`` asked the run for its newest evaluation, which is the
+    right answer only until something changes the article. A rewrite produces a
+    version nothing has scored, so the newest score is of the version it replaced
+    and its refusals name sentences that are no longer there.
+
+    Observed end to end. A review of the rewritten version came back clean —
+    verdict ``pass_substantive_review``, every finding optional — and still
+    parked the run at the plan gate, because refusals force that exit whatever
+    the verdict says. The author was asked to triage nine findings that all said
+    the same thing: already fixed.
+    """
+    from groundscribe.app.handlers import _refused_by_score
+    from groundscribe.provenance import models as provenance_models
+    from groundscribe.scoring.scoring import SCORE_STAGE
+
+    project_id, article_id = await reviewed_article(harness)
+    resumed = harness.service._resume(project_id)
+    reviewed = rehydrate.latest_version(harness.runtime.session, article_id)
+
+    execution = harness.runtime.session.scalars(
+        select(provenance_models.StageExecution).where(
+            provenance_models.StageExecution.pipeline_run_id == resumed.run.id
+        )
+    ).first()
+    assert execution is not None
+    harness.runtime.recorder.record_evaluation(
+        execution,
+        evaluator_id=SCORE_STAGE,
+        evaluator_version="1",
+        rubric_version="1",
+        scores={
+            "failures": [{"detail": "the article rests on the unsupported major claim u001"}],
+            "deductions": [{"dimension": "factual_fidelity", "passage": "a cut sentence"}],
+            "linkage": {"article_version_id": "the-version-the-rewrite-replaced"},
+        },
+        passed=False,
+    )
+
+    assert _refused_by_score(harness.runtime, resumed, reviewed.id) == ([], [])
+
+    refusals, deductions = _refused_by_score(
+        harness.runtime, resumed, "the-version-the-rewrite-replaced"
+    )
+    assert refusals == ["the article rests on the unsupported major claim u001"]
+    assert deductions[0]["passage"] == "a cut sentence"

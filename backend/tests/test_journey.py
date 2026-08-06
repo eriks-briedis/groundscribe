@@ -23,9 +23,9 @@ import pytest
 from groundscribe.workflow.journey import (
     ENDINGS,
     PHASES,
+    STATE_HEADLINES,
     Progress,
     headline_for,
-    STATE_HEADLINES,
     journey_of,
     phase_of,
     waiting_on,
