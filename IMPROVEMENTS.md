@@ -208,3 +208,74 @@ The frontend is written with single quotes throughout and there is no
 defaults — 285 lines of noise in one accidental invocation, none of it intended.
 
 A committed config makes the house style enforceable instead of conventional.
+
+---
+
+## 9. Splitting a source strips the grounding out of every piece of it
+
+**Status:** open. **Found:** phase 16, by reading an article the pipeline passed.
+**Cost:** one rubric line and one prompt clause for the first two levers; the
+third is §1. **Risk:** medium — a floor that is too high fails honest articles.
+
+The architecture decides how many articles a source supports and which claims go
+to each. It splits by *topic*, and evidence follows topic — so the article whose
+subject is positioning gets the positioning claims and none of the artefacts,
+because the artefacts belong to the topics that were split away from it.
+
+Measured on a real run. A 92-claim source became five articles; the positioning
+article was allocated **14 claims**, and the draft's own `omitted` field records
+what the split sent elsewhere:
+
+- detailed implementation status — reserved for a separate status article
+- local-first storage, provider routing, retention, encryption — a separate
+  provenance article
+- scoring dimensions, weights, thresholds and configured numbers — a separate
+  scoring article
+- stack, packaging, database parity, framework and interface detail
+
+Every concrete thing in the source was routed out of the article arguing that
+concreteness is the product. What was left could only be conceptual, and the
+result reads as fluent and un-grounded. (68 of the 92 claims reached any article
+at all; 24 reached none.)
+
+### The pipeline detected it and passed the article anyway
+
+The score's lowest substantive dimension was `evidence_and_specificity` at 86,
+with the deduction: *"names categories of traceable material but does not show a
+concrete inspected artefact, field, decision record, review finding, score entry,
+or source-linked explanation."* That is the defect, stated exactly. Overall 92.85,
+passed.
+
+It passed because the rubric's floors are `factual_fidelity` 90,
+`thesis_and_focus` 80, `scope_discipline` 80 and `voice_adherence` 75.
+`evidence_and_specificity`, `reader_value` and `structure_and_coherence` have
+none. The conjunction protects against publishing something *wrong*; nothing
+protects against publishing something *empty*, and an article can score well by
+being accurate about how little it says.
+
+### Three levers, in the order they are worth pulling
+
+**A floor on `evidence_and_specificity`.** One line of `scoring-rubric.yaml`, and
+it uses machinery that already works: below the floor the score fails, routes
+`substantive_issue`, and the revision loop asks for the missing example. The risk
+is the reason it has no floor today — some articles are legitimately
+argumentative — so the number wants to be low enough to catch emptiness and not
+so high that an honest essay cannot pass.
+
+**A brief that requires a worked example.** The brief is already a contract the
+scorer checks, and `definition_of_done` is where a requirement of this kind
+belongs. An article whose thesis is about a *mechanism* should have to show that
+mechanism working once. Prompt change; no schema.
+
+**A cap on how many articles a source becomes** — §1. It bounds how thin the
+slicing gets, but on its own it produces one broad article rather than one
+grounded one. It is the third lever and not the first.
+
+### What this does not fix
+
+The same run showed four other faults that all originate in the brief rather than
+the draft: the disclaimer section placed last so the article ends on what it is
+not claiming, two sections both restating the thesis, `should` used where the
+reader needs `does`, and single-sentence paragraphs used often enough to stop
+landing. The brief is generated, so these are brief-prompt questions, and they
+are not addressed by any of the three levers above.
