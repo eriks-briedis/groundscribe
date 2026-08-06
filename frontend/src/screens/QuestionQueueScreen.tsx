@@ -48,7 +48,13 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
     <Loaded resource={resource}>
       {(queue) => {
         const questions = queue.questions ?? [];
-        const open = questions.filter((question) => !question.resolved);
+        // Three groups, not two. Extraction finds more gaps than it asks about:
+        // the policy caps how many are *surfaced* per round, because an author
+        // faced with fifteen questions answers none. The rest are recorded and
+        // answerable, and nothing waits on them — a screen that listed all of
+        // them together would present the cap as though it had never applied.
+        const open = questions.filter((question) => !question.resolved && question.surfaced);
+        const unasked = questions.filter((question) => !question.resolved && !question.surfaced);
         const answered = questions.filter((question) => question.resolved);
 
         return (
@@ -91,6 +97,27 @@ export function QuestionQueueScreen({ projectId, actor }: QuestionQueueScreenPro
                 <h2>Answered</h2>
                 <div className="questions">
                   {answered.map((question) => (
+                    <Question
+                      key={question.id}
+                      question={question}
+                      actor={actor}
+                      onAnswered={() => resource.reload()}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {unasked.length ? (
+              <section className="panel panel--secondary" data-testid="unasked">
+                <h2>Also found, not asked</h2>
+                <p className="muted">
+                  {unasked.length} more {unasked.length === 1 ? 'gap' : 'gaps'} the extraction
+                  noticed. Nothing is waiting on {unasked.length === 1 ? 'it' : 'them'} — the run
+                  proceeds knowing what it does not know. Answer any that matter to you.
+                </p>
+                <div className="questions">
+                  {unasked.map((question) => (
                     <Question
                       key={question.id}
                       question={question}

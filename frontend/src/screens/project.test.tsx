@@ -205,8 +205,24 @@ describe('the question queue', () => {
 
     const round = await screen.findByTestId('round');
     expect(round).toHaveTextContent(/1 answered/i);
-    expect(round).toHaveTextContent(/2 still open/i);
+    // One, not two. The third gap was found and not surfaced, and the run is
+    // not waiting on it — counting it here would present the cap on how many
+    // questions are asked as though it had never applied.
+    expect(round).toHaveTextContent(/1 still open/i);
     expect(screen.getByRole('button', { name: /rebuild with these answers/i })).toBeEnabled();
+  });
+
+  it('separates what it is asking from what it merely noticed', async () => {
+    // Extraction finds more gaps than it asks about — an author faced with
+    // fifteen questions answers none — so the ones it held back are listed
+    // apart from the ones the run is parked on.
+    fakeBackend({ [`/projects/${PROJECT_ID}/questions`]: questionQueue });
+
+    render(<QuestionQueueScreen projectId={PROJECT_ID} actor="ada" />);
+
+    const held = await screen.findByTestId('unasked');
+    expect(held).toHaveTextContent(/which cache size was measured/i);
+    expect(held).toHaveTextContent(/nothing is waiting on it/i);
   });
 
   it('hands the round back where the backend said, and says who did', async () => {

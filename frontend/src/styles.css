@@ -585,6 +585,12 @@ pre,
   background: var(--attention-wash);
 }
 
+/* Material the run is not waiting on. Present because it is true and worth
+   having, quieter because reading it as a demand is the mistake. */
+.panel--secondary {
+  opacity: 0.75;
+}
+
 /* A failure the run has since got past. Quieter than the ones that still
    matter, because the panel is read when somebody is looking for the reason
    nothing is happening, and this is not it. */
