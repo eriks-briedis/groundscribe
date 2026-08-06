@@ -28,9 +28,14 @@ import typer
 from groundscribe.api.openapi import contract_app, export_schema
 from groundscribe.app.bootstrap import build_runtime, provider_clients
 from groundscribe.app.handlers import stage_handlers
-from groundscribe.app.services import ApplicationService
+from groundscribe.app.services import ApplicationService, FindingDecision
 from groundscribe.config import ENV_FILE, load_env_file
-from groundscribe.domain.enums import AnswerResponse, ArticleDepth, SourceFormat
+from groundscribe.domain.enums import (
+    AnswerResponse,
+    ArticleDepth,
+    FindingStatus,
+    SourceFormat,
+)
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.experiments.reproducibility import contract
 from groundscribe.experiments.runs import ArmSpec
@@ -343,6 +348,41 @@ def project_routing(
         _emit(service.set_routing_profile(project, profile=chosen, chosen_by=by))
 
 
+@project_app.command("cancel")
+def project_cancel(
+    project: str, by: Annotated[str, typer.Option(help="Who is stopping it.")]
+) -> None:
+    """Stop the run. Always available, so no run can be trapped."""
+    with _command() as service:
+        _emit(service.cancel(project, cancelled_by=by))
+
+
+@architecture_app.command("abandon")
+def architecture_abandon(
+    project: str, by: Annotated[str, typer.Option(help="Who is abandoning it.")]
+) -> None:
+    """Give up on a proposal in flight and keep the architecture already approved.
+
+    The one recovery ``project retry`` cannot perform: re-queueing is right for a
+    proposal that failed on a timeout, but one that lands over an *approved*
+    architecture is refused by the engine's own guard, so running it again
+    arrives at the same refusal.
+    """
+    with _command() as service:
+        _emit(service.abandon_proposal(project, requested_by=by))
+
+
+@architecture_app.command("reopen")
+def architecture_reopen(
+    project: str,
+    by: Annotated[str, typer.Option(help="Who is asking.")],
+    reason: Annotated[str, typer.Option(help="Wrong shape, or wrong article?")] = "",
+) -> None:
+    """Reconsider what the source can support, from a run the loop could not finish."""
+    with _command() as service:
+        _emit(service.reopen_architecture(project, requested_by=by, reason=reason))
+
+
 @source_app.command("submit-answers")
 def source_submit_answers(
     project: str,
@@ -379,6 +419,139 @@ def article_brief(article: str) -> None:
     """Queue the brief this article is drafted against."""
     with _command() as service:
         _emit(asyncio.run(service.generate_brief(article)))
+
+
+@article_app.command("approve-brief")
+def article_approve_brief(
+    article: str, by: Annotated[str, typer.Option(help="Who is approving.")]
+) -> None:
+    """Accept the brief, which queues the draft written against it."""
+    with _command() as service:
+        _emit(service.approve_brief(article, approved_by=by))
+
+
+@article_app.command("triage")
+def article_triage(
+    article: str,
+    by: Annotated[str, typer.Option(help="Who is deciding.")],
+    accept: Annotated[list[str] | None, typer.Option(help="Finding ids to accept.")] = None,
+    reject: Annotated[list[str] | None, typer.Option(help="Finding ids to reject.")] = None,
+    reason: Annotated[str, typer.Option(help="Why the rejected ones do not apply.")] = "",
+) -> None:
+    """Decide the review's findings, all of them, in one pass.
+
+    Repeatable ``--accept`` and ``--reject``, and one ``--reason`` covering the
+    rejections. That is the shape the work actually has: on the run this was
+    written for, one finding of ten changed the article and five were rejected
+    for the same reason. A flag per finding would be the per-request version with
+    a different syntax.
+
+    Accepting with an edit is not offered here. It needs the replacement prose,
+    which is a paragraph rather than a flag — that decision belongs on a screen.
+    """
+    rejected = list(reject or [])
+    if rejected and not reason.strip():
+        raise typer.BadParameter(
+            "--reason is required when rejecting: without one, the next round cannot "
+            "tell a considered dismissal from an oversight"
+        )
+    decisions = [
+        FindingDecision(finding_id=finding, decision=FindingStatus.ACCEPTED)
+        for finding in (accept or [])
+    ] + [
+        FindingDecision(finding_id=finding, decision=FindingStatus.REJECTED, reason=reason)
+        for finding in rejected
+    ]
+    if not decisions:
+        raise typer.BadParameter("nothing to decide: pass --accept and/or --reject")
+    with _command() as service:
+        _emit(service.decide_findings(article, decisions=decisions, decided_by=by))
+
+
+@article_app.command("approve-plan")
+def article_approve_plan(
+    article: str, by: Annotated[str, typer.Option(help="Who is approving.")]
+) -> None:
+    """Accept the revision plan, which queues the rewrite bound by it."""
+    with _command() as service:
+        _emit(service.approve_revision_plan(article, approved_by=by))
+
+
+@article_app.command("revise")
+def article_revise(
+    article: str,
+    by: Annotated[str, typer.Option(help="Who is asking.")],
+    prefer: Annotated[
+        str | None,
+        typer.Option(help="Which of the destinations this failure permits."),
+    ] = None,
+) -> None:
+    """Send a failed score to the stage that can correct it.
+
+    ``--prefer`` chooses between the destinations the failure's category already
+    permits and cannot invent one: a factual gap whose facts the author has is
+    corrected by re-extracting, and one whose facts nobody has written down is
+    corrected by asking them. Both are `factual_gap`.
+
+    Taken as a plain string rather than as a workflow state, and refused by the
+    routing policy rather than by this signature. The CLI holds no part of the
+    state machine — ``test_the_cli_cannot_see_the_workflow_at_all`` asserts it at
+    the import boundary — and a typed option here would have been a second,
+    drifting copy of the vocabulary. The policy already refuses a destination it
+    does not list, which is where that answer belongs.
+    """
+    with _command() as service:
+        _emit(service.revise(article, requested_by=by, prefer=prefer))
+
+
+@article_app.command("override-approve")
+def article_override_approve(
+    article: str, by: Annotated[str, typer.Option(help="Who is overruling the score.")]
+) -> None:
+    """Accept an article the score refused, on your explicit say-so."""
+    with _command() as service:
+        _emit(service.override_and_approve(article, approved_by=by))
+
+
+@article_app.command("approve-and-continue")
+def article_approve_and_continue(
+    article: str,
+    by: Annotated[str, typer.Option(help="Who is approving.")],
+    next_article: Annotated[str, typer.Option(help="The approved concept to write next.")],
+) -> None:
+    """Publish this article and start another of the approved concepts.
+
+    The next article is named rather than inferred: auto-advance follows the one
+    the architecture selected, which is the article being finished here.
+    """
+    with _command() as service:
+        _emit(service.approve_and_continue(article, approved_by=by, next_article_id=next_article))
+
+
+@article_app.command("authorise-rewrite")
+def article_authorise_rewrite(
+    article: str,
+    by: Annotated[str, typer.Option(help="Who is authorising it.")],
+    reason: Annotated[str, typer.Option(help="Why this round is worth spending.")] = "",
+) -> None:
+    """Spend another substantive round beyond the configured limit.
+
+    One round, not a raised ceiling: continuing past the limit stays a series of
+    deliberate decisions rather than a switch somebody flips once.
+    """
+    with _command() as service:
+        _emit(service.authorise_rewrite(article, authorised_by=by, reason=reason))
+
+
+@article_app.command("return-to-brief")
+def article_return_to_brief(
+    article: str,
+    by: Annotated[str, typer.Option(help="Who is asking.")],
+    reason: Annotated[str, typer.Option(help="Too wide, or simply wrong?")] = "",
+) -> None:
+    """Reopen the contract instead of rewriting the article against it again."""
+    with _command() as service:
+        _emit(service.return_to_brief(article, requested_by=by, reason=reason))
 
 
 @article_app.command("draft")

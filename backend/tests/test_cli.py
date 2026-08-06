@@ -415,3 +415,154 @@ def test_a_real_environment_variable_still_beats_the_file(
     cli_runner.invoke(cli.app, ["contracts", "export", "--path", str(tmp_path / "s.json")])
 
     assert os.environ["OLLAMA_BASE_URL"] == "http://exported:11434"
+
+
+# ----------------------------------------------------------------------
+# A terminal operator can drive a run to the end
+# ----------------------------------------------------------------------
+
+
+def cli_source() -> str:
+    """The CLI module as text, which is what "has a command" is asserted against."""
+    from groundscribe.cli import main as cli_module
+
+    return Path(inspect.getfile(cli_module)).read_text(encoding="utf-8")
+
+
+def endpoint_methods() -> dict[str, str]:
+    """Which service method each route calls, parsed from the routes themselves.
+
+    Derived rather than listed. A hand-written map is the thing that rots: it
+    passes for as long as somebody remembers to edit it, which is exactly as long
+    as they would have remembered to add the command.
+    """
+    import re
+
+    from groundscribe.api import routes as routes_module
+
+    source = Path(inspect.getfile(routes_module)).read_text(encoding="utf-8")
+    found: dict[str, str] = {}
+    for block in re.split(r"\n@router\.", source)[1:]:
+        path = re.search(r'"(/[^"]*)"', block)
+        method = re.search(r"service\.([a-z_0-9]+)\(", block)
+        if path and method:
+            found[path.group(1)] = method.group(1)
+    return found
+
+
+def _method_for(template: str, by_path: dict[str, str]) -> str | None:
+    """The service method a template reaches, matching a literal to its parameter.
+
+    ``ACTION_ENDPOINTS`` addresses architecture approval as
+    ``/architecture/current/approve`` while the route declares
+    ``/architecture/{version}/approve`` — ``current`` is a real version id the
+    route accepts, not a different endpoint. Compared segment by segment so a
+    literal standing in for a parameter still matches, which an exact string
+    lookup cannot see.
+    """
+    if template in by_path:
+        return by_path[template]
+    wanted = template.strip("/").split("/")
+    for path, method in by_path.items():
+        parts = path.strip("/").split("/")
+        if len(parts) != len(wanted):
+            continue
+        if all(p.startswith("{") or p == w for p, w in zip(parts, wanted, strict=True)):
+            return method
+    return None
+
+
+def test_every_gate_a_person_owns_has_a_command_to_take_it() -> None:
+    """The CLI stopped at the brief, and a run cannot be driven past it.
+
+    Five of the human gates were browser-only: approving a brief, triaging a
+    review, approving the plan, routing a failed score, and every way out of a
+    stalled run. A terminal operator got as far as ``architecture approve`` and
+    then had to open a browser or hand-roll ``curl``.
+
+    Derived from the workflow's own gate list and transition table, so it is the
+    *property* that is asserted rather than a count. A gate added later without a
+    command fails this; a command renamed but still present does not, which is
+    the right way round.
+    """
+    from groundscribe.app.actions import ACTION_ENDPOINTS
+    from groundscribe.app.advance import HUMAN_GATES
+    from groundscribe.workflow.transitions import available_actions, is_taken_by_user
+
+    cli_text = cli_source()
+    by_path = endpoint_methods()
+    unreachable: list[str] = []
+
+    for state in HUMAN_GATES:
+        for name in available_actions(state):
+            action = next((a for a in ACTION_ENDPOINTS if a.value == name), None)
+            if action is None or not is_taken_by_user(state, action):
+                continue
+            endpoint = ACTION_ENDPOINTS[action]
+            method = _method_for(endpoint.template, by_path)
+            if method is None or f"service.{method}(" not in cli_text:
+                unreachable.append(f"{state.value} → {name}")
+
+    assert not unreachable, "no CLI command for: " + ", ".join(sorted(unreachable))
+
+
+def test_the_questions_gate_is_answerable_and_submittable_from_the_terminal() -> None:
+    """The one gate whose commands are deliberately outside the action table.
+
+    ``answer_questions`` has no entry in ``ACTION_ENDPOINTS`` on purpose — a
+    dashboard rendering that table as buttons would offer "answer questions" as
+    something one click could do — so the check above cannot see it, and it is the
+    gate a run spends longest parked at.
+    """
+    cli_text = cli_source()
+
+    assert "service.answer_gap(" in cli_text
+    assert "service.submit_answers(" in cli_text
+
+
+def test_the_triage_command_refuses_a_rejection_with_no_reason(
+    cli_runner: CliRunner, recorder: RecordingService
+) -> None:
+    """The ledger's rule, enforced before the request rather than after it.
+
+    A terminal operator who typed ``--reject i3`` and no reason would otherwise
+    get a traceback from the service, having already been told the command was
+    valid.
+    """
+    result = cli_runner.invoke(
+        cli.app, ["article", "triage", "a1", "--by", AUTHOR, "--reject", "i3"]
+    )
+
+    assert result.exit_code != 0
+    assert not recorder.methods()
+
+
+def test_the_triage_command_sends_one_pass(
+    cli_runner: CliRunner, recorder: RecordingService
+) -> None:
+    """Repeatable flags, one submission — the same shape the screen now has."""
+    run(
+        cli_runner,
+        "article",
+        "triage",
+        "a1",
+        "--by",
+        AUTHOR,
+        "--accept",
+        "i1",
+        "--reject",
+        "i2",
+        "--reject",
+        "i3",
+        "--reason",
+        "the score no longer complains",
+    )
+
+    assert recorder.last.method == "decide_findings"
+    decisions = recorder.last.kwargs["decisions"]
+    assert [(d.finding_id, d.decision.value) for d in decisions] == [
+        ("i1", "accepted"),
+        ("i2", "rejected"),
+        ("i3", "rejected"),
+    ]
+    assert all(d.reason for d in decisions if d.decision.value == "rejected")

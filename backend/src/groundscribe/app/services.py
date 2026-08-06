@@ -1075,7 +1075,7 @@ class ApplicationService:
         article_id: str,
         *,
         requested_by: str,
-        prefer: WorkflowState | None = None,
+        prefer: WorkflowState | str | None = None,
     ) -> CommandResult:
         """Send a failed score to the stage that can correct it.
 
@@ -1103,6 +1103,19 @@ class ApplicationService:
         corrected by asking them. Both are ``factual_gap``, and re-extracting the
         same source for the second is a loop.
         """
+        # Named as a string by the CLI, which holds no part of the state
+        # vocabulary on purpose, and coerced here — where the routing policy that
+        # refuses an unlisted destination also lives. A typed option in the CLI
+        # would have been a second copy of the machine's vocabulary, drifting.
+        if isinstance(prefer, str):
+            try:
+                prefer = WorkflowState(prefer)
+            except ValueError:
+                raise UnknownProject(
+                    f"{prefer!r} is not a state this pipeline has; --prefer names one of the "
+                    "destinations the failure's category already permits"
+                ) from None
+
         resumed = self._resume(self.project_for_article(article_id))
         evaluation = latest_evaluation(self._runtime.session, resumed.run)
         routed_as = evaluation.scores.get("routed_as") if evaluation is not None else None
