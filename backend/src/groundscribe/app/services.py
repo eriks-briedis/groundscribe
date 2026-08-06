@@ -172,6 +172,30 @@ class NothingToRetry(LookupError):
     """
 
 
+#: The three statuses a person may set. ``proposed`` is where a finding starts
+#: and ``suppressed`` is the system holding one back; neither is chosen, and
+#: accepting one here would let a caller un-decide something the record says was
+#: decided.
+_DECIDABLE = frozenset({FindingStatus.ACCEPTED, FindingStatus.REJECTED, FindingStatus.EDITED})
+
+
+@dataclass(frozen=True)
+class FindingDecision:
+    """What a person decided about one finding, on its way into the ledger.
+
+    A value object rather than a tuple because a batch of them is validated
+    before any of it is written, so the decisions have to survive the gap between
+    being read and being applied — and four positional values would be four
+    chances to swap ``reason`` for ``recommended_correction``, which are both
+    strings and both optional.
+    """
+
+    finding_id: str
+    decision: FindingStatus
+    reason: str = ""
+    recommended_correction: str = ""
+
+
 @dataclass(frozen=True)
 class CommandResult:
     """What every command returns: where the run is, and what may be done next.
@@ -639,6 +663,103 @@ class ApplicationService:
         """Review the current version against the source and the brief."""
         return self._enqueue_for_article(article_id, JobType.REVIEW_ARTICLE)
 
+    def decide_findings(
+        self,
+        article_id: str,
+        *,
+        decisions: Sequence[FindingDecision],
+        decided_by: str,
+    ) -> CommandResult:
+        """Decide a review's findings in one act, because that is how they are decided.
+
+        Triage is the pipeline's slowest human step and it was priced per
+        finding: one HTTP request, one stage execution and one full reload of the
+        article workspace each. The run of 2026-08-06 recorded **34**
+        `accept_review_findings` executions, five seconds apart, for what the
+        author was doing in one sitting. Their words for it, in IMPROVEMENTS §10,
+        were *slow, difficult and clumsy*.
+
+        The asymmetry that makes it worse: of the ten findings on that run, one
+        changed the article. The second review's five were all `optional` and all
+        rejected, every one reporting that the prior score's complaints no longer
+        held — five deliberate refusals, each with its own typed reason, to record
+        that there was nothing to do. The work does not scale with the decisions
+        that matter; it scales with the findings returned.
+
+        **One ledger execution for the batch.** The row is the record of a triage
+        pass, and a pass is what a person performs — thirty-four rows described
+        thirty-four requests, which is a fact about the transport.
+
+        **All or nothing.** A batch with one bad decision in it records none of
+        them. Per-finding requests made partial application normal: an author who
+        mistyped the seventh had already committed six, and the ledger keeps a
+        decision rather than letting it be taken back. Validating the whole batch
+        before touching any of it is what makes an undo unnecessary.
+
+        What it does *not* change is the ledger's own vocabulary. One
+        intervention per decision, a mandatory reason on every rejection, and no
+        decision that a person did not make: this is a change to how decisions are
+        submitted, not to what is recorded about them.
+        """
+        if not decisions:
+            raise UndecidableFinding("a triage submission with no decisions in it decides nothing")
+
+        resumed = self._resume(self.project_for_article(article_id))
+        session = resumed.context.session
+
+        # Resolved and checked before the ledger opens. A ledger opened and then
+        # abandoned leaves a stage execution describing a triage that never
+        # happened, which is worse than no row at all.
+        resolved: list[tuple[domain_models.ReviewIssue, FindingDecision]] = []
+        for decision in decisions:
+            finding = session.get(domain_models.ReviewIssue, decision.finding_id)
+            if finding is None or self._article_of(finding) != article_id:
+                raise UnknownFinding(f"article {article_id} has no finding {decision.finding_id}")
+            if decision.decision not in _DECIDABLE:
+                raise UndecidableFinding(
+                    f"{decision.decision.value} is not a decision a person makes; "
+                    "a finding is accepted, rejected, or accepted with an edit"
+                )
+            if decision.decision is FindingStatus.REJECTED and not decision.reason.strip():
+                # The ledger enforces this too and would raise on its own —
+                # worded the same way, because it is the ledger's rule. Repeated
+                # here only so it is caught *before* anything is written: raised
+                # from the ledger it arrives mid-batch, with the decisions ahead
+                # of it already recorded and no way to take them back.
+                raise UndecidableFinding(
+                    f"finding {finding.ref or finding.id} needs a reason to be rejected: "
+                    "without one, the next round cannot tell a considered dismissal from "
+                    "an oversight"
+                )
+            resolved.append((finding, decision))
+
+        ledger = open_review_ledger(resumed.context)
+        for finding, decision in resolved:
+            if decision.decision is FindingStatus.ACCEPTED:
+                ledger.accept(finding, decided_by=decided_by)
+            elif decision.decision is FindingStatus.REJECTED:
+                ledger.reject(finding, decided_by=decided_by, reason=decision.reason)
+            else:
+                ledger.edit(
+                    finding,
+                    decided_by=decided_by,
+                    recommended_correction=decision.recommended_correction,
+                    reason=decision.reason,
+                )
+        self._runtime.recorder.complete_stage(ledger.execution)
+
+        settled = self._settle(
+            resumed,
+            detail={
+                "decided": len(resolved),
+                "refs": [finding.ref for finding, _ in resolved],
+            },
+        )
+        review = session.get(domain_models.Review, resolved[0][0].review_id)
+        if review is None:
+            return settled
+        return self._after_triage(resumed, review, decided_by=decided_by) or settled
+
     def decide_finding(
         self,
         article_id: str,
@@ -673,37 +794,25 @@ class ApplicationService:
         the reviewed one: a rewrite produces a version that no review has seen,
         so looking one up there fails with "has not been reviewed" while the
         finding sits in plain sight on the screen that offered the button.
+
+        A batch of one, so there is a single implementation of what deciding
+        means. Kept as its own method because it is still how a decision is taken
+        from the review-history screen, where a person is reading one round's
+        findings rather than working a queue — and because the endpoint is in the
+        published contract.
         """
-        resumed = self._resume(self.project_for_article(article_id))
-        session = resumed.context.session
-
-        finding = session.get(domain_models.ReviewIssue, finding_id)
-        if finding is None or self._article_of(finding) != article_id:
-            raise UnknownFinding(f"article {article_id} has no finding {finding_id}")
-
-        ledger = open_review_ledger(resumed.context)
-        if decision is FindingStatus.ACCEPTED:
-            ledger.accept(finding, decided_by=decided_by)
-        elif decision is FindingStatus.REJECTED:
-            ledger.reject(finding, decided_by=decided_by, reason=reason)
-        elif decision is FindingStatus.EDITED:
-            ledger.edit(
-                finding,
-                decided_by=decided_by,
-                recommended_correction=recommended_correction,
-                reason=reason,
-            )
-        else:
-            raise UndecidableFinding(
-                f"{decision.value} is not a decision a person makes; "
-                "a finding is accepted, rejected, or accepted with an edit"
-            )
-        self._runtime.recorder.complete_stage(ledger.execution)
-        settled = self._settle(resumed, detail={"ref": finding.ref, "status": decision.value})
-        review = session.get(domain_models.Review, finding.review_id)
-        if review is None:
-            return settled
-        return self._after_triage(resumed, review, decided_by=decided_by) or settled
+        return self.decide_findings(
+            article_id,
+            decisions=[
+                FindingDecision(
+                    finding_id=finding_id,
+                    decision=decision,
+                    reason=reason,
+                    recommended_correction=recommended_correction,
+                )
+            ],
+            decided_by=decided_by,
+        )
 
     def _after_triage(
         self, resumed: Resumed, review: domain_models.Review, *, decided_by: str
@@ -1197,9 +1306,7 @@ class ApplicationService:
         is made at — reopening the architecture reconsiders how the source is
         divided, and every article of the run is downstream of the answer.
         """
-        return self._act(
-            project_id, A.REOPEN_ARCHITECTURE, actor_id=requested_by, rationale=reason
-        )
+        return self._act(project_id, A.REOPEN_ARCHITECTURE, actor_id=requested_by, rationale=reason)
 
     # ------------------------------------------------------------------
     # Voice (phase 10)

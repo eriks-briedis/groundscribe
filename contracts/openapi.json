@@ -901,6 +901,16 @@
           "state": {
             "$ref": "#/components/schemas/WorkflowState"
           },
+          "triage_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "validation": {
             "anyOf": [
               {
@@ -2521,6 +2531,41 @@
         ],
         "title": "FindingStatus",
         "type": "string"
+      },
+      "FindingVerdict": {
+        "description": "One decision inside a triage submission, naming the finding it is about.\n\nThe same three fields :class:`DecideFinding` carries, plus the id \u2014 which the\nsingle-finding endpoint takes from its URL and a batch cannot.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "edited"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "finding_id": {
+            "minLength": 1,
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "recommended_correction": {
+            "default": "",
+            "title": "Recommended Correction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "decision"
+        ],
+        "title": "FindingVerdict",
+        "type": "object"
       },
       "FindingView": {
         "description": "One review finding, with its decision and its history.",
@@ -5357,6 +5402,29 @@
         "title": "TraceView",
         "type": "object"
       },
+      "TriageReview": {
+        "description": "Every decision a person made about a review, handed over together.\n\nTriage is the pipeline's slowest human step, and it was priced per finding: a\nrequest, a stage execution and a screen reload each. One run recorded 34 of\nthem. This is the same set of decisions as one submission.\n\nThe batch is applied whole or not at all. Per-finding requests made partial\napplication the norm \u2014 an author who mistyped the seventh had already\ncommitted six, and the ledger keeps a decision rather than letting it be\ntaken back.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/FindingVerdict"
+            },
+            "minItems": 1,
+            "title": "Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor_id",
+          "decisions"
+        ],
+        "title": "TriageReview",
+        "type": "object"
+      },
       "UpdateArchitecture": {
         "description": "An author's edits to a proposed architecture.",
         "properties": {
@@ -6163,6 +6231,56 @@
           }
         },
         "summary": "Draft"
+      }
+    },
+    "/articles/{article_id}/findings": {
+      "post": {
+        "description": "Hand over every decision a person made about a review, in one submission.\n\nThe route the article workspace uses, because that is the screen where a\nperson works a queue of findings down. The single-finding route below stays\nfor the review-history screen, where they are reading one round rather than\nclearing it \u2014 and both go through the same service method, so there is one\nanswer to what deciding means.\n\nApplied whole or not at all: a batch carrying one finding this article does\nnot hold, or one rejection with no reason, records none of it.",
+        "operationId": "triage_review_articles__article_id__findings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Triage Review"
       }
     },
     "/articles/{article_id}/findings/{finding_id}": {

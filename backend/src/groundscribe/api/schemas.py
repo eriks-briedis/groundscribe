@@ -136,6 +136,35 @@ class DecideFinding(ActorAction):
     recommended_correction: str = ""
 
 
+class FindingVerdict(BaseModel):
+    """One decision inside a triage submission, naming the finding it is about.
+
+    The same three fields :class:`DecideFinding` carries, plus the id — which the
+    single-finding endpoint takes from its URL and a batch cannot.
+    """
+
+    finding_id: str = Field(min_length=1)
+    decision: Literal[FindingStatus.ACCEPTED, FindingStatus.REJECTED, FindingStatus.EDITED]
+    reason: str = ""
+    recommended_correction: str = ""
+
+
+class TriageReview(ActorAction):
+    """Every decision a person made about a review, handed over together.
+
+    Triage is the pipeline's slowest human step, and it was priced per finding: a
+    request, a stage execution and a screen reload each. One run recorded 34 of
+    them. This is the same set of decisions as one submission.
+
+    The batch is applied whole or not at all. Per-finding requests made partial
+    application the norm — an author who mistyped the seventh had already
+    committed six, and the ledger keeps a decision rather than letting it be
+    taken back.
+    """
+
+    decisions: list[FindingVerdict] = Field(min_length=1)
+
+
 class ContinueToArticle(ActorAction):
     """Approving one article and naming the next to write (phase 16).
 

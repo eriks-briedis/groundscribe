@@ -738,6 +738,138 @@ async def test_a_finding_can_be_accepted_which_is_what_a_plan_reads(
     assert review.issues[0].decided_by == AUTHOR
 
 
+async def test_a_whole_review_is_decided_in_one_pass(harness: Harness) -> None:
+    """One ledger execution for a triage pass, not one per finding.
+
+    The row records what a person did, and a person triages a review — the 34
+    rows the run of 2026-08-06 produced described 34 HTTP requests, which is a
+    fact about the transport rather than about the work. Their words for doing it
+    that way, in IMPROVEMENTS §10, were *slow, difficult and clumsy*.
+    """
+    from groundscribe.app.services import FindingDecision
+    from groundscribe.domain.enums import FindingStatus
+    from groundscribe.provenance import models
+    from groundscribe.stages.review import ACCEPTANCE_STAGE
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    issues = list(review.issues)
+    assert len(issues) > 1, "the golden review needs more than one finding to batch"
+
+    harness.service.decide_findings(
+        article_id,
+        decisions=[
+            FindingDecision(finding_id=issues[0].id, decision=FindingStatus.ACCEPTED),
+            *(
+                FindingDecision(
+                    finding_id=issue.id,
+                    decision=FindingStatus.REJECTED,
+                    reason="the score no longer complains about this",
+                )
+                for issue in issues[1:]
+            ),
+        ],
+        decided_by=AUTHOR,
+    )
+
+    passes = [
+        execution
+        for execution in harness.runtime.session.query(models.StageExecution).all()
+        if execution.stage == ACCEPTANCE_STAGE
+    ]
+    assert len(passes) == 1, f"{len(issues)} decisions produced {len(passes)} triage executions"
+
+    # One intervention per decision, and the reasons intact: what changed is how
+    # decisions are submitted, not what is recorded about them. Counted against
+    # the triage execution rather than globally — the run's earlier approvals are
+    # interventions too, and counting those would make this pass for the wrong
+    # reason on a run that happened to have the right number of them.
+    interventions = [
+        intervention
+        for intervention in harness.runtime.session.query(models.UserIntervention).all()
+        if intervention.stage_execution_id == passes[0].id
+    ]
+    assert len(interventions) == len(issues)
+    assert issues[0].status is FindingStatus.ACCEPTED
+    assert all(issue.status is FindingStatus.REJECTED for issue in issues[1:])
+    assert all(issue.decision_reason for issue in issues[1:])
+
+
+async def test_a_batch_with_one_bad_decision_records_none_of_it(harness: Harness) -> None:
+    """All or nothing, because the ledger keeps a decision rather than undoing it.
+
+    Per-finding requests made partial application normal: an author who mistyped
+    the seventh had already committed six, with no way back. Validating the whole
+    batch before writing any of it is what makes an undo unnecessary — and the
+    check has to run before the ledger opens, or a refused batch leaves a stage
+    execution describing a triage that never happened.
+    """
+    from groundscribe.app.services import FindingDecision, UndecidableFinding
+    from groundscribe.domain.enums import FindingStatus
+    from groundscribe.provenance import models
+    from groundscribe.stages.review import ACCEPTANCE_STAGE
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    issues = list(review.issues)
+
+    with pytest.raises(UndecidableFinding, match="needs a reason"):
+        harness.service.decide_findings(
+            article_id,
+            decisions=[
+                FindingDecision(finding_id=issues[0].id, decision=FindingStatus.ACCEPTED),
+                # The one that spoils it, and it is not first: the decisions
+                # before it must not survive.
+                FindingDecision(finding_id=issues[-1].id, decision=FindingStatus.REJECTED),
+            ],
+            decided_by=AUTHOR,
+        )
+
+    assert all(issue.status is FindingStatus.PROPOSED for issue in issues)
+    assert not [
+        execution
+        for execution in harness.runtime.session.query(models.StageExecution).all()
+        if execution.stage == ACCEPTANCE_STAGE
+    ]
+
+
+async def test_a_batch_naming_another_article_s_finding_records_none_of_it(
+    harness: Harness,
+) -> None:
+    """The same rule for the other way a batch can be wrong."""
+    from groundscribe.app.services import FindingDecision, UnknownFinding
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    issues = list(review.issues)
+
+    with pytest.raises(UnknownFinding):
+        harness.service.decide_findings(
+            article_id,
+            decisions=[
+                FindingDecision(finding_id=issues[0].id, decision=FindingStatus.ACCEPTED),
+                FindingDecision(finding_id="not-a-finding", decision=FindingStatus.ACCEPTED),
+            ],
+            decided_by=AUTHOR,
+        )
+
+    assert all(issue.status is FindingStatus.PROPOSED for issue in issues)
+
+
+async def test_an_empty_submission_decides_nothing_and_says_so(harness: Harness) -> None:
+    """A triage pass with no decisions in it is a request that meant to carry some."""
+    from groundscribe.app.services import UndecidableFinding
+
+    _, article_id = await reviewed_article(harness)
+
+    with pytest.raises(UndecidableFinding, match="decides nothing"):
+        harness.service.decide_findings(article_id, decisions=[], decided_by=AUTHOR)
+
+
 async def test_a_rejection_without_a_reason_is_refused(harness: Harness) -> None:
     """Next round cannot tell a considered dismissal from an oversight."""
     from groundscribe.domain.enums import FindingStatus

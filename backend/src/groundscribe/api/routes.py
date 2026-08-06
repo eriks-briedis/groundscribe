@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 from groundscribe.api import schemas
 from groundscribe.app.reads import ProjectionReader
 from groundscribe.app.runtime import Runtime
-from groundscribe.app.services import ApplicationService, CommandResult
+from groundscribe.app.services import ApplicationService, CommandResult, FindingDecision
 from groundscribe.app.views import (
     ArchitectureBoard,
     ArticleWorkspace,
@@ -387,6 +387,40 @@ async def draft(article_id: str, service: Service) -> schemas.CommandResponse:
 async def review(article_id: str, service: Service) -> schemas.CommandResponse:
     """Queue a substantive review of the current version."""
     return render(await service.review(article_id))
+
+
+@router.post("/articles/{article_id}/findings", response_model=schemas.CommandResponse)
+def triage_review(
+    article_id: str,
+    body: schemas.TriageReview,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Hand over every decision a person made about a review, in one submission.
+
+    The route the article workspace uses, because that is the screen where a
+    person works a queue of findings down. The single-finding route below stays
+    for the review-history screen, where they are reading one round rather than
+    clearing it — and both go through the same service method, so there is one
+    answer to what deciding means.
+
+    Applied whole or not at all: a batch carrying one finding this article does
+    not hold, or one rejection with no reason, records none of it.
+    """
+    return render(
+        service.decide_findings(
+            article_id,
+            decisions=[
+                FindingDecision(
+                    finding_id=verdict.finding_id,
+                    decision=verdict.decision,
+                    reason=verdict.reason,
+                    recommended_correction=verdict.recommended_correction,
+                )
+                for verdict in body.decisions
+            ],
+            decided_by=body.actor_id,
+        )
+    )
 
 
 @router.post("/articles/{article_id}/findings/{finding_id}", response_model=schemas.CommandResponse)

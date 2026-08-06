@@ -133,6 +133,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{article_id}/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Triage Review
+         * @description Hand over every decision a person made about a review, in one submission.
+         *
+         *     The route the article workspace uses, because that is the screen where a
+         *     person works a queue of findings down. The single-finding route below stays
+         *     for the review-history screen, where they are reading one round rather than
+         *     clearing it — and both go through the same service method, so there is one
+         *     answer to what deciding means.
+         *
+         *     Applied whole or not at all: a batch carrying one finding this article does
+         *     not hold, or one rejection with no reason, records none of it.
+         */
+        post: operations["triage_review_articles__article_id__findings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/articles/{article_id}/findings/{finding_id}": {
         parameters: {
             query?: never;
@@ -1900,6 +1929,7 @@ export interface components {
             /** Source Evidence */
             source_evidence?: components["schemas"]["ClaimView"][];
             state: components["schemas"]["WorkflowState"];
+            triage_command?: components["schemas"]["ActionLink"] | null;
             validation?: components["schemas"]["ValidationView"] | null;
             voice: components["schemas"]["VoiceView"];
         };
@@ -2717,6 +2747,32 @@ export interface components {
          * @enum {string}
          */
         FindingStatus: "proposed" | "accepted" | "rejected" | "edited" | "suppressed";
+        /**
+         * FindingVerdict
+         * @description One decision inside a triage submission, naming the finding it is about.
+         *
+         *     The same three fields :class:`DecideFinding` carries, plus the id — which the
+         *     single-finding endpoint takes from its URL and a batch cannot.
+         */
+        FindingVerdict: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "accepted" | "rejected" | "edited";
+            /** Finding Id */
+            finding_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Recommended Correction
+             * @default
+             */
+            recommended_correction: string;
+        };
         /**
          * FindingView
          * @description One review finding, with its decision and its history.
@@ -4147,6 +4203,25 @@ export interface components {
             filters_available?: components["schemas"]["TraceFilter"][];
         };
         /**
+         * TriageReview
+         * @description Every decision a person made about a review, handed over together.
+         *
+         *     Triage is the pipeline's slowest human step, and it was priced per finding: a
+         *     request, a stage execution and a screen reload each. One run recorded 34 of
+         *     them. This is the same set of decisions as one submission.
+         *
+         *     The batch is applied whole or not at all. Per-finding requests made partial
+         *     application the norm — an author who mistyped the seventh had already
+         *     committed six, and the ledger keeps a decision rather than letting it be
+         *     taken back.
+         */
+        TriageReview: {
+            /** Actor Id */
+            actor_id: string;
+            /** Decisions */
+            decisions: components["schemas"]["FindingVerdict"][];
+        };
+        /**
          * UpdateArchitecture
          * @description An author's edits to a proposed architecture.
          */
@@ -4628,6 +4703,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    triage_review_articles__article_id__findings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriageReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

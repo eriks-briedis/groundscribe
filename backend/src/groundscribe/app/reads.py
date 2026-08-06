@@ -487,6 +487,22 @@ class ProjectionReader:
             continue_command=_offered(
                 WorkflowAction.APPROVE_AND_CONTINUE, position.state, article_id=article_id
             ),
+            # Offered while anything is still undecided, and withheld the moment
+            # nothing is. Not gated on the workflow state, unlike the two above:
+            # deciding a finding moves the run nowhere, so there is no edge whose
+            # availability would answer this. What settles it is whether the
+            # review still holds a question for a person.
+            triage_command=(
+                ActionLink(
+                    action="triage_review",
+                    method="POST",
+                    path=f"/articles/{article_id}/findings",
+                    requires_actor=True,
+                    taken_by="you",
+                )
+                if any(finding.decide_command for finding in findings)
+                else None
+            ),
             run_id=run.id,
             state=position.state,
             available_actions=list(available_actions(position.state)),

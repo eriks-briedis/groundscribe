@@ -11,7 +11,7 @@
  */
 import { fetchReviewHistory, type ReviewHistory } from '@/api/client';
 import { Loaded, useResource } from '@/app/resource';
-import { FindingDecision } from '@/components/FindingDecision';
+import { DecideOne } from '@/components/FindingDecision';
 import { ScoreTable } from '@/components/ScoreTable';
 
 export interface ReviewHistoryScreenProps {
@@ -64,7 +64,7 @@ export function ReviewHistoryScreen({ articleId, actor }: ReviewHistoryScreenPro
                     {/* Offered only while the backend still offers it: a decision
                         stays on the record rather than being taken back. */}
                     {issue.decide_command ? (
-                      <FindingDecision
+                      <DecideOne
                         command={issue.decide_command}
                         actor={actor}
                         suggestedCorrection={issue.recommended_correction ?? ''}

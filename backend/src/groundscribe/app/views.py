@@ -753,6 +753,16 @@ class ArticleWorkspace(BaseModel):
     #: second article id no action bar can supply.
     revise_command: ActionLink | None = None
     continue_command: ActionLink | None = None
+    #: Where to hand over every decision a person made about this review, at once.
+    #:
+    #: Its own field for the same reason the two above have theirs: a screen that
+    #: matched on an action name inside ``action_links`` would be deciding which
+    #: action it was looking at, which is what ``guards.test.ts`` forbids.
+    #:
+    #: Present only while something is undecided. A review that has been worked
+    #: through has nothing left to submit, and offering the control anyway would
+    #: invite a person to re-decide findings the ledger will refuse to change.
+    triage_command: ActionLink | None = None
     run_id: str
     state: WorkflowState
     available_actions: list[str] = Field(default_factory=list)

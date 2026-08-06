@@ -549,3 +549,136 @@ describe('deciding a review finding', () => {
     expect(screen.queryByRole('button', { name: /^accept$/i })).toBeNull();
   });
 });
+
+/**
+ * Handing a review over in one submission (IMPROVEMENTS §10).
+ *
+ * Triage was priced per finding: a request, a stage execution, and a full reload
+ * of this screen — brief, version, diff, findings, plan, scores, lineage,
+ * approval — for each one. The run of 2026-08-06 recorded 34 of them, five
+ * seconds apart, for what the author was doing in one sitting. Of the ten
+ * findings on that run, one changed the article; the rest existed to say no.
+ *
+ * What is asserted here is the count as much as the content. A version that
+ * posted correctly but still posted five times would pass every assertion about
+ * the body and fix nothing about the complaint.
+ */
+describe('triaging a review in one pass', () => {
+  function undecided() {
+    const workspace = structuredClone(articleWorkspace);
+    const first = workspace.findings![0]!;
+    workspace.findings = [
+      { ...first, id: 'i1', ref: 'i1', status: 'proposed', decided_by: '' },
+      { ...first, id: 'i2', ref: 'i2', status: 'proposed', decided_by: '', severity: 'optional' },
+      { ...first, id: 'i3', ref: 'i3', status: 'proposed', decided_by: '', severity: 'optional' },
+    ].map((finding) => ({
+      ...finding,
+      decide_command: {
+        action: 'decide_finding',
+        method: 'POST',
+        path: `/articles/${ARTICLE_ID}/findings/${finding.id}`,
+        requires_actor: true,
+        taken_by: 'you',
+      },
+    }));
+    workspace.triage_command = {
+      action: 'triage_review',
+      method: 'POST',
+      path: `/articles/${ARTICLE_ID}/findings`,
+      requires_actor: true,
+      taken_by: 'you',
+    };
+    return workspace;
+  }
+
+  it('sends every decision in one request', async () => {
+    const backend = fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: undecided() });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    const accepts = await screen.findAllByRole('button', { name: /^accept$/i });
+    for (const accept of accepts) await userEvent.click(accept);
+    await userEvent.click(screen.getByRole('button', { name: /submit 3 decisions/i }));
+
+    expect(backend.commands).toHaveLength(1);
+    expect(backend.commands[0]).toMatchObject({
+      path: `/articles/${ARTICLE_ID}/findings`,
+      body: {
+        actor_id: 'ada',
+        decisions: [
+          { finding_id: 'i1', decision: 'accepted' },
+          { finding_id: 'i2', decision: 'accepted' },
+          { finding_id: 'i3', decision: 'accepted' },
+        ],
+      },
+    });
+  });
+
+  it('will not hand over a review with anything still undecided', async () => {
+    fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: undecided() });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    const accepts = await screen.findAllByRole('button', { name: /^accept$/i });
+    await userEvent.click(accepts[0]!);
+
+    expect(screen.getByRole('button', { name: /submit 1 decisions/i })).toBeDisabled();
+    expect(screen.getByTestId('triage-count')).toHaveTextContent('1 of 3 decided, 2 still open');
+  });
+
+  it('rejects the rest for one reason, which is what five optional findings need', async () => {
+    const backend = fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: undecided() });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    const accepts = await screen.findAllByRole('button', { name: /^accept$/i });
+    await userEvent.click(accepts[0]!);
+    await userEvent.type(
+      screen.getByLabelText(/reject the rest, for this reason/i),
+      'the score no longer complains about these',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /reject remaining 2/i }));
+    await userEvent.click(screen.getByRole('button', { name: /submit 3 decisions/i }));
+
+    expect(backend.commands).toHaveLength(1);
+    expect(backend.commands[0]!.body).toMatchObject({
+      decisions: [
+        { finding_id: 'i1', decision: 'accepted' },
+        {
+          finding_id: 'i2',
+          decision: 'rejected',
+          reason: 'the score no longer complains about these',
+        },
+        {
+          finding_id: 'i3',
+          decision: 'rejected',
+          reason: 'the score no longer complains about these',
+        },
+      ],
+    });
+  });
+
+  it('leaves a decision already made alone when rejecting the rest', async () => {
+    const backend = fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: undecided() });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    const accepts = await screen.findAllByRole('button', { name: /^accept$/i });
+    await userEvent.click(accepts[1]!);
+    await userEvent.type(screen.getByLabelText(/reject the rest, for this reason/i), 'not this round');
+    await userEvent.click(screen.getByRole('button', { name: /reject remaining 2/i }));
+    await userEvent.click(screen.getByRole('button', { name: /submit 3 decisions/i }));
+
+    const sent = backend.commands[0]!.body as { decisions: { finding_id: string; decision: string }[] };
+    expect(sent.decisions.find((d) => d.finding_id === 'i2')).toMatchObject({
+      decision: 'accepted',
+    });
+  });
+
+  it('offers nothing to submit once the review has been worked through', async () => {
+    // `triage_command` is withheld by the backend when nothing is undecided, so
+    // the control is absent rather than present-and-disabled.
+    fakeBackend({ [`/articles/${ARTICLE_ID}/workspace`]: articleWorkspace });
+
+    render(<ArticleWorkspaceScreen articleId={ARTICLE_ID} actor="ada" />);
+    await screen.findByRole('heading', { name: /findings/i });
+
+    expect(screen.queryByTestId('triage')).toBeNull();
+  });
+});

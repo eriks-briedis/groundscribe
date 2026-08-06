@@ -23,11 +23,12 @@ import { ActionBar, PendingCommand } from '@/components/ActionBar';
 import { DiffViewer } from '@/components/DiffViewer';
 import { Disclosure, Payload } from '@/components/Disclosure';
 import { Export } from '@/components/Export';
-import { FindingDecision } from '@/components/FindingDecision';
+import { FindingDecision, type Verdict } from '@/components/FindingDecision';
 import { LineageGraph } from '@/components/LineageGraph';
 import { Markdown } from '@/components/Markdown';
 import { Rerun } from '@/components/Rerun';
 import { ScoreTable } from '@/components/ScoreTable';
+import { Triage } from '@/components/Triage';
 
 function readable(value: string): string {
   return value.replace(/_/g, ' ');
@@ -44,6 +45,10 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
     [articleId],
   );
   const [approving, setApproving] = useState(false);
+  // Decisions the author has made and not yet handed over. Held here rather than
+  // sent as they are made: each one used to be a request and a full reload of
+  // this screen, and one run recorded 34 of them.
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
 
   return (
     <Loaded resource={resource}>
@@ -139,6 +144,19 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
                 decision before a revision can be planned.
               </p>
             ) : null}
+            {workspace.triage_command ? (
+              <Triage
+                command={workspace.triage_command}
+                actor={actor}
+                undecidedIds={undecided.map((finding) => finding.id)}
+                verdicts={verdicts}
+                onBulk={(bulk) => setVerdicts((current) => ({ ...current, ...bulk }))}
+                onSubmitted={() => {
+                  setVerdicts({});
+                  resource.reload();
+                }}
+              />
+            ) : null}
             <ul className="findings">
               {(workspace.findings ?? []).map((finding) => (
                 <li key={finding.id} data-testid={`finding-${finding.id}`} className="card">
@@ -157,10 +175,16 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
                       is the screen a person is on when the run is waiting for it. */}
                   {finding.decide_command ? (
                     <FindingDecision
-                      command={finding.decide_command}
-                      actor={actor}
+                      verdict={verdicts[finding.id]}
                       suggestedCorrection={finding.recommended_correction ?? ''}
-                      onDecided={resource.reload}
+                      onDecide={(verdict) =>
+                        setVerdicts((current) => {
+                          const next = { ...current };
+                          if (verdict) next[finding.id] = verdict;
+                          else delete next[finding.id];
+                          return next;
+                        })
+                      }
                     />
                   ) : null}
                 </li>
