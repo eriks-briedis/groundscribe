@@ -544,3 +544,80 @@ async def test_repeat_passes_may_run_against_different_models(
     assert second.model == SECOND_OPINION_MODEL
     assert first.model != second.model
     assert len(result.value.confidence.repeat_scores) == 2
+
+
+async def test_a_requirement_the_brief_stated_fails_an_article_that_scores_well(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """What a brief clause is worth, and the whole reason to write one.
+
+    An article can be accurate, focused, in scope and well-voiced while showing
+    nothing — every dimension high and the piece still empty. Three of the seven
+    dimensions have no floor, so the overall carries them, and a well-written
+    abstraction scores like a well-written article.
+
+    A requirement the brief states outright is not weighed against that. It holds
+    or the article is not publishable, however well it reads — which is what
+    makes "show the mechanism working once" a contract rather than advice.
+
+    Measured on a real run: 92.85 overall, every floor cleared, and a deduction
+    saying the article never showed a concrete artefact. It passed.
+    """
+    sheet = passing_score()
+    sheet["deductions"] = [
+        golden_score()["deductions"][3]
+        | {
+            "points": 3.0,
+            "severity": "minor",
+            "rubric_required": True,
+            "requirement": "shows the routing mechanism working once, on a real case",
+            "mismatch": "the article names routing categories and shows no routed case",
+        }
+    ]
+
+    _, result = await score(db_session, snapshot_store, sheet)
+
+    assert result.value.assessment.overall >= 85.0, "it scores well, which is the point"
+    assert result.value.assessment.passed is False
+    assert any(
+        "required is unmet" in failure.detail for failure in result.value.assessment.failures
+    )
+
+
+def test_the_brief_prompt_asks_for_a_worked_example_only_where_it_belongs() -> None:
+    """Conditional, or it buys padding.
+
+    An article whose thesis is a position or a report owes the reader no worked
+    example, and a brief that demanded one everywhere would be the same failure
+    pointing the other way — prose added to satisfy a contract rather than a
+    reader.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = (
+        PromptStore(prompts_root())
+        .render(
+            "generate_article_brief",
+            {
+                "article": "{}",
+                "source_model": "{}",
+                "audience": "engineers",
+                "platform": "blog",
+                "depth": "practitioner",
+                "target_length_words": 1800,
+                "first_person_allowed": True,
+                "voice_profile": "{}",
+                "publication_constraints": [],
+                "claims_requiring_qualification": [],
+            },
+        )
+        .rendered_prompt
+    )
+
+    assert "shows that mechanism working once" in rendered
+    # And says when not to, in the same breath.
+    assert "Do **not** add it otherwise" in rendered
+    assert "padding" in rendered
+    # A criterion the source cannot supply is a contract the draft cannot meet.
+    assert "reserved for other articles" in rendered

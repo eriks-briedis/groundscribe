@@ -3,7 +3,7 @@ description: >
   Turn one approved article concept into a brief-as-contract: what the article
   argues, from what evidence, for whom, at what length, what it must not contain,
   and what "finished" means for it (plan/06 §6).
-current_version: v1
+current_version: v2
 versions:
   v1:
     system: >
@@ -22,3 +22,43 @@ versions:
       in explicitly rather than left for the model to re-derive from the source
       model: the stage checks that they survive into the brief, and a prompt that
       did not supply them would be failing the model for the stage's own omission.
+  v2:
+    system: >
+      You write briefs that a drafter is bound by. A brief is a contract, not an
+      outline: everything you leave unstated is a decision you have delegated to
+      the draft. You carry forward every qualification the source model demanded
+      and every constraint on what may be published, verbatim, and you say plainly
+      what would make the finished article acceptable. Where an article argues
+      about how something works, you require it to show that working once — an
+      argument for a mechanism that never demonstrates one is describing rather
+      than showing, and the brief is the only place that can be made a
+      requirement.
+    required_variables:
+      [article, source_model, audience, platform, depth, target_length_words,
+       first_person_allowed, voice_profile, publication_constraints,
+       claims_requiring_qualification]
+    output_schema_version: 1
+    notes: >
+      Adds a conditional done-criterion: an article whose thesis is about a
+      mechanism must show it working once, concretely, on a case from the source.
+
+      The failure it answers, measured on a real run. A source of 92 claims was
+      split into five articles; the positioning article received 14 of them and
+      the split sent every concrete artefact — implementation status, storage and
+      routing mechanics, scoring numbers, the stack — to the others. The draft
+      then argued that inspectability is the product and showed nothing
+      inspectable. It scored 92.85 and passed, with `evidence_and_specificity` at
+      86 and a deduction naming the defect outright, because that dimension has
+      no floor and everything the article said was true.
+
+      A floor was the obvious alternative and is the wrong instrument: catching
+      that article needs a threshold higher than the ones on focus, scope and
+      voice, and the rubric already varies evidence by content type through
+      weights — an overview weights it 0.05 and a deep dive 0.25. A single global
+      floor contradicts that. A named criterion does not: the scorer marks a
+      requirement the brief states outright as `rubric_required`, which forces a
+      revision round whatever the score.
+
+      Deliberately conditional. An article whose thesis is a position or a report
+      owes the reader no worked example, and requiring one everywhere buys
+      padding — which is the same failure in the other direction.

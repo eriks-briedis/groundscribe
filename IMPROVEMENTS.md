@@ -255,17 +255,31 @@ being accurate about how little it says.
 
 ### Three levers, in the order they are worth pulling
 
-**A floor on `evidence_and_specificity`.** One line of `scoring-rubric.yaml`, and
-it uses machinery that already works: below the floor the score fails, routes
-`substantive_issue`, and the revision loop asks for the missing example. The risk
-is the reason it has no floor today — some articles are legitimately
-argumentative — so the number wants to be low enough to catch emptiness and not
-so high that an honest essay cannot pass.
+**A brief that requires a worked example** — *done*. The brief is a contract the
+scorer checks, and a requirement it states outright is marked `rubric_required`,
+which fails the article whatever it scored. `generate_article_brief` v2 adds a
+conditional mandatory criterion: an article whose thesis is about how something
+*works* must show it working once, on a real case from the source. Conditional
+because an article whose thesis is a position or a report owes no worked example,
+and requiring one everywhere buys padding.
 
-**A brief that requires a worked example.** The brief is already a contract the
-scorer checks, and `definition_of_done` is where a requirement of this kind
-belongs. An article whose thesis is about a *mechanism* should have to show that
-mechanism working once. Prompt change; no schema.
+**Per-content-type floors on the dimensions that have none** — replaces "a floor
+on `evidence_and_specificity`", which was the wrong instrument and is worth
+recording as such.
+
+A single global floor cannot do this job. To fail the measured article at 86 it
+would have to sit at 87–88, above the floors on focus (80), scope (80) and voice
+(75) and just under factual fidelity (90) — which says specificity is nearly as
+non-negotiable as accuracy, and that is not true of every article. The rubric
+already knows this and expresses it through *weights*: an overview weights
+evidence 0.05 and a deep dive 0.25, with the note that "an overview citing every
+number would be a deep dive that failed to notice". `weights` is per content
+type; `minimums` is global, and the two disagree.
+
+So the change is to make `PassingPolicy.minimums` per content type as `weights`
+already is, and only then to give evidence a floor that means something in each.
+That is a schema change to the rubric and its config, not one line — which is why
+it is filed here rather than done.
 
 **A cap on how many articles a source becomes** — §1. It bounds how thin the
 slicing gets, but on its own it produces one broad article rather than one

@@ -1,0 +1,69 @@
+Write the brief for this approved article.
+
+The article:
+{{ article }}
+
+The source model it must argue from:
+{{ source_model }}
+
+Fixed by the project, not by you:
+
+- audience: {{ audience }}
+- platform: {{ platform }}
+- depth: {{ depth }}
+- length: {{ target_length_words }} words — use this number exactly
+- first person: {% if first_person_allowed %}allowed{% else %}not allowed{% endif %}
+- voice profile: {{ voice_profile }}
+
+Carry these forward verbatim, in the fields named:
+
+- claims_requiring_qualification must contain at least these claim ids, because
+  the source model marked them as true only under stated conditions:
+  {% for claim_id in claims_requiring_qualification %}{{ claim_id }} {% endfor %}
+- excluded_material must contain each of these, word for word, because the source
+  says they may not be published:
+{% for constraint in publication_constraints %}
+  - {{ constraint }}
+{% endfor %}
+
+Then write the contract:
+
+- What the article asserts (thesis), and what problem the reader has that makes
+  it worth reading.
+- What the reader already knows, so the draft does not explain it again.
+- Where to open, in one sentence of direction rather than a written opening.
+- The argument structure: a section at a time, each with its purpose, the claim
+  ids it rests on, and any example it must contain. Mark a section optional only
+  if the article still works without it.
+- The conclusion the article must reach.
+- Material reserved for another article — state it, do not develop it.
+- A definition of done: the conditions under which this article is finished. At
+  least one must be mandatory, and each mandatory one must be something a reader
+  could check by looking at the draft.
+
+One requirement to add when, and only when, it applies.
+
+If the article's thesis is about how something *works* — a mechanism, a process,
+a system, a technique — then one mandatory done-criterion must be that the draft
+shows that mechanism working once, concretely, on a real case drawn from the
+source model. Name what it should show: a value moving through the steps, a
+before and after, a decision and what it decided. Write it so a reader can tell
+whether the draft did it.
+
+This is the failure it exists to prevent. An article that argues a mechanism
+matters, describes it in categories, and never shows one instance of it reads as
+fluent and proves nothing — and it can score well, because everything it says is
+accurate. Naming the example in the contract is what makes its absence a fault
+rather than a preference.
+
+Do **not** add it otherwise. An article whose thesis is a position, an opinion,
+an argument about what matters, or a report of what happened does not owe the
+reader a worked example, and demanding one there buys padding. The test is
+whether the thesis makes a claim about *how something behaves*: if it does, the
+article has to show the behaviour.
+
+If the material reserved for other articles is where all the concrete detail
+went, say so in the criterion. A brief that requires an example the source cannot
+supply is a contract the draft cannot meet.
+
+Return a single JSON object matching the required schema.
