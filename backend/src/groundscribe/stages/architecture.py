@@ -167,23 +167,7 @@ class ProposeContentArchitecture:
         )
         context.session.add(architecture)
         context.session.flush()
-
-        concepts = tuple(
-            domain_models.ArticleConcept(
-                id=uuid.uuid4().hex,
-                ref=article.id,
-                architecture_id=architecture.id,
-                title=article.title,
-                angle=article.evidence_summary,
-                thesis=article.thesis,
-                ordinal=ordinal,
-                created_by_execution_id=execution.id,
-            )
-            for ordinal, article in enumerate(proposal.articles)
-        )
-        context.session.add_all(concepts)
-        context.session.flush()
-        return architecture, concepts
+        return architecture, store_concepts(context, execution, architecture, proposal)
 
     def _record_decision(
         self,
@@ -221,6 +205,44 @@ class ProposeContentArchitecture:
             outcome=decision.selected,
             rationale=decision.rationale,
         )
+
+
+def store_concepts(
+    context: PipelineContext,
+    execution: models.StageExecution,
+    architecture: domain_models.ContentArchitecture,
+    proposal: ArchitectureProposal,
+) -> tuple[domain_models.ArticleConcept, ...]:
+    """Open one concept row per article the proposal names.
+
+    Shared with the override path, which is why it is a function rather than a
+    method. A proposal that is only a snapshot is a document: approval opens one
+    article per *concept*, the board lists concepts, and auto-advance picks the
+    article to drive from them. An architecture with none is inert — and that is
+    exactly what an edited architecture used to be, because branching copied the
+    row and the snapshot and left the concepts on the version it superseded.
+
+    What that looked like: an empty architecture board, an approval that opened
+    no articles, and a run parked in ``architecture_approved`` with nothing to
+    write and nothing queued. Every one of those is a symptom of this list being
+    empty, and none of them says so.
+    """
+    concepts = tuple(
+        domain_models.ArticleConcept(
+            id=uuid.uuid4().hex,
+            ref=article.id,
+            architecture_id=architecture.id,
+            title=article.title,
+            angle=article.evidence_summary,
+            thesis=article.thesis,
+            ordinal=ordinal,
+            created_by_execution_id=execution.id,
+        )
+        for ordinal, article in enumerate(proposal.articles)
+    )
+    context.session.add_all(concepts)
+    context.session.flush()
+    return concepts
 
 
 def check_claims(proposal: ArchitectureProposal, source_model: SourceModel) -> None:

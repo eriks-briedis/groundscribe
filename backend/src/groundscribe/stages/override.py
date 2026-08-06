@@ -39,6 +39,7 @@ from groundscribe.domain.enums import ArtifactType, BranchStatus
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, InterventionType
+from groundscribe.stages.architecture import store_concepts
 from groundscribe.stages.base import PipelineContext
 from groundscribe.stages.diffing import structured_diff
 from groundscribe.stages.errors import OverrideRejected
@@ -528,6 +529,11 @@ def override_architecture(
     )
     context.session.add(branched)
     context.session.flush()
+    # The concepts belong to the version, not to the project: they carry the
+    # titles and theses this edit just changed, and approval opens one article
+    # from each. Branching without them left an architecture nothing could act
+    # on — see `store_concepts`.
+    store_concepts(context, execution, branched, edited)
 
     accepted = [warning.code for warning in warnings if warning.code in set(accepted_warnings)]
     context.recorder.record_user_intervention(

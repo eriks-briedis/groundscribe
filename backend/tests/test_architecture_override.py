@@ -425,3 +425,44 @@ async def test_an_anonymous_approval_is_refused(
             snapshot=proposed.outputs[0],
             approved_by="",
         )
+
+
+async def test_an_edited_architecture_carries_its_concepts(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The branch is what approval reads, so it has to hold the articles.
+
+    A proposal that is only a snapshot is a document. Concepts are what approval
+    opens an article from, what the board lists, and what auto-advance picks the
+    run's article out of — and branching used to copy the row and the snapshot
+    and leave the concepts on the version it superseded.
+
+    Every symptom of that is silent: an empty architecture board, an approval
+    that opens no articles, and a run parked in `architecture_approved` with
+    nothing queued and nothing to write. None of them names the cause.
+    """
+    from groundscribe.domain import models as domain_models
+
+    context, _model_client, proposed = await approved(db_session, snapshot_store)
+    before = proposed.value.architecture
+
+    override = override_architecture(
+        context,
+        architecture=before,
+        proposal=proposed.value.proposal,
+        snapshot=proposed.outputs[0],
+        commands=[OverrideCommand(operation=OverrideOperation.REMOVE, article_ids=("a2",))],
+        requested_by=AUTHOR,
+        reason="one article is enough",
+    )
+
+    concepts = (
+        db_session.query(domain_models.ArticleConcept)
+        .filter(domain_models.ArticleConcept.architecture_id == override.architecture.id)
+        .all()
+    )
+    assert [concept.ref for concept in concepts] == ["a1"], (
+        "the edited architecture has no articles to open"
+    )
+    # And they carry the edit, rather than being copied from what it replaced.
+    assert concepts[0].title == override.proposal.articles[0].title
