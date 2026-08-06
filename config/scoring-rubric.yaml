@@ -13,7 +13,7 @@
 # article quality, and nothing in the pipeline treats it as one: passing is a
 # conjunction of the conditions under `passing`, and the score is only one of
 # them.
-version: "1"
+version: "2"
 description: >
   Seven dimensions, weighted by content type, with hard floors on the four that
   a good average must never be allowed to hide.
@@ -72,19 +72,68 @@ weights:
 passing:
   # plan/08: overall >= 85.
   overall: 85.0
+
+  # Floors, per content type, merged over `default`.
+  #
+  # They were one flat set until version 2, and that disagreed with the weights
+  # about something that matters. `weights` says evidence density is worth 0.05
+  # to an overview and 0.25 to a deep dive — an overview citing every number
+  # would be a deep dive that failed to notice — while the floors held every
+  # article the system writes to the same four numbers, and left three
+  # dimensions with no floor at all.
+  #
+  # What that cost, measured (IMPROVEMENTS §9): a 92-claim source became five
+  # articles, and the one arguing that concreteness is the product was allocated
+  # 14 claims with every concrete artefact routed elsewhere. The scorer found it
+  # exactly — evidence_and_specificity 86, "names categories of traceable
+  # material but does not show a concrete inspected artefact" — and it passed at
+  # 92.85, because that dimension had no floor to fall below. The conjunction
+  # protects against publishing something *wrong*. Nothing protected against
+  # publishing something *empty*.
+  #
+  # A content type states only what it changes; `null` removes a floor for that
+  # type. Restating factual_fidelity in four blocks would be four copies of one
+  # editorial decision, and they would drift.
   minimums:
-    # The highest floor in the rubric. An article that is 89% factually faithful
-    # is one that is wrong somewhere, and no amount of craft elsewhere makes
-    # publishing it acceptable.
-    factual_fidelity: 90.0
-    # A drifting thesis is the failure the brief exists to prevent, so it is held
-    # to a floor rather than left to the average.
-    thesis_and_focus: 80.0
-    # Scope discipline is the other half of that: the article that quietly became
-    # three articles scores well on every dimension except this one.
-    scope_discipline: 80.0
-    # Lower than the rest, deliberately. Voice is the most subjective reading in
-    # the rubric and the cheapest to correct — a style pass fixes it without
-    # touching the argument — so it blocks publication only when it is clearly
-    # wrong rather than merely imperfect.
-    voice_adherence: 75.0
+    default:
+      # The highest floor in the rubric. An article that is 89% factually
+      # faithful is one that is wrong somewhere, and no amount of craft
+      # elsewhere makes publishing it acceptable.
+      factual_fidelity: 90.0
+      # A drifting thesis is the failure the brief exists to prevent, so it is
+      # held to a floor rather than left to the average.
+      thesis_and_focus: 80.0
+      # Scope discipline is the other half of that: the article that quietly
+      # became three articles scores well on every dimension except this one.
+      scope_discipline: 80.0
+      # Lower than the rest, deliberately. Voice is the most subjective reading
+      # in the rubric and the cheapest to correct — a style pass fixes it
+      # without touching the argument — so it blocks publication only when it is
+      # clearly wrong rather than merely imperfect.
+      voice_adherence: 75.0
+      # New in version 2, and the reason for the schema change. Set above the 86
+      # the measured article scored, because 86 was the number the scorer gave
+      # an article that named categories of evidence instead of showing any.
+      # This is a demanding floor and it is meant to be: the alternative is a
+      # rubric that can tell a wrong article from a right one and cannot tell a
+      # grounded one from a fluent one.
+      evidence_and_specificity: 88.0
+
+    # No evidence floor. An overview weights it 0.05, and holding one to a deep
+    # dive's density is asking for the article the weights say not to write.
+    # The other four still apply — an overview may be broad, not wrong.
+    overview:
+      evidence_and_specificity: null
+
+    # Declared rather than inherited, though the numbers match the default. Every
+    # depth the domain names appears here, so nothing is tuned by omission: a
+    # reader asking what a practitioner article is held to gets an answer from
+    # this file rather than from a fallback rule.
+    practitioner:
+      evidence_and_specificity: 88.0
+
+    # The highest, because the weights already say why: evidence is a quarter of
+    # a deep dive's score. An article billed as a deep dive that cannot show its
+    # working is not a deep dive.
+    deep_dive:
+      evidence_and_specificity: 90.0

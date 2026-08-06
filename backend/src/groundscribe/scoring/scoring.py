@@ -359,6 +359,15 @@ class ScoreArticle:
                 dimension.value: weight for dimension, weight in assessment.weights.weights.items()
             },
             "passing_policy": self._rubric.passing.model_dump(mode="json"),
+            # The floors this article was actually held to, after its content
+            # type was resolved. The policy above is the whole table; this is the
+            # row that applied, and without it a reader of a passing score cannot
+            # tell "evidence cleared its floor" from "evidence has no floor for
+            # an overview" — which since the floors became per content type are
+            # different facts about the same verdict.
+            "floors": {
+                dimension.value: floor for dimension, floor in assessment.floors.items()
+            },
             "template_id": SCORE_STAGE,
             "template_version": _template_version(execution),
         }

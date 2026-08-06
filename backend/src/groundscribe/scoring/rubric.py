@@ -28,7 +28,7 @@ rubric that got more generous.
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
@@ -53,6 +53,38 @@ _SUM_TOLERANCE = 1e-9
 
 class ScoringRubricError(Exception):
     """The rubric is missing, malformed, or was handed a score it cannot use."""
+
+
+def _flat_minimums_hint(raw: object) -> str | None:
+    """Recognise a version-1 rubric and say what to do about it, or ``None``.
+
+    ``minimums`` became per content type, so a rubric written against the flat
+    shape fails to load — correctly and loudly, because a rubric that fell back
+    to no floors would present as a passing policy that quietly stopped applying.
+
+    But the schema error for it is "Input should be a valid dictionary", four
+    times, naming the four floors and not the change. A person reading that goes
+    looking for a typo in a file they have not touched. This is the same rule the
+    truncation message keeps: when a message can name the fix, it should.
+    """
+    if not isinstance(raw, Mapping):
+        return None
+    passing = raw.get("passing")
+    if not isinstance(passing, Mapping):
+        return None
+    minimums = passing.get("minimums")
+    if not isinstance(minimums, Mapping) or not minimums:
+        return None
+    if all(isinstance(value, Mapping) for value in minimums.values()):
+        return None
+    return (
+        "`passing.minimums` is now per content type, and this file has the flat "
+        f"version-1 shape. Nest what is there under `default:` — "
+        f"`minimums: {{default: {{...}}}}` — and add per-type blocks for "
+        f"{', '.join(sorted(depth.value for depth in ArticleDepth))} where the "
+        "floors differ. A content type states only what it changes, and `null` "
+        "removes a floor for it."
+    )
 
 
 class ScoreDimension(StrEnum):
@@ -131,12 +163,76 @@ class PassingPolicy(BaseModel):
     judged by about as much as a rounding error. plan/08's "high scores in other
     dimensions must not mask a critical weakness" is enforced here, by not
     letting the overall be the only test.
+
+    **Per content type, as the weights already are.** They were not, and the two
+    disagreed about something that matters: ``weights`` says evidence density is
+    worth 0.05 to an overview and 0.25 to a deep dive — "an overview citing every
+    number would be a deep dive that failed to notice" — while ``minimums`` was
+    one flat set for every article the system writes. Three dimensions therefore
+    had no floor anywhere, and the conjunction that protects against publishing
+    something *wrong* had nothing to say about publishing something *empty*.
+
+    IMPROVEMENTS §9 measured that. A 92-claim source became five articles; the
+    one arguing that concreteness is the product was allocated 14 claims and
+    every concrete artefact was routed elsewhere. The scorer named the defect
+    exactly — ``evidence_and_specificity`` 86, "names categories of traceable
+    material but does not show a concrete inspected artefact" — and the article
+    passed at 92.85, because that dimension had no floor to fall below.
+
+    A single global floor could not have fixed it, which is why this is a schema
+    change rather than a number. To fail that article it would have to sit at
+    87-88, above the floors on focus (80), scope (80) and voice (75) and just
+    under factual fidelity (90) — asserting that specificity is nearly as
+    non-negotiable as accuracy. That is not true of every article, and the
+    weights already knew it.
+
+    **Merged over the default, not replacing it.** Weights replace wholesale
+    because they must sum to 1.0; floors have no such constraint, so a content
+    type states only what it changes. Restating ``factual_fidelity: 90`` in every
+    block is four copies of one editorial decision, and they would drift.
+
+    A floor set to ``None`` for a content type is *removed* for it. That is the
+    case the merge exists to express: an overview is not held to a deep dive's
+    evidence density, and "no floor here" has to be sayable without restating the
+    other four.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     overall: float = Field(default=85.0, ge=0.0, le=100.0)
-    minimums: Mapping[ScoreDimension, float] = Field(default_factory=dict)
+    minimums: Mapping[str, Mapping[ScoreDimension, float | None]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _floors_are_addressed_to_a_content_type_that_exists(self) -> Self:
+        """Refuse a floor set nothing will ever resolve to.
+
+        The same rule the weights keep, for the same reason: a typo in a content
+        type is a floor that silently never applies, which looks exactly like a
+        rubric that is not being enforced.
+        """
+        known = {depth.value for depth in ArticleDepth} | {DEFAULT_CONTENT_TYPE}
+        unknown = sorted(set(self.minimums) - known)
+        if unknown:
+            raise ValueError(
+                f"unknown content type(s) in minimums: {', '.join(unknown)}; "
+                f"expected one of {', '.join(sorted(known))}"
+            )
+        return self
+
+    def minimums_for(self, depth: ArticleDepth | None) -> Mapping[ScoreDimension, float]:
+        """The floors in force for one content type: the default, then its own.
+
+        Resolved the same way :meth:`ScoringRubric.weights_for` resolves weights,
+        so a depth nobody has tuned is still judged rather than being judged by
+        nothing. ``None`` entries drop out here, which is what makes them mean
+        "not floored" rather than "floored at zero".
+        """
+        merged = dict(self.minimums.get(DEFAULT_CONTENT_TYPE, {}))
+        if depth is not None:
+            merged |= dict(self.minimums.get(depth.value, {}))
+        return {
+            dimension: floor for dimension, floor in merged.items() if floor is not None
+        }
 
 
 class FailureKind(StrEnum):
@@ -200,6 +296,12 @@ class ScoreAssessment:
     dimensions: Mapping[ScoreDimension, float]
     weights: ResolvedWeights
     failures: tuple[ScoreFailure, ...] = ()
+    #: The floors this article was actually held to, after the content type was
+    #: resolved. Carried rather than looked up again, for the reason
+    #: :class:`ResolvedWeights` is: a score is read alongside what produced it,
+    #: and "evidence was not floored for an overview" and "evidence had a floor
+    #: and cleared it" are different facts about the same passing article.
+    floors: Mapping[ScoreDimension, float] = field(default_factory=dict)
     #: Dimensions there was nothing to judge against (phase 16).
     #:
     #: Kept on the assessment rather than dropped silently, because "94 for voice"
@@ -261,7 +363,9 @@ class ScoringRubric(BaseModel):
         try:
             return cls.model_validate(raw)
         except ValidationError as exc:
-            raise ScoringRubricError(f"invalid scoring rubric {path}: {exc}") from exc
+            raise ScoringRubricError(
+                f"invalid scoring rubric {path}: {_flat_minimums_hint(raw) or exc}"
+            ) from exc
 
     def weights_for(self, depth: ArticleDepth | None) -> ResolvedWeights:
         """The weight set for one content type, falling back to the default."""
@@ -338,11 +442,19 @@ class ScoringRubric(BaseModel):
                     actual=overall,
                 )
             )
+        floors = self.passing.minimums_for(depth)
+        # Named by the article's own depth, not by ``resolved.content_type``.
+        # They are two resolutions and they can disagree: a depth with floors of
+        # its own but no weight set of its own resolves to `default` for weights
+        # while being floored by its own block, and a message saying "the 88 a
+        # default article is held to" sends a reader looking in the wrong place
+        # for a number written under their depth's name.
+        held_to = depth.value if depth is not None else DEFAULT_CONTENT_TYPE
         failures.extend(
             ScoreFailure(
                 detail=(
-                    f"{dimension.value} scored {checked[dimension]:.1f}, below its "
-                    f"floor of {minimum:g}"
+                    f"{dimension.value} scored {checked[dimension]:.1f}, below the "
+                    f"{minimum:g} a {held_to} article is held to"
                 ),
                 kind=FailureKind.DIMENSION_FLOOR,
                 dimension=dimension,
@@ -350,7 +462,7 @@ class ScoringRubric(BaseModel):
                 actual=checked[dimension],
             )
             for dimension in counted
-            if (minimum := self.passing.minimums.get(dimension)) is not None
+            if (minimum := floors.get(dimension)) is not None
             and checked[dimension] < minimum
         )
         failures.extend(
@@ -388,6 +500,7 @@ class ScoringRubric(BaseModel):
             dimensions=checked,
             weights=resolved,
             failures=tuple(failures),
+            floors=floors,
             unassessable=skipped,
         )
 

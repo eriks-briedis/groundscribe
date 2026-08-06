@@ -44,6 +44,7 @@ from groundscribe.provenance import models
 from groundscribe.scoring.rubric import (
     SCORING_RUBRIC_FILENAME,
     ScoringRubricError,
+    default_scoring_rubric,
     scoring_rubric,
 )
 from groundscribe.stages.context import ContextStrategy
@@ -58,11 +59,21 @@ REWRITE = "rewrite_substantively"
 VOICE = "align_voice"
 SCORING = "score_article"
 
+#: What the installation actually ships, read rather than pinned. It moves
+#: whenever an editorial judgement in the rubric does — it went to "2" when the
+#: floors became per content type — and a test asserting the old number would
+#: fail on a change it has no opinion about.
+SHIPPED_RUBRIC_VERSION = default_scoring_rubric().version
+
 #: A rubric version that is not the shipped one, written into a throwaway config
 #: root. A second rubric shipped in ``config/`` would be a product decision — an
 #: editorial judgement nobody asked for — where what is needed is only something
 #: for an experiment to point at.
-SECOND_RUBRIC_VERSION = "2"
+#:
+#: Derived from the shipped version so it cannot collide with it. It was the
+#: literal "2", which stopped being an alternative the day the shipped rubric
+#: became version 2 — a fork onto "the other rubric" that pointed at the same one.
+SECOND_RUBRIC_VERSION = f"{SHIPPED_RUBRIC_VERSION}-alternative"
 
 #: The version string of the profile a voice fork points at. Distinctive because
 #: the assertion is that the stage ran under *this* one rather than the one the
@@ -77,7 +88,10 @@ def config_root_with_two_rubrics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     shutil.copytree(config_root(), root)
     shipped = (root / SCORING_RUBRIC_FILENAME).read_text(encoding="utf-8")
     (root / f"scoring-rubric-{SECOND_RUBRIC_VERSION}.yaml").write_text(
-        shipped.replace('version: "1"', f'version: "{SECOND_RUBRIC_VERSION}"'), encoding="utf-8"
+        shipped.replace(
+            f'version: "{SHIPPED_RUBRIC_VERSION}"', f'version: "{SECOND_RUBRIC_VERSION}"'
+        ),
+        encoding="utf-8",
     )
     monkeypatch.setenv(CONFIG_ROOT_ENV, str(root))
     return root
@@ -176,7 +190,7 @@ async def test_a_variable_the_stage_cannot_honour_is_refused(walk: Walkthrough) 
 
     response = walk.client.post(
         f"/executions/{execution_id}/fork",
-        json={"actor_id": AUTHOR, "variables": {"rubric_version": "2"}},
+        json={"actor_id": AUTHOR, "variables": {"rubric_version": SECOND_RUBRIC_VERSION}},
     )
 
     assert response.status_code == 409, response.text
@@ -320,7 +334,7 @@ async def test_forking_the_rubric_scores_under_the_version_it_names(
     await walk.to_approval()
     scoring_id = walk.executions(SCORING)[0]
     (original,) = execution(walk, scoring_id).evaluation_runs
-    assert original.rubric_version == "1"
+    assert original.rubric_version == SHIPPED_RUBRIC_VERSION
 
     walk.script(SCORING, walk.score_payload())
     forked_id = opened(await fork(walk, scoring_id, rubric_version=SECOND_RUBRIC_VERSION))
@@ -343,8 +357,8 @@ def test_a_rubric_is_loadable_by_the_version_it_declares(
     replaces it, or every historical score becomes a number under a document
     that no longer exists.
     """
-    assert scoring_rubric().version == "1"
-    assert scoring_rubric("1").version == "1"
+    assert scoring_rubric().version == SHIPPED_RUBRIC_VERSION
+    assert scoring_rubric(SHIPPED_RUBRIC_VERSION).version == SHIPPED_RUBRIC_VERSION
     assert scoring_rubric(SECOND_RUBRIC_VERSION).version == SECOND_RUBRIC_VERSION
 
 

@@ -409,17 +409,45 @@ class Walkthrough:
         return golden_rewrite()
 
     def score_payload(self, *, passing: bool = True) -> dict[str, Any]:
+        """The golden sheet, or that sheet with every floored dimension cleared.
+
+        It lifts exactly the dimensions the rubric floors, which is why
+        `evidence_and_specificity` joined the list: the golden article scores 86
+        there, and until the floors became per content type nothing was measuring
+        it. Raising it here is the helper keeping its promise rather than the
+        test being tuned to pass — an article that names categories of evidence
+        without showing any is one this rubric now refuses, and a fixture called
+        "passing" has to mean it.
+        """
         payload = golden_json("score.json", suite="draft_to_voice")
         if not passing:
             return payload
-        return payload | {
-            "dimensions": payload["dimensions"]
-            | {
-                "factual_fidelity": {"score": 92.0, "rationale": "Every figure carries its."},
-                "scope_discipline": {"score": 88.0, "rationale": "The aside stays an aside."},
+        lifted = {
+            "factual_fidelity": {"score": 92.0, "rationale": "Every figure carries its."},
+            "scope_discipline": {"score": 88.0, "rationale": "The aside stays an aside."},
+            "evidence_and_specificity": {
+                "score": 91.0,
+                "rationale": "Shows the inspected artefact, not the category it belongs to.",
             },
+        }
+        return payload | {
+            "dimensions": payload["dimensions"] | lifted,
+            # Every deduction against a lifted dimension goes with it, and that is
+            # a correctness requirement rather than tidiness. `ArticleScore`
+            # refuses a sheet whose deductions claim more than the dimension
+            # lost — "thirty points off a dimension that scored ninety describes a
+            # different article" — so a 14-point evidence complaint beside a score
+            # of 91 is a sheet the schema rejects, and the stage would climb the
+            # repair ladder rather than fail visibly.
+            #
+            # It is also what the variant means. This is the golden article as it
+            # would read if it were publishable, and a complaint that it names
+            # categories of evidence instead of showing any is not part of that
+            # article.
             "deductions": [
-                deduction for deduction in payload["deductions"] if not deduction["rubric_required"]
+                deduction
+                for deduction in payload["deductions"]
+                if not deduction["rubric_required"] and deduction["dimension"] not in lifted
             ],
         }
 

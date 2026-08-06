@@ -61,10 +61,11 @@ weights:
 passing:
   overall: 85.0
   minimums:
-    factual_fidelity: 90.0
-    thesis_and_focus: 80.0
-    scope_discipline: 80.0
-    voice_adherence: 75.0
+    default:
+      factual_fidelity: 90.0
+      thesis_and_focus: 80.0
+      scope_discipline: 80.0
+      voice_adherence: 75.0
 """
 
 #: Every dimension at 100, so a single lowered dimension is the only variable.
@@ -286,15 +287,21 @@ def test_the_shipped_weights_are_the_percentages_the_spec_names() -> None:
 
 
 def test_the_shipped_thresholds_are_the_ones_the_spec_names() -> None:
-    """overall ≥ 85, fidelity ≥ 90, thesis ≥ 80, scope ≥ 80, voice ≥ 75."""
+    """overall ≥ 85, fidelity ≥ 90, thesis ≥ 80, scope ≥ 80, voice ≥ 75.
+
+    Plus evidence, which is new and is the point: those four protect against
+    publishing something *wrong*, and until it had a floor nothing protected
+    against publishing something *empty*.
+    """
     passing = default_scoring_rubric().passing
 
     assert passing.overall == pytest.approx(85.0)
-    assert passing.minimums == {
+    assert passing.minimums_for(None) == {
         ScoreDimension.FACTUAL_FIDELITY: pytest.approx(90.0),
         ScoreDimension.THESIS_AND_FOCUS: pytest.approx(80.0),
         ScoreDimension.SCOPE_DISCIPLINE: pytest.approx(80.0),
         ScoreDimension.VOICE_ADHERENCE: pytest.approx(75.0),
+        ScoreDimension.EVIDENCE_AND_SPECIFICITY: pytest.approx(88.0),
     }
 
 
@@ -337,3 +344,146 @@ def test_scoring_a_sheet_missing_a_dimension_is_refused(rubric: ScoringRubric) -
 
     with pytest.raises(ScoringRubricError, match="scope_discipline"):
         rubric.assess(sheet)
+
+
+# ---------------------------------------------------------------------------
+# Floors per content type (IMPROVEMENTS §9)
+# ---------------------------------------------------------------------------
+
+
+#: The article §9 measured: every threshold clear except the one that had no
+#: floor to be measured against.
+UNGROUNDED = dict.fromkeys(ScoreDimension, 95.0) | {ScoreDimension.EVIDENCE_AND_SPECIFICITY: 86.0}
+
+
+def test_an_article_that_names_evidence_without_showing_any_is_refused() -> None:
+    """The defect, stated as the scorer stated it.
+
+    A 92-claim source became five articles and the one arguing that concreteness
+    is the product was allocated 14 claims, every concrete artefact routed
+    elsewhere. `evidence_and_specificity` came back 86 with the deduction "names
+    categories of traceable material but does not show a concrete inspected
+    artefact", and the article passed at 92.85 — because that dimension had no
+    floor. The conjunction protected against publishing something wrong and had
+    nothing to say about publishing something empty.
+    """
+    assessed = default_scoring_rubric().assess(UNGROUNDED, depth=ArticleDepth.PRACTITIONER)
+
+    assert not assessed.passed
+    assert assessed.overall > 85.0, "it still scores well; that was always the problem"
+    assert [failure.dimension for failure in assessed.failures] == [
+        ScoreDimension.EVIDENCE_AND_SPECIFICITY
+    ]
+
+
+def test_an_overview_is_not_held_to_a_deep_dive_s_evidence() -> None:
+    """The reason this is an axis rather than a number.
+
+    A single global floor would have to sit at 87-88 to fail the article above —
+    over the floors on focus (80), scope (80) and voice (75) and just under
+    factual fidelity (90), asserting that specificity is nearly as non-negotiable
+    as accuracy. The weights already disagree: evidence is 0.05 of an overview
+    and 0.25 of a deep dive, because "an overview citing every number would be a
+    deep dive that failed to notice".
+    """
+    rubric = default_scoring_rubric()
+
+    assert rubric.assess(UNGROUNDED, depth=ArticleDepth.OVERVIEW).passed
+    assert not rubric.assess(UNGROUNDED, depth=ArticleDepth.DEEP_DIVE).passed
+
+
+def test_a_content_type_states_only_what_it_changes() -> None:
+    """Merged over the default rather than replacing it.
+
+    Weights replace wholesale because they must sum to 1.0. Floors have no such
+    constraint, so restating `factual_fidelity: 90` in four blocks would be four
+    copies of one editorial decision — and they would drift.
+    """
+    floors = default_scoring_rubric().passing.minimums_for(ArticleDepth.DEEP_DIVE)
+
+    assert floors[ScoreDimension.EVIDENCE_AND_SPECIFICITY] == pytest.approx(90.0)
+    assert floors[ScoreDimension.FACTUAL_FIDELITY] == pytest.approx(90.0)
+    assert floors[ScoreDimension.VOICE_ADHERENCE] == pytest.approx(75.0)
+
+
+def test_a_null_floor_removes_it_rather_than_setting_it_to_zero() -> None:
+    """ "Not floored here" has to be sayable without restating the other four."""
+    floors = default_scoring_rubric().passing.minimums_for(ArticleDepth.OVERVIEW)
+
+    assert ScoreDimension.EVIDENCE_AND_SPECIFICITY not in floors
+    assert floors[ScoreDimension.FACTUAL_FIDELITY] == pytest.approx(90.0), (
+        "an overview may be broad; it may not be wrong"
+    )
+
+
+def test_the_failure_names_the_depth_the_article_is_rather_than_the_weight_set() -> None:
+    """Two resolutions that can disagree, and only one answers the question.
+
+    `practitioner` has floors of its own and no weight set of its own, so it
+    resolves to `default` for weights while being floored by its own block. A
+    message naming the weight set sends a reader looking for `88` under
+    `default:` when it is written under their depth's name.
+    """
+    assessed = default_scoring_rubric().assess(UNGROUNDED, depth=ArticleDepth.PRACTITIONER)
+
+    assert "a practitioner article is held to" in assessed.failures[0].detail
+    assert assessed.weights.content_type == "default", "the premise of this test"
+
+
+def test_the_score_records_which_floors_it_was_held_to() -> None:
+    """A passing score has to say whether a dimension cleared a floor or had none.
+
+    Since the floors became per content type those are different facts about the
+    same verdict, and the policy alone cannot tell them apart — it is the whole
+    table, not the row that applied.
+    """
+    assessed = default_scoring_rubric().assess(PERFECT, depth=ArticleDepth.OVERVIEW)
+
+    assert assessed.passed
+    assert ScoreDimension.EVIDENCE_AND_SPECIFICITY not in assessed.floors
+    assert assessed.floors[ScoreDimension.FACTUAL_FIDELITY] == pytest.approx(90.0)
+
+
+def test_a_floor_addressed_to_a_content_type_that_does_not_exist_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The rule the weights already keep, for the reason they keep it.
+
+    A typo is a floor that silently never applies, which looks exactly like a
+    rubric that is not being enforced — the numbers are right there in the file.
+    """
+    path = tmp_path / "scoring-rubric.yaml"
+    path.write_text(
+        CONFIG.replace(
+            "    default:\n      factual_fidelity", "    deap_dive:\n      factual_fidelity"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ScoringRubricError, match="unknown content type"):
+        ScoringRubric.from_yaml(path)
+
+
+def test_a_version_one_rubric_is_refused_with_the_change_that_broke_it(
+    tmp_path: Path,
+) -> None:
+    """Loudly, and saying what to do — the schema error alone does not.
+
+    A flat `minimums` fails as four separate "Input should be a valid dictionary"
+    errors naming the four floors and not the change, which sends a person
+    looking for a typo in a file they have not touched.
+    """
+    path = tmp_path / "scoring-rubric.yaml"
+    path.write_text(
+        CONFIG.replace(
+            "  minimums:\n    default:\n      factual_fidelity",
+            "  minimums:\n    factual_fidelity",
+        )
+        .replace("      thesis_and_focus", "    thesis_and_focus")
+        .replace("      scope_discipline", "    scope_discipline")
+        .replace("      voice_adherence", "    voice_adherence"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ScoringRubricError, match="now per content type"):
+        ScoringRubric.from_yaml(path)
