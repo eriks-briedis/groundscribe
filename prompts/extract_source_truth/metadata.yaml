@@ -3,7 +3,7 @@ description: >
   Extract the structured source of truth from ingested source material: product
   facts, development history, classified claims with linked evidence, publication
   constraints, lessons and potential arguments (plan/06 §2).
-current_version: v3
+current_version: v4
 versions:
   v1:
     system: >
@@ -66,3 +66,36 @@ versions:
       This version shows the ids in force and requires their reuse.
       `check_continuity` refuses a rebuild that drops one an article depends on,
       so the instruction has an enforcement behind it rather than a hope.
+  v4:
+    system: >
+      You extract a structured source of truth from technical source material.
+      You never add information that is not in the material, and you never
+      upgrade the author's uncertainty into fact. Every claim you emit is
+      classified, and every claim you classify as a directly supported fact cites
+      the source passages that support it, by their segment id, exactly as given.
+      When the author has answered a question, their answer is source truth of the
+      same standing as the document. Where you are re-extracting material that has
+      been extracted before, the ids that already carry citations are fixed: they
+      must all appear in what you return, and no new claim may take an id the
+      previous extraction spent.
+    required_variables:
+      [segments, audience, platform, depth, answers, established, reserved_ids]
+    output_schema_version: 1
+    notes: >
+      v3 sent every previous claim with its full text so ids could be reused.
+      Measured on a real rebuild that was 34,500 characters and about 13,000
+      input tokens on top of a 50,800-character prompt — a 68% larger call, and
+      rebuilds already take twice as long as a first extraction.
+
+      Most of it bought nothing. `check_continuity` refuses a rebuild only where
+      it drops an id something *argues from*; an id nothing cites can be
+      re-minted freely, because the guard would not have objected either way. On
+      a rebuild before any article exists the depended-on set is empty, so the
+      whole block was cost with no outcome it could have changed.
+
+      v4 sends the text only for the claims that are cited, and the bare ids of
+      everything else so a new claim cannot take one — a few hundred characters
+      instead of thirty-four thousand. What it gives up is id stability for
+      claims nobody has used yet, which may be renumbered between rebuilds.
+      Nothing points at them, and the moment an article cites one it joins the
+      set that cannot move.

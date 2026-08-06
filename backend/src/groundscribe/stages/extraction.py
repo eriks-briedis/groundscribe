@@ -149,6 +149,7 @@ class ExtractSourceTruth:
                 # first extraction, which is why the template renders nothing
                 # about continuity there — there is none to preserve.
                 "established": self._established(),
+                "reserved_ids": self._reserved_ids(),
             },
             schema=SourceModel,
             override=self._override,
@@ -181,23 +182,46 @@ class ExtractSourceTruth:
         )
 
     def _established(self) -> list[dict[str, str]]:
-        """The claims whose ids the rebuild has to keep, with what they say.
+        """The claims whose ids the rebuild must keep, with what they say.
 
-        The text travels with the id because the id alone is unmatchable: asked
-        to "keep c012" with no idea what c012 was, a model can only guess which
-        of its new claims that was.
+        Only the ones something *depends on*. The text has to travel with the id
+        — asked to keep ``c012`` with no idea what ``c012`` said, a model can
+        only guess which of its new claims that was — and the text is the
+        expensive part: sending every claim cost 34,500 characters and about
+        13,000 input tokens on a real rebuild, against a 50,800-character prompt.
 
-        Ordered with the depended-on claims first, so the ones that break an
-        article if dropped are the ones read first — and the ones a truncated
-        prompt keeps.
+        Sending all of them bought nothing enforceable.
+        :func:`check_continuity` refuses a rebuild that drops an id something
+        argues from, and only those; an id nothing cites can be re-minted freely,
+        because the guard would not have objected either way. On a rebuild before
+        any article exists the whole block was pure cost — the depended-on set is
+        empty, so no outcome could have been refused.
+
+        What is kept costs id stability for claims nobody has used yet: they may
+        be renumbered between rebuilds. Nothing points at them, so nothing
+        breaks, and the moment an article cites one it joins the set that cannot
+        move.
+        """
+        if self._previous is None or not self._depended_on:
+            return []
+        return [
+            {"id": claim.id, "text": claim.text}
+            for claim in sorted(self._previous.claims, key=lambda claim: claim.id)
+            if claim.id in self._depended_on
+        ]
+
+    def _reserved_ids(self) -> list[str]:
+        """Every id the previous model used, so a new claim does not take one.
+
+        Cheap where the texts are not: eighty ids is a few hundred characters.
+        Without it a rebuild told to keep ``c012`` and shown only ``c012`` has no
+        idea ``c040`` is taken, and a genuinely new claim can be minted onto an
+        id that used to mean something else — which reads as continuity and is
+        the opposite of it.
         """
         if self._previous is None:
             return []
-        claims = sorted(
-            self._previous.claims,
-            key=lambda claim: (claim.id not in self._depended_on, claim.id),
-        )
-        return [{"id": claim.id, "text": claim.text} for claim in claims]
+        return sorted(claim.id for claim in self._previous.claims)
 
     def _sendable_answers(self) -> tuple[domain_models.UserAnswer, ...]:
         """The answers whose text may go into the prompt.

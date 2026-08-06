@@ -364,11 +364,16 @@ def test_the_extraction_prompt_shows_the_ids_a_rebuild_has_to_keep() -> None:
             "depth": "deep",
             "answers": [],
             "established": [{"id": "claim_04", "text": "The cache is read-through."}],
+            "reserved_ids": ["claim_04", "claim_07"],
         },
     )
 
     assert "claim_04" in rendered.rendered_prompt
     assert "The cache is read-through." in rendered.rendered_prompt, "an id alone is unmatchable"
+    # The ids nothing cites travel bare: enough to stop a new claim taking one,
+    # without the text that made the block expensive.
+    assert "claim_07" in rendered.rendered_prompt
+    assert "Ids already spent" in rendered.rendered_prompt
 
 
 def test_a_first_extraction_is_told_nothing_about_continuity() -> None:
@@ -385,7 +390,57 @@ def test_a_first_extraction_is_told_nothing_about_continuity() -> None:
             "depth": "deep",
             "answers": [],
             "established": [],
+            "reserved_ids": [],
         },
     )
 
-    assert "Claim ids already in use" not in rendered.rendered_prompt
+    assert "must keep their ids" not in rendered.rendered_prompt
+    assert "Ids already spent" not in rendered.rendered_prompt
+
+
+def test_a_rebuild_nothing_depends_on_carries_no_claim_texts() -> None:
+    """The block is for protecting citations, so with none there is nothing to send.
+
+    ``check_continuity`` refuses a rebuild only where it drops an id something
+    argues from. Before any article exists that set is empty, so no outcome could
+    have been refused — and sending every claim with its text cost 34,500
+    characters and about 13,000 input tokens on a real rebuild, against a
+    50,800-character prompt.
+
+    The ids still travel, bare, so a new claim cannot take one.
+    """
+    from groundscribe.stages.extraction import ExtractSourceTruth
+
+    previous = SourceModel.model_validate(golden_json("source_model.json"))
+    stage = ExtractSourceTruth(
+        source=None,  # type: ignore[arg-type]
+        previous=previous,
+        depended_on=frozenset(),
+    )
+
+    assert stage._established() == []
+    assert stage._reserved_ids() == sorted(claim.id for claim in previous.claims)
+
+
+def test_a_rebuild_sends_the_text_of_exactly_what_is_cited() -> None:
+    """Everything cited, and nothing else — the guard's own set.
+
+    An id nothing points at can be re-minted freely, because the guard would not
+    have objected either way. The cost of carrying it is real and the protection
+    is imaginary.
+    """
+    from groundscribe.stages.extraction import ExtractSourceTruth
+
+    previous = SourceModel.model_validate(golden_json("source_model.json"))
+    cited = {previous.claims[0].id, previous.claims[2].id}
+    stage = ExtractSourceTruth(
+        source=None,  # type: ignore[arg-type]
+        previous=previous,
+        depended_on=frozenset(cited),
+    )
+
+    established = stage._established()
+    assert {entry["id"] for entry in established} == cited
+    assert all(entry["text"] for entry in established), "an id alone is unmatchable"
+    # And the rest are still named, so a new claim cannot be minted onto one.
+    assert set(stage._reserved_ids()) > cited
