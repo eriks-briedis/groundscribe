@@ -148,7 +148,7 @@ STATE_HEADLINES: Mapping[S, str] = {
     S.SUBSTANTIVE_REWRITING: "Rewriting under the approved plan.",
     S.VOICE_ALIGNING: "Aligning the prose to your voice profile.",
     S.SCORING: "Grading the article against the rubric.",
-    S.REVISION_REQUIRED: "The score came back short. Another round is being routed.",
+    S.REVISION_REQUIRED: "Your turn: the score came back short, so choose to send it round again.",
     S.PASSED: "It passed the rubric. Ready for final validation.",
     S.STALLED: "Your turn: rounds are not improving it, so the next move is yours.",
     S.FINAL_VALIDATING: "Checking every claim against the source it came from.",
@@ -157,6 +157,52 @@ STATE_HEADLINES: Mapping[S, str] = {
     S.FAILED: "The run stopped on an error it could not recover from.",
     S.CANCELLED: "You stopped this run. Its record is kept.",
 }
+
+
+@dataclass(frozen=True)
+class Progress:
+    """What the state alone cannot say about what a person is being asked for.
+
+    A headline per state assumes each state means one thing. Most do.
+    ``REVISION_PLAN_REQUIRED`` does not: it covers the whole stretch between a
+    review landing and a rewrite starting, and a person standing in it is being
+    asked for one of two unrelated things — decide the findings, or approve the
+    plan those decisions produced. Which one depends on data the state does not
+    carry, so the caller that can see the data supplies it.
+
+    Same shape as :class:`~groundscribe.app.advance.Have`, and for the same
+    reason: a decision that turns on the run's contents belongs with whoever can
+    read them, not in a table keyed by state.
+
+    Defaults describe a run nobody has looked at yet, so a caller that cannot
+    answer gets the state's own line rather than a confident wrong one.
+    """
+
+    #: Findings from the current review that nobody has accepted or rejected.
+    findings_undecided: bool = False
+    #: A revision plan exists for the current review and is waiting for approval.
+    revision_plan_ready: bool = False
+
+
+#: A run nobody has looked into: the default every caller gets for free.
+UNREAD: Progress = Progress()
+
+
+def headline_for(state: S, progress: Progress = UNREAD) -> str:
+    """What is happening, in one line, for a run in ``state``.
+
+    :data:`STATE_HEADLINES` is the answer wherever the state settles it. The one
+    place it does not is ``REVISION_PLAN_REQUIRED``, where the stored line —
+    "approve the plan" — describes the second half of the state and was shown
+    throughout the first. Somebody with nine findings to triage was told to
+    approve a plan that would not exist until they had.
+    """
+    if state is S.REVISION_PLAN_REQUIRED:
+        if progress.findings_undecided:
+            return "Your turn: decide which of the review's findings the rewrite should act on."
+        if not progress.revision_plan_ready:
+            return "Findings decided. Planning what the rewrite will change."
+    return STATE_HEADLINES[state]
 
 
 def phase_of(state: S) -> Phase | None:
@@ -191,16 +237,35 @@ def journey_of(state: S) -> tuple[Step, ...]:
     )
 
 
+#: States that wait for a person despite the edges out of them not being a
+#: person's to take.
+#:
+#: ``route_revision`` is actored ``policy`` because the *policy* chooses which
+#: stage a failure goes back to — the author picks nothing but the moment. That
+#: makes :func:`is_human_pause` answer "pipeline", and the pipeline has no next
+#: step here: ``REVISION_REQUIRED`` is one of ``advance.HUMAN_GATES``, so no
+#: worker will ever pick it up. A run parks here until somebody presses
+#: something, and "waiting on the pipeline" is the one answer that is certainly
+#: wrong — it is the sentence that leaves an author watching a spinner that is
+#: not spinning.
+_PARKS_FOR_A_PERSON: frozenset[S] = frozenset({S.REVISION_REQUIRED})
+
+
 def waiting_on(state: S) -> str:
     """Who the run is waiting for: ``"you"``, ``"pipeline"`` or ``"nobody"``.
 
-    The human-pause answer, asked of the transition table rather than kept as a
-    second list here. A state parks for a person exactly when every edge out of
-    it is a person's to take, which is a property of the edges — and one that
+    Mostly the human-pause answer, asked of the transition table rather than kept
+    as a second list here. A state parks for a person exactly when every edge out
+    of it is a person's to take, which is a property of the edges — and one that
     changes the day somebody adds an automatic escape from a pause.
+
+    :data:`_PARKS_FOR_A_PERSON` is where that reasoning does not reach, because
+    an edge can be a policy's to *decide* and still a person's to *start*.
     """
     if state in TERMINAL_STATES:
         return "nobody"
+    if state in _PARKS_FOR_A_PERSON:
+        return "you"
     return "you" if is_human_pause(state) else "pipeline"
 
 
@@ -208,8 +273,11 @@ __all__ = [
     "ENDINGS",
     "PHASES",
     "STATE_HEADLINES",
+    "UNREAD",
     "Phase",
+    "Progress",
     "Step",
+    "headline_for",
     "journey_of",
     "phase_of",
     "waiting_on",

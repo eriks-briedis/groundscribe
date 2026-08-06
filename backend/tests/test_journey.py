@@ -23,6 +23,8 @@ import pytest
 from groundscribe.workflow.journey import (
     ENDINGS,
     PHASES,
+    Progress,
+    headline_for,
     STATE_HEADLINES,
     journey_of,
     phase_of,
@@ -122,3 +124,46 @@ def test_the_phase_a_state_belongs_to_is_answerable_on_its_own() -> None:
     assert phase_of(S.SOURCE_QUESTIONS_REQUIRED) is not None
     assert phase_of(S.SOURCE_QUESTIONS_REQUIRED).id == "source"  # type: ignore[union-attr]
     assert phase_of(S.CANCELLED) is None
+
+
+# ----------------------------------------------------------------------
+# States that mean two things
+# ----------------------------------------------------------------------
+
+
+def test_the_plan_state_asks_for_the_thing_it_is_actually_waiting_for() -> None:
+    """``REVISION_PLAN_REQUIRED`` covers a review landing *and* a plan waiting.
+
+    One state, two unrelated requests: triage the findings, or approve the plan
+    those decisions produced. The stored headline describes the second, and was
+    shown for both — so an author with nine findings in front of them was told
+    to approve a plan that could not exist until they had decided all nine.
+    """
+    triage = headline_for(S.REVISION_PLAN_REQUIRED, Progress(findings_undecided=True))
+    planning = headline_for(S.REVISION_PLAN_REQUIRED, Progress())
+    approval = headline_for(S.REVISION_PLAN_REQUIRED, Progress(revision_plan_ready=True))
+
+    assert "findings" in triage
+    assert "approve the plan" not in triage
+    assert "Planning" in planning
+    assert approval == STATE_HEADLINES[S.REVISION_PLAN_REQUIRED]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [state for state in S if state is not S.REVISION_PLAN_REQUIRED],
+)
+def test_every_other_state_keeps_the_line_it_declares(state: WorkflowState) -> None:
+    """The refinement is an exception, not a second table to keep in step."""
+    assert headline_for(state, Progress(findings_undecided=True)) == STATE_HEADLINES[state]
+
+
+def test_a_state_the_pipeline_will_never_leave_says_it_is_waiting_on_you() -> None:
+    """``route_revision`` is actored ``policy``, so ``is_human_pause`` says "pipeline".
+
+    Nothing runs it. ``REVISION_REQUIRED`` is one of ``advance.HUMAN_GATES``, so
+    no worker picks it up and the run sits until a person presses something. The
+    edge's actor describes who *chooses the destination*, not who starts it.
+    """
+    assert waiting_on(S.REVISION_REQUIRED) == "you"
+    assert "Your turn" in STATE_HEADLINES[S.REVISION_REQUIRED]

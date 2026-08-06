@@ -127,7 +127,13 @@ from groundscribe.scoring.scoring import SCORE_STAGE
 from groundscribe.stages.override import OverrideOperation
 from groundscribe.stages.rewriting import REWRITE_STAGE
 from groundscribe.voice.store import VoiceStore
-from groundscribe.workflow.journey import STATE_HEADLINES, journey_of, waiting_on
+from groundscribe.workflow.journey import (
+    UNREAD,
+    Progress,
+    headline_for,
+    journey_of,
+    waiting_on,
+)
 from groundscribe.workflow.position import WorkflowPosition
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from groundscribe.workflow.transitions import TERMINAL_STATES, is_human_pause, is_taken_by_user
@@ -234,7 +240,7 @@ class ProjectionReader:
             ),
             run_id=run.id,
             state=position.state,
-            journey=_journey(position.state),
+            journey=_journey(position.state, self._progress(project_id, position.state)),
             available_actions=list(available_actions(position.state)),
             action_links=_action_links(position.state, project_id=project_id, article_id=None),
             pending_command=_pending_command(
@@ -986,6 +992,30 @@ class ProjectionReader:
             raise UnknownArtefact(f"run {run.id} has no recorded position")
         return position
 
+    def _progress(self, project_id: str, state: WorkflowState) -> Progress:
+        """What the headline needs that ``state`` does not carry.
+
+        Only asked where it changes the answer. Everywhere else the state settles
+        it, and a screen refresh should not walk the review and plan tables to be
+        told what a constant would have said.
+        """
+        if state is not WorkflowState.REVISION_PLAN_REQUIRED:
+            return Progress()
+        article_id = selected_article_id(self._runtime, project_id)
+        if article_id is None:
+            return Progress()
+        try:
+            version = rehydrate.latest_version(self._session, article_id)
+            review = rehydrate.latest_review(self._session, version.id)
+        except rehydrate.MissingInput:
+            return Progress()
+        undecided = any(issue.status is FindingStatus.PROPOSED for issue in review.issues)
+        try:
+            rehydrate.latest_plan(self._session, review.id)
+        except rehydrate.MissingInput:
+            return Progress(findings_undecided=undecided)
+        return Progress(findings_undecided=undecided, revision_plan_ready=True)
+
     def _executions(self, run: models.PipelineRun) -> list[models.StageExecution]:
         """The run's executions, oldest first, in the same total order the
         relationship uses (``PipelineRun.stage_executions``).
@@ -1502,14 +1532,14 @@ def _action_links(
     return links
 
 
-def _journey(state: WorkflowState) -> ProjectJourney:
+def _journey(state: WorkflowState, progress: Progress = UNREAD) -> ProjectJourney:
     """The pipeline at the size a person follows it, from the workflow's own map."""
     return ProjectJourney(
         steps=[
             JourneyStep(id=step.id, title=step.title, blurb=step.blurb, status=step.status)
             for step in journey_of(state)
         ],
-        headline=STATE_HEADLINES[state],
+        headline=headline_for(state, progress),
         waiting_on=waiting_on(state),
     )
 
