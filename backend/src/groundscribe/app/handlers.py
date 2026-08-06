@@ -369,12 +369,48 @@ def _bind(runtime: Runtime, body: Body) -> JobHandler:
 # ----------------------------------------------------------------------
 
 
+def _claims_in_use(runtime: Runtime, resumed: Resumed) -> frozenset[str]:
+    """Every claim id an article version of this run argues from.
+
+    Read from the *newest* version of each article rather than from all of them.
+    An id an earlier version cited and a later one dropped is not depended on any
+    more, and holding a rebuild to it would pin the source model to prose nobody
+    is going to publish.
+
+    Silent on anything unreadable. This feeds a guard, and a guard that cannot be
+    computed should not be the thing that stops a run — the failure it prevents is
+    real but rare, and refusing every rebuild because one snapshot went missing
+    would be the worse trade.
+    """
+    session = runtime.session
+    articles = session.scalars(
+        select(domain_models.Article).where(
+            domain_models.Article.project_id == resumed.context.project_id
+        )
+    ).all()
+
+    ids: set[str] = set()
+    for article in articles:
+        try:
+            version = rehydrate.latest_version(session, article.id)
+            snapshot = rehydrate.snapshot_of(session, version.snapshot_id)
+            draft = rehydrate.article_document(runtime.snapshots, snapshot)
+        except (rehydrate.MissingInput, OSError, ValueError):
+            continue
+        ids.update(draft.claims_used)
+    return frozenset(ids)
+
+
 async def _extract(runtime: Runtime, resumed: Resumed, request: JobRequest) -> StageResult[Any]:
     """Rebuild the source model from the source and every answer so far.
 
     The previous model is passed in when there is one, because phase 06 produces
     a *diff* against it: a rebuild a person cannot compare to what it replaced is
     a rebuild they have to take on trust.
+
+    So are the claim ids the run's articles argue from, because a rebuild that
+    renames one orphans the article citing it — see
+    :func:`~groundscribe.stages.extraction.check_continuity`.
     """
     session = resumed.context.session
     source = rehydrate.ingested_source(session, runtime.snapshots, resumed.context.project_id)
@@ -384,6 +420,7 @@ async def _extract(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
         if previous_snapshot is not None
         else None
     )
+    depended_on = _claims_in_use(runtime, resumed)
 
     rerunning = Rerunning.of(runtime, request)
     extracted = await StageRunner(resumed.context).run(
@@ -395,6 +432,7 @@ async def _extract(runtime: Runtime, resumed: Resumed, request: JobRequest) -> S
             previous_snapshot=previous_snapshot,
             token_budget=request.payload.get("token_budget") or DEFAULT_TOKEN_BUDGET,
             context_strategy=rerunning.context_strategy(),
+            depended_on=depended_on,
         ),
         enter=False,
         on_execution=request.opened,

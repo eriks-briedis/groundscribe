@@ -92,6 +92,7 @@ class ExtractSourceTruth:
         previous: SourceModel | None = None,
         previous_snapshot: ArtifactSnapshot | None = None,
         context_strategy: ContextStrategy = ContextStrategy.IN_ORDER,
+        depended_on: frozenset[str] = frozenset(),
     ) -> None:
         self._source = source
         self._token_budget = token_budget
@@ -102,6 +103,7 @@ class ExtractSourceTruth:
         self._previous = previous
         self._previous_snapshot = previous_snapshot
         self._context_strategy = context_strategy
+        self._depended_on = depended_on
 
     async def run(
         self, context: PipelineContext, execution: models.StageExecution
@@ -143,12 +145,17 @@ class ExtractSourceTruth:
                 "platform": context.constraints.platform,
                 "depth": context.constraints.depth.value,
                 "answers": [_render_answer(answer) for answer in self._sendable_answers()],
+                # The ids already in use, so a rebuild can keep them. Empty on a
+                # first extraction, which is why the template renders nothing
+                # about continuity there — there is none to preserve.
+                "established": self._established(),
             },
             schema=SourceModel,
             override=self._override,
         )
         model = generated.value
         check_citations(model.cited_segment_ids(), window)
+        check_continuity(model, self._depended_on)
 
         snapshot = context.recorder.record_output(
             execution,
@@ -172,6 +179,25 @@ class ExtractSourceTruth:
                 "answers_applied": len(self._sendable_answers()),
             },
         )
+
+    def _established(self) -> list[dict[str, str]]:
+        """The claims whose ids the rebuild has to keep, with what they say.
+
+        The text travels with the id because the id alone is unmatchable: asked
+        to "keep c012" with no idea what c012 was, a model can only guess which
+        of its new claims that was.
+
+        Ordered with the depended-on claims first, so the ones that break an
+        article if dropped are the ones read first — and the ones a truncated
+        prompt keeps.
+        """
+        if self._previous is None:
+            return []
+        claims = sorted(
+            self._previous.claims,
+            key=lambda claim: (claim.id not in self._depended_on, claim.id),
+        )
+        return [{"id": claim.id, "text": claim.text} for claim in claims]
 
     def _sendable_answers(self) -> tuple[domain_models.UserAnswer, ...]:
         """The answers whose text may go into the prompt.
@@ -278,6 +304,44 @@ def check_citations(cited: frozenset[str], window: ContextWindow) -> None:
         )
 
 
+def check_continuity(model: SourceModel, depended_on: frozenset[str]) -> None:
+    """Fail a rebuild that drops a claim something already written argues from.
+
+    Claim ids are the only thread between the source model and everything built
+    on it. A draft records the claims it used, a review cites the claim a finding
+    rests on, a plan names the claims a rewrite may not alter — all by id, and all
+    resolved against whichever source model is current.
+
+    So a rebuild that renames a surviving claim does not merely lose a name. It
+    orphans every citation of it at once, and the damage cannot be repaired later
+    because nothing anywhere records which new claim replaced which old one. The
+    article is simply no longer checkable, and the first stage to notice is
+    whichever one next validates a citation — arbitrarily far downstream, with
+    nothing to say about the cause.
+
+    Observed on a real run: a factual failure routed upstream, the source was
+    re-extracted, and a finished article's twenty-two claim ids stopped
+    resolving. The rewrite failed with "the draft argues from claim_04, …, which
+    are not in the source model", which is true and gives no hint that a rebuild
+    is what did it.
+
+    Checked only against ids something *depends on*. A rebuild is free to drop a
+    claim nobody used — that is an extraction improving, not an article breaking.
+    """
+    if not depended_on:
+        return
+    known = {claim.id for claim in model.claims}
+    orphaned = sorted(depended_on - known)
+    if orphaned:
+        raise EvidenceError(
+            f"this rebuild drops {', '.join(orphaned)}, which work already written "
+            f"{'argues' if len(orphaned) == 1 else 'argue'} from; a claim id that "
+            "disappears takes every citation of it with it, and nothing records which "
+            "new claim replaced it. Keep the id on the claim that still says this, or "
+            "start a new run against the new model"
+        )
+
+
 __all__ = [
     "CHARS_PER_TOKEN",
     "DEFAULT_TOKEN_BUDGET",
@@ -289,6 +353,7 @@ __all__ = [
     "ExtractSourceTruth",
     "SelectedSegment",
     "check_citations",
+    "check_continuity",
     "require_permitted_provider",
     "select_context",
     "select_segments",

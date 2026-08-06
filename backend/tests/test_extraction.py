@@ -269,3 +269,123 @@ async def test_an_invalid_classification_is_repaired_by_the_phase_04_ladder(
     outcomes = [call.outcome for call in execution.model_invocations]
     assert outcomes == [InvocationOutcome.INVALID_SCHEMA, InvocationOutcome.ACCEPTED]
     assert result.value.claims[0].classification is ClaimClassification.DIRECTLY_SUPPORTED_FACT
+
+
+# ----------------------------------------------------------------------
+# A rebuild may not orphan the work already built on it
+# ----------------------------------------------------------------------
+
+
+def source_model_with(*claim_ids: str) -> SourceModel:
+    """A model holding exactly these claim ids, and nothing else of interest."""
+    payload = golden_json("source_model.json")
+    template = payload["claims"][0]
+    payload["claims"] = [dict(template, id=claim_id) for claim_id in claim_ids]
+    payload["lessons"] = []
+    payload["potential_arguments"] = []
+    return SourceModel.model_validate(payload)
+
+
+def test_a_rebuild_that_keeps_the_ids_in_use_is_accepted() -> None:
+    """Renaming nothing an article cites is a rebuild doing its job.
+
+    New claims alongside the old ones are exactly what a better extraction looks
+    like, and the guard must not read that as damage.
+    """
+    from groundscribe.stages.extraction import check_continuity
+
+    rebuilt = source_model_with("claim_01", "claim_02", "claim_03")
+
+    check_continuity(rebuilt, frozenset({"claim_01", "claim_02"}))
+
+
+def test_a_rebuild_may_drop_a_claim_nobody_argues_from() -> None:
+    """An extraction that discards an unused claim is improving, not breaking.
+
+    The guard is about citations that would stop resolving — not about the source
+    model being allowed to change, which is the entire point of re-extracting.
+    """
+    from groundscribe.stages.extraction import check_continuity
+
+    rebuilt = source_model_with("claim_01")
+
+    check_continuity(rebuilt, frozenset({"claim_01"}))
+    check_continuity(rebuilt, frozenset())
+
+
+def test_a_rebuild_that_renames_a_cited_claim_is_refused() -> None:
+    """The failure this exists for, and it is unrepairable once committed.
+
+    Claim ids are the only thread between the source model and the article. A
+    rebuild that mints fresh ids for the same facts orphans every citation at
+    once, and nothing anywhere records which new claim replaced which old one.
+
+    Observed on a real run: a factual failure routed upstream, the source was
+    re-extracted, and a finished article's twenty-two ids stopped resolving. The
+    first stage to notice was the rewrite, several steps later, reporting only
+    that the draft argued from claims that do not exist.
+    """
+    from groundscribe.stages.extraction import check_continuity
+
+    rebuilt = source_model_with("c001", "c002")
+
+    with pytest.raises(EvidenceError, match="claim_04"):
+        check_continuity(rebuilt, frozenset({"claim_04", "c001"}))
+
+
+def test_the_refusal_names_only_what_actually_broke() -> None:
+    """A guard that listed every changed id would bury the two that matter."""
+    from groundscribe.stages.extraction import check_continuity
+
+    rebuilt = source_model_with("claim_01", "c009")
+
+    with pytest.raises(EvidenceError) as raised:
+        check_continuity(rebuilt, frozenset({"claim_01", "claim_07"}))
+
+    assert "claim_07" in str(raised.value)
+    assert "claim_01" not in str(raised.value), "a surviving id is not a casualty"
+
+
+def test_the_extraction_prompt_shows_the_ids_a_rebuild_has_to_keep() -> None:
+    """The guard refuses; the prompt is what lets the model comply.
+
+    Without the established ids in front of it there is nothing the extractor
+    could do differently, and the guard would be a wall rather than a contract.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        "extract_source_truth",
+        {
+            "segments": [{"id": "s1", "kind": "prose", "text": "x", "truncated": False}],
+            "audience": "engineers",
+            "platform": "blog",
+            "depth": "deep",
+            "answers": [],
+            "established": [{"id": "claim_04", "text": "The cache is read-through."}],
+        },
+    )
+
+    assert "claim_04" in rendered.rendered_prompt
+    assert "The cache is read-through." in rendered.rendered_prompt, "an id alone is unmatchable"
+
+
+def test_a_first_extraction_is_told_nothing_about_continuity() -> None:
+    """There is none to preserve, and a section about keeping ids would invite invention."""
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = PromptStore(prompts_root()).render(
+        "extract_source_truth",
+        {
+            "segments": [{"id": "s1", "kind": "prose", "text": "x", "truncated": False}],
+            "audience": "engineers",
+            "platform": "blog",
+            "depth": "deep",
+            "answers": [],
+            "established": [],
+        },
+    )
+
+    assert "Claim ids already in use" not in rendered.rendered_prompt

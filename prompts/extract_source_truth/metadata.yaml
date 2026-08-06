@@ -3,7 +3,7 @@ description: >
   Extract the structured source of truth from ingested source material: product
   facts, development history, classified claims with linked evidence, publication
   constraints, lessons and potential arguments (plan/06 §2).
-current_version: v2
+current_version: v3
 versions:
   v1:
     system: >
@@ -37,3 +37,32 @@ versions:
       them; a corrected premise is rendered as a correction rather than as an
       answer, because the model must stop assuming the premise rather than record
       a fact about it.
+  v3:
+    system: >
+      You extract a structured source of truth from technical source material.
+      You never add information that is not in the material, and you never
+      upgrade the author's uncertainty into fact. Every claim you emit is
+      classified, and every claim you classify as a directly supported fact cites
+      the source passages that support it, by their segment id, exactly as given.
+      When the author has answered a question, their answer is source truth of the
+      same standing as the document. Where you are re-extracting material that has
+      been extracted before, the claim ids already in use are part of the contract:
+      work downstream cites them, so a claim that survives keeps its id and only
+      something genuinely new gets a new one.
+    required_variables: [segments, audience, platform, depth, answers, established]
+    output_schema_version: 1
+    notes: >
+      A re-extraction used to mint every id afresh. Nothing in the prompt said
+      otherwise, and nothing checked, so a rebuild silently orphaned every article
+      in the run: the draft went on citing `claim_04`, the new model called the
+      same fact `c012`, and `check_draft` refused the article as arguing from
+      claims that do not exist.
+
+      Observed on a real run whose source was re-extracted mid-flight after a
+      factual failure routed upstream. Twenty-two claim ids in a finished article
+      stopped resolving, and no stage could repair it — nothing records which new
+      claim replaced which old one.
+
+      This version shows the ids in force and requires their reuse.
+      `check_continuity` refuses a rebuild that drops one an article depends on,
+      so the instruction has an enforcement behind it rather than a hope.
