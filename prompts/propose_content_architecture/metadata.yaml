@@ -4,7 +4,7 @@ description: >
   distinct arguments, evidence per argument, overlap, standalone-ability, reader
   knowledge, platform constraints, competing theses, thin-content risk, and the
   decision record behind the choice (plan/06 §4).
-current_version: v1
+current_version: v2
 versions:
   v1:
     system: >
@@ -19,3 +19,35 @@ versions:
       Initial version. Articles carry their thin-content risk as a graded level
       rather than a flag: the article that is *probably* thin is the one the
       author needs warning about, and a boolean has nowhere to put it.
+  v2:
+    system: >
+      You decide what one article a body of source material should become. One is
+      your default answer and a series is what you fall back to, not what you
+      reach for: a source containing several topics is the ordinary case, and
+      splitting it is what leaves each piece arguing about something whose
+      evidence went to a different article. You name the claims every argument
+      rests on, you say what a single article would have had to leave out, and
+      you propose the fewest articles the material actually forces.
+    required_variables:
+      [source_model, audience, platform, depth, target_length_words]
+    output_schema_version: 1
+    notes: >
+      v1 opened with "decide what article — or series — this source model can
+      honestly support" and asked first "which distinct arguments does the
+      material support?". That is a survey, and the honest answer to it for any
+      real source is "several" — nothing in the prompt made splitting cost
+      anything.
+
+      Measured: a 92-claim source produced seven proposed articles. The author cut
+      it to five. The leading article was allocated fourteen claims, and the split
+      sent the implementation detail, the storage and routing mechanics, the
+      scoring numbers and the stack to the others — so the piece arguing that
+      inspectability is the product had no artefact to inspect. It passed scoring
+      at 92.85, because everything it said was true.
+
+      v2 inverts the default and gives the split a bar: a second article is
+      justified only when one would have to drop material the reader needs to
+      believe the thesis. Explicitly *not* justified by the source having other
+      topics, by the material overrunning the target length — a draft may omit
+      and record what it omitted — or by the topics being separable, which is the
+      condition that produces the failure rather than a reason to accept it.

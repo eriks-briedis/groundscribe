@@ -265,3 +265,41 @@ async def test_a_second_proposal_may_reuse_a_label_without_colliding(
     assert first.value.concept("a1") is not None, "and a label still finds its row"
     assert second.value.concept("a1") is not None
     assert first.value.concept("a1") is not second.value.concept("a1")
+
+
+def test_the_prompt_makes_one_article_the_default_and_gives_splitting_a_bar() -> None:
+    """A survey question gets a survey answer.
+
+    v1 opened "decide what article — or series — this source model can honestly
+    support" and asked first which distinct arguments the material supports. For
+    any real source the honest answer to that is "several", and nothing made
+    splitting cost anything: a 92-claim source produced seven proposed articles.
+
+    What that costs is not extra articles, it is ungrounded ones. Evidence
+    follows topic, so the piece left arguing *about* a mechanism keeps none of
+    the artefacts that show it working — and it scores well, because everything
+    it says is true.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = (
+        PromptStore(prompts_root())
+        .render(
+            ARCHITECTURE_STAGE,
+            {
+                "source_model": "{}",
+                "audience": "engineers",
+                "platform": "x.com",
+                "depth": "practitioner",
+                "target_length_words": 1800,
+            },
+        )
+        .rendered_prompt
+    )
+
+    assert "One is the answer unless the material makes it impossible." in rendered
+    # And the bar is a test, not an encouragement: the three reasons that are
+    # *not* grounds for splitting are the three that would otherwise be used.
+    assert "Not that the source contains other interesting topics." in rendered
+    assert "reader who has read article one must still need article two." in rendered

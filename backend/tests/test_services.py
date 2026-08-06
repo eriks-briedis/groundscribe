@@ -924,3 +924,55 @@ async def test_a_stage_that_declines_its_own_exit_does_not_run_forever(
 
     assert have.ran_without_moving is True
     assert harness.service.advance(project_id) is None, "it queued the same work again"
+
+
+async def test_only_a_voice_block_routes_from_a_voice_complaint(harness: Harness) -> None:
+    """``revision_required`` is reached four ways and only one of them is this.
+
+    A failing score, a blocked voice pass, failed validation and an author
+    rejecting a finished article all land there. Only the voice pass arrives with
+    no evaluation to route from, so only it needs the fallback — and a fallback
+    that fired whenever a score was missing would route the other three on
+    whatever a voice pass complained about earlier in the run.
+
+    Asserted against the transition record rather than through a full run,
+    because what was wrong is which record the query reads: it took the newest
+    voice complaint on the run and never asked whether the run had just arrived
+    by that door.
+    """
+    from groundscribe.provenance.enums import ActorType
+    from groundscribe.workflow.states import WorkflowAction, WorkflowState
+
+    project_id = await with_source(harness)
+    resumed = harness.service._resume(project_id)
+    recorder = harness.runtime.recorder
+
+    recorder.record_decision(
+        resumed.engine.execution,
+        decision_type="voice_structural_return",
+        decided_by="align_voice",
+        decided_by_type=ActorType.POLICY,
+        policy_version="1.0",
+        inputs={"problems": [{"suggested_route": "substantive_issue"}]},
+        outcome="substantive_revision_requested",
+    )
+
+    def transition(action: WorkflowAction, state: WorkflowState) -> None:
+        recorder.record_decision(
+            resumed.engine.execution,
+            decision_type="workflow_transition",
+            decided_by="pipeline",
+            decided_by_type=ActorType.POLICY,
+            policy_version="1.0",
+            inputs={"from": "voice_aligning", "action": action.value},
+            outcome=state.value,
+        )
+        harness.runtime.session.flush()
+
+    transition(WorkflowAction.VOICE_BLOCKED, WorkflowState.REVISION_REQUIRED)
+    assert harness.service._blocked_voice_route(resumed) == "substantive_issue"
+
+    # The same complaint, still on the record, after the run reached the same
+    # state by a different door.
+    transition(WorkflowAction.REJECT_FINAL, WorkflowState.REVISION_REQUIRED)
+    assert harness.service._blocked_voice_route(resumed) is None

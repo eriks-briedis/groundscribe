@@ -930,14 +930,39 @@ class ApplicationService:
         return self.advance(resumed.context.project_id) or settled
 
     def _blocked_voice_route(self, resumed: Resumed) -> str | None:
-        """The route a voice pass asked for when it stopped, if one did.
+        """The route a voice pass asked for, if a voice pass is why we are here.
 
         Read from the decision the stage already records, rather than from a
         second store: refusing to fix something is a policy decision and is
         written down as one. The first problem's route is taken because the pass
         reports them in the order it met them, and a pass that found several is
         describing one article rather than several destinations.
+
+        Only when the run's *last* transition was the voice pass stopping.
+        ``revision_required`` is reached four ways — a failing score, a blocked
+        voice pass, failed validation, and an author rejecting a finished article
+        — and only the second has no evaluation to route from. Without this
+        check, the other three would be routed on whatever a voice pass
+        complained about earlier in the run, which on a real project meant an
+        hour-old style objection deciding where a rejected article went.
         """
+        latest = self._runtime.session.scalars(
+            select(models.DecisionRecord)
+            .join(
+                models.StageExecution,
+                models.StageExecution.id == models.DecisionRecord.stage_execution_id,
+            )
+            .where(
+                models.StageExecution.pipeline_run_id == resumed.run.id,
+                models.DecisionRecord.decision_type == "workflow_transition",
+            )
+            .order_by(models.DecisionRecord.decided_at.desc())
+        ).first()
+        if latest is None or latest.outcome != WorkflowState.REVISION_REQUIRED.value:
+            return None
+        if latest.inputs.get("action") != WorkflowAction.VOICE_BLOCKED.value:
+            return None
+
         record = self._runtime.session.scalars(
             select(models.DecisionRecord)
             .join(

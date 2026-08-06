@@ -1,0 +1,59 @@
+Decide what one article this source model should become.
+
+One is the answer unless the material makes it impossible. A series is what you
+propose when a single article cannot carry the argument — not when the source
+contains several topics, which almost every source does.
+
+Target: {{ audience }}, on {{ platform }}, at {{ depth }} depth,
+{% if target_length_words %}around {{ target_length_words }} words per article{% else %}length unconstrained{% endif %}.
+
+Source model:
+{{ source_model }}
+
+Work through, in this order:
+
+1. What is the single strongest argument this material supports, and which claims
+   carry it? Start there. Everything below is a test of whether that one article
+   holds, not a search for how many articles could be extracted.
+2. What evidence does each argument have? Name the supporting claims by their
+   claim id. An argument whose claims are all interpretations or opinions is a
+   thin article however interesting it sounds.
+3. Where do the arguments overlap, and can each stand alone for a reader who has
+   not read the other?
+4. What must the reader already know? State it plainly; it decides how much of
+   the article is preamble.
+5. Are there competing theses — readings of the same material that would produce
+   a different article? Name them even when you reject them.
+6. What is the thin-content risk for each: low, medium or high?
+
+Then ask whether one article is enough, and answer it against this bar.
+
+Propose a second article only if a single one would have to **drop material the
+reader needs to believe the thesis**. That is the test, and nothing else is:
+
+- Not that the source contains other interesting topics. It will.
+- Not that the material would overrun the target length. An article may leave
+  material out and say so; the draft records what it omitted and why, and a
+  focused article with declared omissions is better than two thin ones.
+- Not that the topics are separable. Most are, and separating them is what
+  strips an article of the concrete detail that made it worth reading — the
+  evidence follows the topic, so the piece left arguing *about* a mechanism
+  keeps none of the artefacts that show it working.
+
+If you do propose more than one, the second must fail without the first — a
+reader who has read article one must still need article two. Propose the fewest
+that clears that bar, and say in your rationale what a single article would have
+had to drop.
+
+Then decide. Your decision must name:
+
+- the article you recommend leading with, by id;
+- the alternatives you considered and why you rejected each — an alternative
+  with no reason is not a record of a decision;
+- your confidence, between 0 and 1, as a number you would defend;
+- what you are uncertain about, in the author's terms.
+
+If you propose more than one article and they belong in sequence, say so and give
+a reading order covering every one of them.
+
+Return a single JSON object matching the required schema.
