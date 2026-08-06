@@ -388,3 +388,43 @@ def test_no_step_in_the_map_leaves_the_state_it_starts_from() -> None:
             f"{state.value} has no pipeline edge out, so its job returns the run here "
             "and the completion starts it again"
         )
+
+
+def test_a_job_that_already_finished_without_moving_the_run_is_not_started_again() -> None:
+    """The general form of every loop found here, and of the ones not found yet.
+
+    A step earns its place in the map by moving the run when it finishes. One
+    that has already finished without moving it will not move it this time
+    either, and starting it again spends a model call to arrive where it is.
+
+    Two loops were found a stage apart and neither was visible from the map.
+    ``revision_plan_required`` writes a plan and waits for a person, so a
+    finished plan returns the run to the state that asked for one — eleven ran.
+    ``voice_aligning`` withholds its own exit when the pass reports a structural
+    fault it refused to fix, which leaves the run in a state whose only edge it
+    just declined — five ran.
+
+    Asked of every step rather than of the two, because the causes were entirely
+    different and the symptom was identical.
+    """
+    from groundscribe.app.advance import Have, startable
+
+    for state, step in NEXT.items():
+        assert not startable(step, Have(ran_without_moving=True)), (
+            f"{state.value} would start {step.job_type.value} again after it ran "
+            "and changed nothing"
+        )
+
+
+def test_a_job_that_has_not_run_yet_is_started_normally() -> None:
+    """The check is about repetition, not about caution.
+
+    A guard that also stopped the first attempt would park every run at its first
+    step, which is the failure mode of writing this as "has it run" rather than
+    "did it achieve anything".
+    """
+    from groundscribe.app.advance import Have, startable
+
+    assert startable(NEXT[S.VOICE_ALIGNING], Have())
+    assert startable(NEXT[S.SCORING], Have())
+    assert startable(NEXT[S.SOURCE_INGESTED], Have())

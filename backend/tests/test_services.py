@@ -19,6 +19,7 @@ The service is exercised together with a real worker over the same rows, because
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
 from groundscribe.app import rehydrate
+from groundscribe.app.advance import NEXT as NEXT_STEPS
 from groundscribe.app.services import NothingToAbandon, NothingToRetry
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import SourceFormat
@@ -887,3 +889,38 @@ async def test_approving_a_plan_that_was_never_written_is_refused(
         harness.service.approve_revision_plan(article_id, approved_by=AUTHOR)
 
     assert harness.service.project_state(project_id).state is S.REVISION_PLAN_REQUIRED
+
+
+async def test_a_stage_that_declines_its_own_exit_does_not_run_forever(
+    harness: Harness,
+) -> None:
+    """The loop as it actually happened, through the service rather than the predicate.
+
+    A voice pass that finds a structural fault it refuses to fix withholds its
+    exit edge deliberately — the fault should not travel on to scoring. That
+    leaves the run in ``voice_aligning``, whose only other edge the pass has just
+    declined, and auto-advance queued the same pass again on every completion.
+    Five ran on a real project before it was noticed.
+
+    Driven through ``advance`` because the bug was never in the map: every entry
+    in it was correct, and what was missing was the question of whether the last
+    run of a step achieved anything.
+    """
+
+    project_id = await with_source(harness)
+    resumed = harness.service._resume(project_id)
+    step = NEXT_STEPS[S.SOURCE_MODEL_EXTRACTING]
+
+    # A job of this type that succeeded, with no transition recorded after it —
+    # which is exactly the trace a stage leaves when it declines its exit.
+    job = harness.runtime.queue.enqueue(
+        job_type=step.job_type, run=resumed.run, payload={}, supersede=True
+    )
+    job.status = JobStatus.SUCCEEDED
+    job.completed_at = datetime.now(UTC)
+    harness.runtime.session.flush()
+
+    have = harness.service._have(resumed, None, step)
+
+    assert have.ran_without_moving is True
+    assert harness.service.advance(project_id) is None, "it queued the same work again"

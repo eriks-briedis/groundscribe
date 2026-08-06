@@ -211,6 +211,12 @@ class Have:
     #: False on a review nobody has been through, which is where every review
     #: starts — findings arrive ``proposed`` and only a person moves them.
     triaged_review: bool = True
+    #: This job already ran, succeeded, and left the run exactly where it is.
+    #:
+    #: The general form of the two loops that were found one at a time. A step is
+    #: worth starting because its completion moves the run; one that has already
+    #: completed without moving it will not move it this time either.
+    ran_without_moving: bool = False
 
 
 def startable(step: Step, have: Have) -> bool:
@@ -240,6 +246,21 @@ def startable(step: Step, have: Have) -> bool:
     ``revision_plan_required`` failed at the missing-review guard before the plan
     stage was reached. Fixing that guard is what let it turn.
     """
+    # Asked first, and of every step, because it is the general form of the two
+    # cases below it and of the ones not found yet. A step earns its place in the
+    # map by moving the run when it finishes; one that has already finished
+    # without moving it is not going to, and starting it again spends a model
+    # call to arrive at the same state.
+    #
+    # Two loops were found this way, a stage apart, and neither was visible from
+    # the map. `revision_plan_required` writes a plan and waits for a person, so
+    # the completion returns the run to the state that asked for the plan.
+    # `voice_aligning` withholds its own exit when the pass reports a structural
+    # fault it refused to fix — deliberate, and it leaves the run in a state
+    # whose only edge it just declined to take. The first ran eleven times, the
+    # second five.
+    if have.ran_without_moving:
+        return False
     if step.job_type is JobType.PROPOSE_ARCHITECTURE:
         return not have.architecture_approved
     if step.job_type is JobType.PLAN_REVISION:

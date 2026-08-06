@@ -37,6 +37,7 @@ from groundscribe.app import rehydrate
 from groundscribe.app.actions import available_actions
 from groundscribe.app.advance import (
     Have,
+    Step,
     auto_advance_enabled,
     next_step,
     selected_article_id,
@@ -1458,7 +1459,7 @@ class ApplicationService:
         if step is None:
             return None
         article_id = selected_article_id(self._runtime, project_id) if step.per_article else None
-        if not startable(step, self._have(resumed, article_id)):
+        if not startable(step, self._have(resumed, article_id, step)):
             return None
         if not step.per_article:
             return self._enqueue(project_id, step.job_type, entry=step.entry, payload={})
@@ -1466,7 +1467,7 @@ class ApplicationService:
             return None
         return self._enqueue_for_article(article_id, step.job_type, entry=step.entry)
 
-    def _have(self, resumed: Resumed, article_id: str | None) -> Have:
+    def _have(self, resumed: Resumed, article_id: str | None, step: Step) -> Have:
         """What the run has produced already, for the steps that turn on it.
 
         Read here rather than in :mod:`~groundscribe.app.advance` because it is
@@ -1476,7 +1477,50 @@ class ApplicationService:
             architecture_approved=resumed.engine.approved_architecture is not None,
             revision_plan=self._revision_plan_exists(article_id),
             triaged_review=self._review_triaged(article_id),
+            ran_without_moving=self._ran_without_moving(resumed, step),
         )
+
+    def _ran_without_moving(self, resumed: Resumed, step: Step) -> bool:
+        """Whether this job already succeeded and left the run where it is.
+
+        Answered by comparing two timestamps the system already records: when the
+        newest successful job of this type finished, and when the run last took a
+        transition. A stage that finished without the run moving either declined
+        its exit edge or has none — and either way, running it again produces the
+        same outcome at the price of another model call.
+
+        Deliberately indifferent to *why*. The two cases found so far had
+        completely different causes and identical symptoms, which is the argument
+        for a check that asks about the effect instead.
+        """
+        session = self._runtime.session
+        finished = session.scalars(
+            select(Job)
+            .where(
+                Job.pipeline_run_id == resumed.run.id,
+                Job.job_type == step.job_type,
+                Job.status == JobStatus.SUCCEEDED,
+                Job.completed_at.is_not(None),
+            )
+            .order_by(Job.completed_at.desc(), Job.id.desc())
+        ).first()
+        if finished is None or finished.completed_at is None:
+            return False
+
+        moved = session.scalars(
+            select(models.DecisionRecord)
+            .join(
+                models.StageExecution,
+                models.StageExecution.id == models.DecisionRecord.stage_execution_id,
+            )
+            .where(
+                models.StageExecution.pipeline_run_id == resumed.run.id,
+                models.DecisionRecord.decision_type == "workflow_transition",
+                models.DecisionRecord.decided_at > finished.completed_at,
+            )
+            .limit(1)
+        ).first()
+        return moved is None
 
     def _review_triaged(self, article_id: str | None) -> bool:
         """Whether anyone has decided anything about the current review's findings.
