@@ -109,7 +109,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/articles/{article_id}/findings/{ref}": {
+    "/articles/{article_id}/findings/{finding_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -125,8 +125,12 @@ export interface paths {
          *     The step between reviewing and planning, and the one the pipeline cannot take
          *     for itself: a finding only reaches a revision plan once a person has accepted
          *     it. Moves the run nowhere — the review has already happened.
+         *
+         *     Addressed by the finding's id, not by the ``ref`` a reviewer numbered it with:
+         *     refs restart at one every round, so two of them can name different findings on
+         *     the same article.
          */
-        post: operations["decide_finding_articles__article_id__findings__ref__post"];
+        post: operations["decide_finding_articles__article_id__findings__finding_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4454,13 +4458,13 @@ export interface operations {
             };
         };
     };
-    decide_finding_articles__article_id__findings__ref__post: {
+    decide_finding_articles__article_id__findings__finding_id__post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 article_id: string;
-                ref: string;
+                finding_id: string;
             };
             cookie?: never;
         };

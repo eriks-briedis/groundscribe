@@ -6025,10 +6025,10 @@
         "summary": "Draft"
       }
     },
-    "/articles/{article_id}/findings/{ref}": {
+    "/articles/{article_id}/findings/{finding_id}": {
       "post": {
-        "description": "Accept, reject or edit one of the review's findings.\n\nThe step between reviewing and planning, and the one the pipeline cannot take\nfor itself: a finding only reaches a revision plan once a person has accepted\nit. Moves the run nowhere \u2014 the review has already happened.",
-        "operationId": "decide_finding_articles__article_id__findings__ref__post",
+        "description": "Accept, reject or edit one of the review's findings.\n\nThe step between reviewing and planning, and the one the pipeline cannot take\nfor itself: a finding only reaches a revision plan once a person has accepted\nit. Moves the run nowhere \u2014 the review has already happened.\n\nAddressed by the finding's id, not by the ``ref`` a reviewer numbered it with:\nrefs restart at one every round, so two of them can name different findings on\nthe same article.",
+        "operationId": "decide_finding_articles__article_id__findings__finding_id__post",
         "parameters": [
           {
             "in": "path",
@@ -6041,10 +6041,10 @@
           },
           {
             "in": "path",
-            "name": "ref",
+            "name": "finding_id",
             "required": true,
             "schema": {
-              "title": "Ref",
+              "title": "Finding Id",
               "type": "string"
             }
           }

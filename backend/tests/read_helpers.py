@@ -254,23 +254,27 @@ class Walkthrough:
         `check_rewrite`. So the walk ran green and published a draft nobody had
         revised — which is what a smoke test exists to notice and did not.
         """
-        for ref in self.proposed_findings():
+        for finding_id in self.proposed_findings():
             await self.command(
                 "POST",
-                f"/articles/{self.article_id}/findings/{ref}",
+                f"/articles/{self.article_id}/findings/{finding_id}",
                 json={"actor_id": AUTHOR, "decision": "accepted"},
             )
 
     def proposed_findings(self) -> tuple[str, ...]:
-        """The refs of the current review's undecided findings."""
+        """The ids of the current review's undecided findings.
+
+        By id rather than by ``ref``: a ref is unique within a review and not
+        across them, because every round numbers its findings from one.
+        """
         history = self.client.get(f"/articles/{self.article_id}/reviews").json()
         rounds = history.get("rounds") or []
         if not rounds:
             return ()
         return tuple(
-            issue["ref"]
+            issue["id"]
             for issue in rounds[-1].get("issues") or []
-            if issue.get("status") == "proposed" and issue.get("ref")
+            if issue.get("status") == "proposed"
         )
 
     async def revise(self) -> dict[str, Any]:

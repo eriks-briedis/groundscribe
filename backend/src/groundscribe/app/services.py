@@ -625,7 +625,7 @@ class ApplicationService:
         self,
         article_id: str,
         *,
-        ref: str,
+        finding_id: str,
         decision: FindingStatus,
         decided_by: str,
         reason: str = "",
@@ -647,16 +647,21 @@ class ApplicationService:
 
         Moves the run nowhere. Deciding is bookkeeping about a review that has
         already happened, and the run is parked where the review left it.
+
+        Addressed by the finding's own id rather than by its ``ref`` and the
+        article's newest review, which is what this did first and got wrong twice
+        over. A ``ref`` is unique within a review and not across them — two rounds
+        both number their findings from one — and the newest *version* need not be
+        the reviewed one: a rewrite produces a version that no review has seen,
+        so looking one up there fails with "has not been reviewed" while the
+        finding sits in plain sight on the screen that offered the button.
         """
         resumed = self._resume(self.project_for_article(article_id))
         session = resumed.context.session
-        version = rehydrate.latest_version(session, article_id)
-        review = rehydrate.latest_review(session, version.id)
 
-        finding = next((issue for issue in review.issues if issue.ref == ref), None)
-        if finding is None:
-            offered = ", ".join(sorted(issue.ref for issue in review.issues)) or "none"
-            raise UnknownFinding(f"review {review.id} has no finding {ref!r} (it has: {offered})")
+        finding = session.get(domain_models.ReviewIssue, finding_id)
+        if finding is None or self._article_of(finding) != article_id:
+            raise UnknownFinding(f"article {article_id} has no finding {finding_id}")
 
         ledger = open_review_ledger(resumed.context)
         if decision is FindingStatus.ACCEPTED:
@@ -676,7 +681,16 @@ class ApplicationService:
                 "a finding is accepted, rejected, or accepted with an edit"
             )
         self._runtime.recorder.complete_stage(ledger.execution)
-        return self._settle(resumed, detail={"ref": ref, "status": decision.value})
+        return self._settle(resumed, detail={"ref": finding.ref, "status": decision.value})
+
+    def _article_of(self, finding: domain_models.ReviewIssue) -> str | None:
+        """Which article a finding belongs to, so one cannot be decided from another."""
+        session = self._runtime.session
+        review = session.get(domain_models.Review, finding.review_id)
+        if review is None:
+            return None
+        version = session.get(domain_models.ArticleVersion, review.article_version_id)
+        return version.article_id if version is not None else None
 
     async def plan_revision(self, article_id: str) -> CommandResult:
         """Turn the review's findings into a plan a rewrite is bound by."""

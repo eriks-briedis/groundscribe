@@ -724,10 +724,12 @@ async def test_a_finding_can_be_accepted_which_is_what_a_plan_reads(
     _, article_id = await reviewed_article(harness)
     version = rehydrate.latest_version(harness.runtime.session, article_id)
     review = rehydrate.latest_review(harness.runtime.session, version.id)
-    ref = review.issues[0].ref
 
     harness.service.decide_finding(
-        article_id, ref=ref, decision=FindingStatus.ACCEPTED, decided_by=AUTHOR
+        article_id,
+        finding_id=review.issues[0].id,
+        decision=FindingStatus.ACCEPTED,
+        decided_by=AUTHOR,
     )
 
     assert review.issues[0].status is FindingStatus.ACCEPTED
@@ -745,24 +747,102 @@ async def test_a_rejection_without_a_reason_is_refused(harness: Harness) -> None
     with pytest.raises(ValueError, match="needs a reason"):
         harness.service.decide_finding(
             article_id,
-            ref=review.issues[0].ref,
+            finding_id=review.issues[0].id,
             decision=FindingStatus.REJECTED,
             decided_by=AUTHOR,
         )
 
 
-async def test_deciding_a_finding_that_is_not_there_says_which_are(
+async def test_deciding_a_finding_that_is_not_there_is_refused(
     harness: Harness,
 ) -> None:
-    """A ref that does not resolve is a caller's typo, and the answer is the list."""
+    """An id that does not resolve names nothing, and says so rather than guessing."""
     from groundscribe.app.services import UnknownFinding
     from groundscribe.domain.enums import FindingStatus
 
     _, article_id = await reviewed_article(harness)
 
-    with pytest.raises(UnknownFinding, match="it has:"):
+    with pytest.raises(UnknownFinding):
         harness.service.decide_finding(
-            article_id, ref="SR-999", decision=FindingStatus.ACCEPTED, decided_by=AUTHOR
+            article_id,
+            finding_id="not-a-finding",
+            decision=FindingStatus.ACCEPTED,
+            decided_by=AUTHOR,
+        )
+
+
+async def test_a_finding_can_be_decided_after_the_article_has_moved_on(
+    harness: Harness,
+) -> None:
+    """The review is on the version it read, and that is rarely the newest one.
+
+    Every rewrite and every voice pass produces a version no review has seen. So
+    resolving a finding by walking to the article's newest version and asking for
+    *its* review fails with "has not been reviewed" — while the finding sits on
+    the screen that offered the button.
+
+    Observed the first time anybody pressed Accept: the article had a v8 from a
+    rewrite, the findings were on v7, and the command looked in the wrong place.
+    A finding is addressed by its own id for this reason, and refs would not have
+    fixed it — they restart at one each round.
+    """
+    from groundscribe.domain import models as models_
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    finding = review.issues[0]
+
+    # A newer version, as a rewrite or a voice pass would leave behind: nothing
+    # has reviewed it.
+    harness.runtime.session.add(
+        models_.ArticleVersion(
+            id="later-version",
+            article_id=article_id,
+            ordinal=version.ordinal + 1,
+            snapshot_id=version.snapshot_id,
+            created_by_execution_id=version.created_by_execution_id,
+            parent_id=version.id,
+        )
+    )
+    harness.runtime.session.flush()
+
+    harness.service.decide_finding(
+        article_id,
+        finding_id=finding.id,
+        decision=FindingStatus.ACCEPTED,
+        decided_by=AUTHOR,
+    )
+
+    assert finding.status is FindingStatus.ACCEPTED
+
+
+async def test_a_finding_cannot_be_decided_through_another_article(
+    harness: Harness,
+) -> None:
+    """The article in the path is checked, not decoration.
+
+    Approval opens an article per concept, so there is always more than one id
+    that could be put there.
+    """
+    from groundscribe.app.services import UnknownFinding
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    other = harness.runtime.session.scalars(
+        select(domain_models.Article).where(domain_models.Article.id != article_id)
+    ).first()
+    assert other is not None
+
+    with pytest.raises(UnknownFinding):
+        harness.service.decide_finding(
+            other.id,
+            finding_id=review.issues[0].id,
+            decision=FindingStatus.ACCEPTED,
+            decided_by=AUTHOR,
         )
 
 

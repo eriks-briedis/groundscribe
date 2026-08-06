@@ -563,7 +563,7 @@ export const reviewHistory: ReviewHistory = {
           decide_command: {
             action: 'decide_finding',
             method: 'POST',
-            path: '/articles/art-1/findings/i1',
+            path: '/articles/art-1/findings/i2',
             requires_actor: true,
             taken_by: 'you',
           },

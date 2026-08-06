@@ -1607,11 +1607,11 @@ def _finding_view(issue: domain_models.ReviewIssue, *, article_id: str = "") -> 
         ActionLink(
             action="decide_finding",
             method="POST",
-            path=f"/articles/{article_id}/findings/{issue.ref}",
+            path=f"/articles/{article_id}/findings/{issue.id}",
             requires_actor=True,
             taken_by="you",
         )
-        if article_id and issue.ref and issue.status is FindingStatus.PROPOSED
+        if article_id and issue.status is FindingStatus.PROPOSED
         else None
     )
     return FindingView(

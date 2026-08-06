@@ -509,7 +509,7 @@ describe('deciding a review finding', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^accept$/i }));
 
     expect(backend.commands[0]).toMatchObject({
-      path: '/articles/art-1/findings/i1',
+      path: '/articles/art-1/findings/i2',
       body: { actor_id: 'ada', decision: 'accepted' },
     });
   });
@@ -532,7 +532,7 @@ describe('deciding a review finding', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^reject$/i }));
 
     expect(backend.commands[0]).toMatchObject({
-      path: '/articles/art-1/findings/i1',
+      path: '/articles/art-1/findings/i2',
       body: { decision: 'rejected', reason: 'the brief asks for it' },
     });
   });
