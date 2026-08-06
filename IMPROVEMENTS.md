@@ -174,7 +174,32 @@ tests could reach. Both of those turned out to matter more than they looked.
 
 ---
 
-## 7. A Prettier configuration
+## 7. The most dangerous controls should not be the ones styled to be pressed
+
+**Status:** open. **Found:** phase 16, looking at a run in progress. **Cost:** a
+distinction in the action bar. **Risk:** none.
+
+Observed on a project whose architecture proposal was still being generated. The
+action bar offered six controls, and the two rendered as primary buttons were
+`Abandon proposal` and `Cancel` — the only two that destroy something. Everything
+safe was greyed out, because it belonged to the pipeline.
+
+That is the styling rule working exactly as written and producing the opposite
+of what it is for. `ActionBar` renders `taken_by === 'you'` as primary, which is
+a good rule when a person's action is the one thing the run is waiting for, and
+a bad one when a person's only available actions are the ways to stop it.
+
+An action bar wants three weights, not two: what the run is waiting for you to
+do, what you *may* do, and what ends the run. Cancelling should never look like
+the next step, and it currently looks exactly like it.
+
+Related to `KNOWN-ISSUES.md` §7, which is why `Abandon proposal` was offered
+there at all — but separate from it. Even with that fixed, `Cancel` alone would
+still be the only primary button on the screen for most of a run.
+
+---
+
+## 8. A Prettier configuration
 
 **Status:** open. **Cost:** one file. **Risk:** none.
 

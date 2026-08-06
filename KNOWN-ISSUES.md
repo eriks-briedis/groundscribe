@@ -234,6 +234,116 @@ urgent now that nothing depends on the column for ordering.
 
 ---
 
+## 7. An action the table permits is offered without asking whether it can work
+
+**Status:** open, two instances fixed and the class unfixed. **Found:** phase 16,
+by pressing the buttons. **Severity:** medium — every instance is a control that
+either errors or does damage, and the interface presents them as ordinary.
+
+`available_actions` comes from the transition table, which knows which edges are
+*legal* from a state and nothing about whether the run has what the edge needs.
+The interface renders that list. So an action is offered whenever the machine
+would permit it, which is not the same question as whether it can succeed.
+
+Three instances, all real:
+
+- **`approve_revision_plan` before a plan exists.** `revision_plan_required`
+  means "a plan is expected here", so the approval edge is legal from the moment
+  the run arrives. Approving nothing moved the run to `substantive_rewriting`,
+  where the rewrite failed for want of the plan it had been told was approved.
+  *Fixed* — the command refuses and names the undecided findings.
+- **`decide_finding` on a finding already decided.** *Fixed* — the link is
+  withheld once the ledger holds a decision.
+- **`abandon_proposal` on a run with no approved architecture.** Offered as a
+  primary button while a first proposal is still being generated. Clicking it
+  discards work in flight, and the command then refuses it anyway, because there
+  is nothing to fall back to. *Open.*
+
+The two fixes are both guards in the service. That stops the damage and leaves
+the button, so a person still presses something that answers with an error. The
+class needs the *link* withheld the way `decide_finding`'s now is: the read knows
+what the run has produced, and it is the only layer that knows both that and
+what the table permits.
+
+**Where:** `backend/src/groundscribe/app/actions.py` (`ACTION_ENDPOINTS`),
+`backend/src/groundscribe/app/reads.py` (`_action_links`).
+
+---
+
+## 8. "Questions waiting for you" counts gaps nobody was asked
+
+**Status:** open on the dashboard; fixed on the question queue. **Found:** phase
+16, on a live run. **Severity:** low, and persistently confusing.
+
+Extraction finds more gaps than it asks about: the policy caps how many are
+*surfaced* per round, and records the rest so the run proceeds knowing what it
+does not know. The dashboard's link counts every unresolved gap and labels them
+"waiting for you".
+
+Observed with the run parked in `architecture_proposing` — nothing waiting on
+anybody — offering "9 questions waiting for you", where the true count of
+surfaced, unresolved questions was zero. Reproduced:
+
+```
+gaps total: 18   surfaced: 1   resolved: 9   surfaced and unresolved: 0
+```
+
+The question queue screen was fixed to group asked, answered and merely-noticed
+separately. The dashboard count was not, and it is the one a person sees first.
+
+**Where:** `backend/src/groundscribe/app/reads.py` (`dashboard`, the `questions`
+list and `source.unresolved_questions`).
+
+---
+
+## 9. The suite's own CI job has been red on `main`
+
+**Status:** open. **Found:** phase 16, while pushing. **Severity:** high — not
+because the test matters, but because a permanently red gate is not a gate.
+
+`test_trace_storage.py::test_the_report_and_the_cost_are_both_reachable` asserts
+`--report` appears in the CLI's help output. In CI the help renders without it,
+so the job that runs the test suite fails on every push. It has been failing on
+`main` for some time.
+
+It passes locally at 80 and at 200 columns, so terminal width is not the cause;
+the likely difference is that CI has no TTY and the help panel renders
+differently. The assertion reads a rendered Rich panel rather than asking the
+CLI what options it defines.
+
+Two other jobs are also red — `compose · builds and comes up` and `parity ·
+postgres`, both on `tests/test_deployment.py`, where the containerised API never
+answers `/health` within 240s. Those are deployment issues; this one is not, and
+it is the one that makes every other result unreadable, because a suite that is
+always red cannot tell anyone that something broke.
+
+**Where:** `backend/tests/test_trace_storage.py`.
+
+---
+
+## 10. A project's constraints are read with two different orderings
+
+**Status:** open, latent. **Found:** phase 16, reading the code. **Severity:**
+low today, medium the moment constraints branch.
+
+`rehydrate.constraints_row` takes the *first* row by `id` ascending;
+`advance.auto_advance_enabled` takes the *first* by `id` descending. The ids are
+uuid4 hex, so neither ordering means anything, and the two disagree.
+
+With one constraints row per project — which is every project today — both
+return the same row and nothing is wrong. The moment a project has two, "what
+are this project's constraints" and "is auto-advance on for this project" can be
+answered from different rows, and nothing would look wrong from either side.
+
+Constraints are meant to be versioned rather than edited, so a second row is a
+designed-for state, not a corruption. `IMPROVEMENTS.md` §1 would add a reason to
+create one.
+
+**Where:** `backend/src/groundscribe/app/rehydrate.py` (`constraints_row`),
+`backend/src/groundscribe/app/advance.py` (`auto_advance_enabled`).
+
+---
+
 ## Not issues, recorded so they are not rediscovered as bugs
 
 - **`writer worker run` drains the queue once and exits.** Deliberate (a crash
