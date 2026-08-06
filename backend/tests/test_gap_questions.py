@@ -461,7 +461,7 @@ async def test_answers_rebuild_the_source_model_with_a_visible_linked_diff(
     # The answer's text reached the prompt; it is what the rebuild is for.
     sent = model_client.last_request
     assert sent is not None
-    assert "690ms" in sent.prompt
+    assert "690ms" in sent.user_text()
 
 
 async def test_the_rebuilt_model_supersedes_its_parent_rather_than_replacing_it(

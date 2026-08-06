@@ -190,7 +190,7 @@ async def test_the_flagged_text_never_crosses_the_wire(
 
     sent = model_client.last_request
     assert sent is not None
-    assert SECRET not in sent.prompt
+    assert SECRET not in sent.user_text()
     assert all(SECRET not in message.content for message in sent.messages)
 
     execution = result.execution

@@ -230,7 +230,7 @@ async def test_the_prompt_says_how_firmly_each_instruction_binds(
     request = drafted.model_client.last_request
     assert request is not None
 
-    rendered = request.prompt
+    rendered = request.user_text()
 
     assert "RULES. Never violated." in rendered
     assert "TENDENCIES." in rendered

@@ -556,10 +556,18 @@ class StructuredGenerator:
         runtime: RuntimeConfig,
         tools: tuple[ToolDefinition, ...],
     ) -> LLMRequest:
-        """The live request. Unredacted on purpose — redaction is a *storage* rule."""
+        """The live request. Unredacted on purpose — redaction is a *storage* rule.
+
+        ``prompt`` is deliberately not set. ``request.messages`` already ends with
+        the user message built from ``rendered_prompt``, and every adapter sends
+        the messages *and then* appends ``prompt`` — so setting both put the whole
+        body on the wire twice. The effective request still records
+        ``rendered_prompt`` beside the messages, because provenance wants the body
+        in the form the template produced it; it is the wire payload that must
+        carry it once.
+        """
         return LLMRequest(
             call_key=stage,
-            prompt=request.rendered_prompt,
             schema_name=schema.__name__,
             messages=tuple(request.messages),
             tools=tools,

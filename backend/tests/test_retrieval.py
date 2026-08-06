@@ -232,7 +232,9 @@ async def test_a_retrieved_run_records_every_segment_and_which_strategy_ran(
     sent = model_client.last_request
     assert sent is not None
     for item in selection.items:
-        assert (item.reference in sent.prompt) is (item.disposition is ContextDisposition.SELECTED)
+        assert (item.reference in sent.user_text()) is (
+            item.disposition is ContextDisposition.SELECTED
+        )
 
 
 async def test_extraction_still_reads_the_source_in_order_unless_asked_otherwise(

@@ -155,6 +155,20 @@ class LLMRequest(BaseModel):
     looks up its scripted outcomes by it; real adapters may attach it as request
     metadata. It is not part of the effective request, because it says nothing
     about what the model was asked.
+
+    ``prompt`` and ``messages`` are two spellings of the same thing and a request
+    carries **one** of them. Every adapter sends ``messages`` and then appends
+    ``prompt``, so a request setting both sends its body twice — which is exactly
+    what the pipeline did until the ratio of stored characters to billed tokens
+    gave it away: 1.74 chars per token on a `score_article` call whose body was
+    ordinary English and JSON, against the ~3.4 the same text tokenizes to when
+    sent once. Roughly half of every input token in the system bought a duplicate
+    of a string already in the request.
+
+    Stages render a prompt into ``messages`` (:class:`RenderedPrompt` builds the
+    user message from the same body); ``prompt`` survives for callers that have no
+    conversation to build, which today is :mod:`groundscribe.llm.probe`. Read
+    either through :meth:`user_text`.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -167,6 +181,19 @@ class LLMRequest(BaseModel):
     tools: tuple[ToolDefinition, ...] = ()
     output_schema: dict[str, Any] | None = None
     runtime: RuntimeConfig | None = None
+
+    def user_text(self) -> str:
+        """What the model was actually asked, whichever spelling carried it.
+
+        The last user message, or ``prompt`` when there is no conversation. This
+        is the accessor to assert against: a test reading ``prompt`` directly
+        passes only while the duplicate exists, which is how the doubling above
+        survived as an assertion of correctness.
+        """
+        for message in reversed(self.messages):
+            if str(message.role) == "user":
+                return message.content
+        return self.prompt
 
 
 class LLMResponse(BaseModel):

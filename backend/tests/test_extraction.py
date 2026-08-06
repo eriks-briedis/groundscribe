@@ -204,9 +204,9 @@ async def test_a_source_over_the_budget_is_truncated_and_the_record_says_so(
     sent = model_client.last_request
     assert sent is not None
     kept = [i for i in selection.items if i.disposition is not ContextDisposition.EXCLUDED]
-    assert all(item.reference in sent.prompt for item in kept)
+    assert all(item.reference in sent.user_text() for item in kept)
     assert all(
-        item.reference not in sent.prompt
+        item.reference not in sent.user_text()
         for item in selection.items
         if item.disposition is ContextDisposition.EXCLUDED
     )

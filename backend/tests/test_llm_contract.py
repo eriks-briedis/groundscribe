@@ -31,6 +31,8 @@ from generation_helpers import (
 )
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.llm import LLMClient
+from groundscribe.llm.adapters.ollama import _messages as ollama_messages
+from groundscribe.llm.adapters.openai import _messages as openai_messages
 from groundscribe.llm.generation import GenerationError, StructuredGenerator
 from groundscribe.llm.routing import RouteOverride
 from groundscribe.provenance import models, queries
@@ -197,10 +199,44 @@ async def test_the_client_receives_the_rendered_prompt_and_message_sequence(
 
     sent = client.last_request  # type: ignore[attr-defined]
     assert sent is not None
-    assert "p99 fell" in sent.prompt
+    assert "p99 fell" in sent.user_text()
     assert [m.role for m in sent.messages] == ["system", "user"]
     assert sent.schema_name == "ClaimVerdict"
     assert sent.output_schema is not None
+    # The body travels once. Adapters send ``messages`` and then append
+    # ``prompt``, so a request carrying both puts the whole prompt on the wire
+    # twice — which this assertion used to require, by reading ``sent.prompt``.
+    assert sent.prompt == ""
+
+
+async def test_the_prompt_body_is_sent_exactly_once(
+    generator: StructuredGenerator,
+    execution: tuple[ProvenanceRecorder, models.StageExecution],
+    client: LLMClient,
+) -> None:
+    """Assert on the payload an adapter builds, not on the request object.
+
+    The doubling was invisible from the request — both fields held a legitimate
+    copy of the body, and each looked correct alone. It is only visible where the
+    two are combined, which is where every adapter combines them.
+    """
+    _, stage_execution = execution
+    client.script_response("extract_claims", VALID_OUTPUT)  # type: ignore[attr-defined]
+
+    await generator.generate(
+        stage_execution,
+        stage="extract_claims",
+        template_id="extract_claims",
+        variables=VARIABLES,
+        schema=ClaimVerdict,
+        template_version="v1",
+    )
+
+    sent = client.last_request  # type: ignore[attr-defined]
+    assert sent is not None
+    for payload in (openai_messages(sent), ollama_messages(sent)):
+        bodies = [message for message in payload if "p99 fell" in message["content"]]
+        assert len(bodies) == 1, f"the prompt body appears {len(bodies)} times on the wire"
 
 
 async def test_each_stage_resolves_to_its_configured_model(
