@@ -35,6 +35,7 @@ from groundscribe.app.rehydrate import MissingInput
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.services import (
     NothingToAbandon,
+    NothingToApprove,
     NothingToRetry,
     NothingToRevise,
     UndecidableFinding,
@@ -103,6 +104,11 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     # fall back to. 409 for the same reason again, and the message names the
     # command that does work there.
     (NothingToAbandon, 409),
+    # Asked to approve a plan that has not been written. 409: the run exists and
+    # the request is fine; what makes it unanswerable is what the run has
+    # produced — `revision_plan_required` offers the edge from the moment it is
+    # entered, which is before the plan exists.
+    (NothingToApprove, 409),
     # Asked to decide a finding this review does not hold, or to set one to a
     # status a person does not choose.
     (UnknownFinding, 404),

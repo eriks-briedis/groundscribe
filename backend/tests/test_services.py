@@ -860,3 +860,30 @@ async def test_an_untouched_review_does_not_auto_start_the_plan(harness: Harness
 
     assert not startable(plan_step, Have(triaged_review=False))
     assert startable(plan_step, Have(triaged_review=True))
+
+
+async def test_approving_a_plan_that_was_never_written_is_refused(
+    harness: Harness,
+) -> None:
+    """``revision_plan_required`` offers the edge before there is anything to take it.
+
+    The state means "a plan is expected here": the pipeline writes one *into* it
+    and a person approves it, so the approval is legal from the moment the run
+    arrives. Approving nothing used to move the run to ``substantive_rewriting``
+    anyway, where the rewrite failed for want of the plan it had been told was
+    approved — two steps and one model call after the click that lost it.
+
+    Observed on a real run, whose findings were all still undecided, which is why
+    the refusal names them.
+    """
+    from groundscribe.app.services import NothingToApprove
+
+    _, article_id = await reviewed_article(harness)
+    project_id = harness.service.project_for_article(article_id)
+    resumed = harness.service._resume(project_id)
+    assert resumed.engine.state is S.REVISION_PLAN_REQUIRED
+
+    with pytest.raises(NothingToApprove, match="decide its findings first"):
+        harness.service.approve_revision_plan(article_id, approved_by=AUTHOR)
+
+    assert harness.service.project_state(project_id).state is S.REVISION_PLAN_REQUIRED

@@ -23,6 +23,7 @@ import { ActionBar, PendingCommand } from '@/components/ActionBar';
 import { DiffViewer } from '@/components/DiffViewer';
 import { Disclosure, Payload } from '@/components/Disclosure';
 import { Export } from '@/components/Export';
+import { FindingDecision } from '@/components/FindingDecision';
 import { LineageGraph } from '@/components/LineageGraph';
 import { Markdown } from '@/components/Markdown';
 import { Rerun } from '@/components/Rerun';
@@ -46,8 +47,14 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
 
   return (
     <Loaded resource={resource}>
-      {(workspace) => (
-        <section className="screen screen--article">
+      {(workspace) => {
+        // Findings still waiting on a decision. A finding only reaches a
+        // revision plan once it is accepted, so an undecided one is what the
+        // run is parked behind — which belongs on this screen rather than in a
+        // panel a person has to go looking for.
+        const undecided = (workspace.findings ?? []).filter((finding) => finding.decide_command);
+        return (
+          <section className="screen screen--article">
           <header className="screen__header">
             <h1>{workspace.article.title}</h1>
             <p className="state" data-testid="run-state">
@@ -126,6 +133,12 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
 
           <section className="panel">
             <h2>Findings</h2>
+            {undecided.length ? (
+              <p className="stranded__note" data-testid="undecided">
+                {undecided.length} {undecided.length === 1 ? 'finding needs' : 'findings need'} your
+                decision before a revision can be planned.
+              </p>
+            ) : null}
             <ul className="findings">
               {(workspace.findings ?? []).map((finding) => (
                 <li key={finding.id} data-testid={`finding-${finding.id}`} className="card">
@@ -139,6 +152,16 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
                   {finding.evidence ? <p>{finding.evidence}</p> : null}
                   {finding.recommended_correction ? (
                     <p className="muted">suggested: {finding.recommended_correction}</p>
+                  ) : null}
+                  {/* Decided here as well as on the review history, because this
+                      is the screen a person is on when the run is waiting for it. */}
+                  {finding.decide_command ? (
+                    <FindingDecision
+                      command={finding.decide_command}
+                      actor={actor}
+                      suggestedCorrection={finding.recommended_correction ?? ''}
+                      onDecided={resource.reload}
+                    />
                   ) : null}
                 </li>
               ))}
@@ -210,8 +233,9 @@ export function ArticleWorkspaceScreen({ articleId, actor }: ArticleWorkspaceScr
 
           <RouteRevision workspace={workspace} actor={actor} onDone={resource.reload} />
           <ContinueToNext workspace={workspace} actor={actor} onDone={resource.reload} />
-        </section>
-      )}
+          </section>
+        );
+      }}
     </Loaded>
   );
 }

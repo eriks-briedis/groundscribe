@@ -122,6 +122,16 @@ class NothingToRevise(LookupError):
     """
 
 
+class NothingToApprove(LookupError):
+    """Asked to approve a revision plan that has not been written.
+
+    Its own type because the state legitimately offers the edge: a run arrives in
+    ``revision_plan_required`` before the plan exists, so "you may approve here"
+    and "there is something to approve" are different questions and only the
+    first is the transition table's.
+    """
+
+
 class UnknownFinding(LookupError):
     """Asked to decide a finding this review does not hold."""
 
@@ -697,7 +707,38 @@ class ApplicationService:
         return self._enqueue_for_article(article_id, JobType.PLAN_REVISION)
 
     def approve_revision_plan(self, article_id: str, *, approved_by: str) -> CommandResult:
-        """Authorise the rewrite the plan describes."""
+        """Authorise the rewrite the plan describes.
+
+        Refused when there is no plan to describe it. ``revision_plan_required``
+        means "a plan is expected here", not "a plan is here": the pipeline
+        writes one *into* this state, so the approval edge is legal from the
+        moment the run arrives and long before there is anything to approve.
+
+        Approving nothing used to move the run to ``substantive_rewriting``
+        anyway, where the rewrite failed for want of the plan it was told had
+        been approved. Observed on a real run, and the message it produced —
+        "review d263be31 has no revision plan" — named the missing artefact two
+        steps after the click that lost it.
+
+        The message says what to do instead, because the usual reason a plan is
+        missing is that nobody has been through the findings yet.
+        """
+        session = self._runtime.session
+        version = rehydrate.latest_version(session, article_id)
+        review = rehydrate.latest_review(session, version.id)
+        if not self._revision_plan_exists(article_id):
+            undecided = [
+                issue.ref for issue in review.issues if issue.status is FindingStatus.PROPOSED
+            ]
+            raise NothingToApprove(
+                f"there is no revision plan for review {review.id} to approve"
+                + (
+                    f"; decide its findings first ({', '.join(sorted(undecided))}) "
+                    "and the plan will be written from the ones you accept"
+                    if undecided
+                    else " — plan the revision first"
+                )
+            )
         return self._act(
             self.project_for_article(article_id), A.APPROVE_REVISION_PLAN, actor_id=approved_by
         )
