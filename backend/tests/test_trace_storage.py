@@ -28,9 +28,8 @@ a person.
 
 from __future__ import annotations
 
-import pytest
+import typer.main
 from sqlalchemy.orm import Session
-from typer.testing import CliRunner
 
 from groundscribe.cli import main as cli
 from groundscribe.privacy.storage import storage_report
@@ -42,11 +41,6 @@ from groundscribe.storage.snapshot_store import SnapshotStore
 from provenance_helpers import make_recorder, seed_project
 
 PROMPT = "Summarise the March cache postmortem for a senior audience."
-
-
-@pytest.fixture
-def cli_runner() -> CliRunner:
-    return CliRunner()
 
 
 def _record(recorder: ProvenanceRecorder, project_id: str, *, prompt: str = PROMPT) -> None:
@@ -196,20 +190,23 @@ def test_a_full_report_says_that_it_is_not_sanitised(
     assert "not sanitised" in report
 
 
-def test_the_report_and_the_cost_are_both_reachable(cli_runner: CliRunner) -> None:
+def test_the_report_and_the_cost_are_both_reachable() -> None:
     """Built and unreachable is the defect phase 12 had to record (KNOWN-ISSUES §4).
 
     A storage figure nobody can ask for cannot inform a retention decision, and
     a report nobody can render is a rendering nobody uses.
+
+    Asked of the command rather than of its help text. Reading the rendered help
+    made this a test of Rich: the option name has to survive whatever width the
+    renderer believes it has, and pinning ``COLUMNS`` did not settle it — it went
+    on passing locally at every width and failing in CI, where the panel came
+    back styled and without the name in it. What the test is actually for is
+    whether the option *exists*, which the command knows and no renderer is
+    needed to answer.
     """
-    # Width pinned, because Rich wraps help text to the terminal it thinks it has
-    # and an option name is the first thing a narrow one breaks across lines.
-    # Unpinned, this passed on a developer's terminal and failed in CI, which
-    # makes it a test of the window rather than of the command.
-    wide = {"COLUMNS": "200"}
+    command = typer.main.get_command(cli.app)
+    privacy = command.commands["privacy"]  # type: ignore[attr-defined]
+    traces = privacy.commands["traces"]
 
-    privacy = cli_runner.invoke(cli.app, ["privacy", "--help"], env=wide).output
-    assert "report" in privacy
-
-    traces = cli_runner.invoke(cli.app, ["privacy", "traces", "--help"], env=wide).output
-    assert "--report" in traces
+    assert "report" in privacy.commands
+    assert "--report" in {option for param in traces.params for option in param.opts}

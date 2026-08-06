@@ -48,6 +48,7 @@ from groundscribe.experiments.runs import IncomparableExperiment, UnknownArm
 from groundscribe.llm.routing import RoutingConfigError
 from groundscribe.privacy.export import ExportIntegrityError
 from groundscribe.privacy.traces import ConfidentialExportRefused
+from groundscribe.stages.errors import OverrideRejected
 from groundscribe.workflow.errors import (
     ArtifactProvenanceError,
     AttributionRequired,
@@ -87,6 +88,11 @@ _STATUS_FOR: tuple[tuple[type[Exception], int], ...] = (
     (ArtifactProvenanceError, 409),
     # The request itself is unusable: nobody is accountable for the action.
     (AttributionRequired, 422),
+    # An architecture edit naming something the proposal does not contain, or
+    # malformed for the operation it asked for. 422 because the payload is what
+    # is wrong, and the message already says which id was not found — raised
+    # untyped it reached a person as "500", which says nothing they can act on.
+    (OverrideRejected, 422),
     # Or it named a destination the routing policy does not permit for that
     # failure. 422 rather than 409: the run's state is fine and the *request* is
     # what cannot be honoured — a factual failure is corrected against source

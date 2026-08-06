@@ -301,7 +301,7 @@ export const architecture: ArchitectureBoard = {
       parent_id: null,
       created_by_execution_id: 'e3',
       concepts: [
-        { id: ARTICLE_ID, title: 'Read-through caching', angle: 'practitioner', thesis: 'Caching bought the latency.', ordinal: 0 },
+        { id: ARTICLE_ID, ref: 'a1', title: 'Read-through caching', angle: 'practitioner', thesis: 'Caching bought the latency.', ordinal: 0 },
       ],
     },
     {
@@ -312,8 +312,8 @@ export const architecture: ArchitectureBoard = {
       parent_id: 'arch-1',
       created_by_execution_id: 'e4',
       concepts: [
-        { id: ARTICLE_ID, title: 'Read-through caching', angle: 'practitioner', thesis: 'Caching bought the latency.', ordinal: 0 },
-        { id: 'a2', title: 'Invalidation', angle: 'practitioner', thesis: 'Invalidation is the hard half.', ordinal: 1 },
+        { id: ARTICLE_ID, ref: 'a1', title: 'Read-through caching', angle: 'practitioner', thesis: 'Caching bought the latency.', ordinal: 0 },
+        { id: 'article-a2', ref: 'a2', title: 'Invalidation', angle: 'practitioner', thesis: 'Invalidation is the hard half.', ordinal: 1 },
       ],
     },
   ],

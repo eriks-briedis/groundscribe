@@ -1135,6 +1135,7 @@
         "type": "object"
       },
       "ConceptView": {
+        "description": "One proposed article, by both the names it has.\n\n``id`` addresses the article row \u2014 it is what a link to the workspace uses.\n``ref`` is the label the *proposal* gave it, ``A3``, and it is what an\narchitecture edit names, because an override is applied to the proposal\ndocument rather than to the rows opened from it.\n\nBoth are published because a screen needs both and cannot derive one from\nthe other. Sending the wrong one is not a mistake the author can see: the\nids look equally opaque, and the refusal arrives from a stage two layers\ndown naming an id nothing on screen displayed.",
         "properties": {
           "angle": {
             "default": "",
@@ -1149,6 +1150,11 @@
             "default": 0,
             "title": "Ordinal",
             "type": "integer"
+          },
+          "ref": {
+            "default": "",
+            "title": "Ref",
+            "type": "string"
           },
           "thesis": {
             "default": "",

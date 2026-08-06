@@ -34,6 +34,7 @@ from groundscribe.llm import FakeLLMClient
 from groundscribe.provenance.enums import ActorType, InterventionType
 from groundscribe.stages.architecture import ArchitectureOutcome
 from groundscribe.stages.base import PipelineContext, StageResult
+from groundscribe.stages.errors import OverrideRejected
 from groundscribe.stages.override import (
     ArchitectureOverride,
     OverrideCommand,
@@ -44,7 +45,7 @@ from groundscribe.stages.override import (
 )
 from groundscribe.stages.schemas import ArchitectureProposal, RiskLevel
 from groundscribe.storage.snapshot_store import SnapshotStore
-from groundscribe.workflow.errors import SilentMutationError
+from groundscribe.workflow.errors import AttributionRequired, SilentMutationError
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from stage_helpers import scripted_context
 from test_architecture import propose
@@ -176,7 +177,7 @@ def test_reorder_rename_edit_thesis_and_reassign_evidence() -> None:
 
 def test_an_operation_naming_an_unknown_article_is_refused() -> None:
     """An override that edits nothing is a mistake, not a no-op."""
-    with pytest.raises(ValueError, match="a9"):
+    with pytest.raises(OverrideRejected, match="a9"):
         apply_overrides(
             golden_proposal(),
             (OverrideCommand(operation=OverrideOperation.REMOVE, article_ids=("a9",)),),
@@ -185,7 +186,7 @@ def test_an_operation_naming_an_unknown_article_is_refused() -> None:
 
 def test_removing_every_article_is_refused() -> None:
     """There is no architecture with no articles; that is a cancellation."""
-    with pytest.raises(ValueError, match="at least one article"):
+    with pytest.raises(OverrideRejected, match="at least one article"):
         apply_overrides(
             golden_proposal(),
             (OverrideCommand(operation=OverrideOperation.REMOVE, article_ids=("a1", "a2")),),
@@ -305,7 +306,7 @@ async def test_an_anonymous_override_is_refused(
     """An override nobody is accountable for cannot be reviewed (plan/03)."""
     context, _, proposed = await approved(db_session, snapshot_store)
 
-    with pytest.raises(ValueError, match="requested_by"):
+    with pytest.raises(AttributionRequired, match="requested_by"):
         override_architecture(
             context,
             architecture=proposed.value.architecture,
@@ -357,7 +358,7 @@ def test_the_seven_operations_are_exactly_what_the_spec_names() -> None:
 
 def test_a_split_that_leaves_an_article_without_claims_is_refused() -> None:
     """Every article argues something; a split that empties one has lost material."""
-    with pytest.raises(ValueError, match="claims"):
+    with pytest.raises(OverrideRejected, match="claims"):
         apply_overrides(
             golden_proposal(),
             (
@@ -417,7 +418,7 @@ async def test_an_anonymous_approval_is_refused(
     context, model_client = scripted_context(db_session, snapshot_store)
     proposed = await propose(context, model_client)
 
-    with pytest.raises(ValueError, match="approved_by"):
+    with pytest.raises(AttributionRequired, match="approved_by"):
         approve_architecture(
             context,
             architecture=proposed.value.architecture,

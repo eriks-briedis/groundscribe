@@ -1940,7 +1940,20 @@ export interface components {
             /** Same */
             same: boolean;
         };
-        /** ConceptView */
+        /**
+         * ConceptView
+         * @description One proposed article, by both the names it has.
+         *
+         *     ``id`` addresses the article row — it is what a link to the workspace uses.
+         *     ``ref`` is the label the *proposal* gave it, ``A3``, and it is what an
+         *     architecture edit names, because an override is applied to the proposal
+         *     document rather than to the rows opened from it.
+         *
+         *     Both are published because a screen needs both and cannot derive one from
+         *     the other. Sending the wrong one is not a mistake the author can see: the
+         *     ids look equally opaque, and the refusal arrives from a stage two layers
+         *     down naming an id nothing on screen displayed.
+         */
         ConceptView: {
             /**
              * Angle
@@ -1954,6 +1967,11 @@ export interface components {
              * @default 0
              */
             ordinal: number;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
             /**
              * Thesis
              * @default

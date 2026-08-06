@@ -322,7 +322,7 @@ describe('the architecture board', () => {
     const card = await screen.findByTestId('concept-a1');
     expect(card).toHaveTextContent('Read-through caching');
     expect(card).toHaveTextContent('Caching bought the latency.');
-    expect(screen.getByTestId('concept-a2')).toHaveTextContent('Invalidation is the hard half.');
+    expect(screen.getByTestId('concept-article-a2')).toHaveTextContent('Invalidation is the hard half.');
   });
 
   it('says which version is in force and who locked it', async () => {

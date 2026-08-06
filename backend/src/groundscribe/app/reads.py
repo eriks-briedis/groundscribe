@@ -400,6 +400,7 @@ class ProjectionReader:
                     concepts=[
                         ConceptView(
                             id=concept.id,
+                            ref=concept.ref,
                             title=concept.title,
                             angle=concept.angle,
                             thesis=concept.thesis,

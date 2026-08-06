@@ -18,6 +18,7 @@ import pytest
 from golden import golden_json
 from groundscribe.domain.enums import ClaimClassification, GapPriority
 from groundscribe.stages.diffing import ChangeKind, StructuredDiff, structured_diff
+from groundscribe.stages.errors import OverrideRejected
 from groundscribe.stages.override import (
     OverrideCommand,
     OverrideOperation,
@@ -163,7 +164,7 @@ def test_an_incoherent_override_is_refused_before_anything_is_written(
     command: OverrideCommand, message: str
 ) -> None:
     """``apply_overrides`` is pure, so every one of these fails with nothing persisted."""
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(OverrideRejected, match=message):
         apply_overrides(_proposal(), (command,))
 
 

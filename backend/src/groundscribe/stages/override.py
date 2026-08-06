@@ -41,8 +41,10 @@ from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, InterventionType
 from groundscribe.stages.base import PipelineContext
 from groundscribe.stages.diffing import structured_diff
+from groundscribe.stages.errors import OverrideRejected
 from groundscribe.stages.schemas import ArchitectureProposal, ProposedArticle, RiskLevel
 from groundscribe.workflow.engine import Override
+from groundscribe.workflow.errors import AttributionRequired
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
 
 #: The stage name an override is recorded under.
@@ -134,7 +136,7 @@ def apply_overrides(
         warnings.extend(produced)
 
     if not articles:
-        raise ValueError(
+        raise OverrideRejected(
             "an architecture needs at least one article; removing them all is a "
             "cancellation, not an override"
         )
@@ -150,7 +152,7 @@ def _apply(
     referenced = {*command.article_ids, *command.order}
     unknown = sorted(referenced - known)
     if unknown:
-        raise ValueError(
+        raise OverrideRejected(
             f"override {command.operation.value} names {', '.join(unknown)}, which "
             f"{'is' if len(unknown) == 1 else 'are'} not in the architecture; an override "
             "that edits nothing is a mistake, not a no-op"
@@ -165,7 +167,7 @@ def _merge(
     """Fold several articles into the first named one."""
     targets = [article for article in articles if article.id in command.article_ids]
     if len(targets) < 2:
-        raise ValueError("a merge needs at least two articles to merge")
+        raise OverrideRejected("a merge needs at least two articles to merge")
 
     head, *rest = targets
     claims = list(head.supporting_claim_ids)
@@ -207,7 +209,7 @@ def _split(
 ) -> tuple[list[ProposedArticle], list[OverrideWarning]]:
     """Divide one article into two, sharing its claims between them."""
     if len(command.new_ids) != 2 or len(command.titles) != 2:
-        raise ValueError("a split names exactly two new ids and two titles")
+        raise OverrideRejected("a split names exactly two new ids and two titles")
 
     (target,) = [article for article in articles if article.id in command.article_ids]
     first_claims = tuple(command.claim_ids)
@@ -215,7 +217,7 @@ def _split(
         claim_id for claim_id in target.supporting_claim_ids if claim_id not in first_claims
     )
     if not first_claims or not second_claims:
-        raise ValueError(
+        raise OverrideRejected(
             "a split must leave both articles with claims; one of them would argue nothing, "
             "which loses the material rather than dividing it"
         )
@@ -288,7 +290,7 @@ def _reorder(
 ) -> tuple[list[ProposedArticle], list[OverrideWarning]]:
     """Put the articles in the author's order."""
     if set(command.order) != {article.id for article in articles}:
-        raise ValueError("a reorder must list every article exactly once")
+        raise OverrideRejected("a reorder must list every article exactly once")
     by_id = {article.id: article for article in articles}
     return [by_id[article_id] for article_id in command.order], []
 
@@ -325,7 +327,7 @@ def _reassign_evidence(
 ) -> tuple[list[ProposedArticle], list[OverrideWarning]]:
     """Point an article at a different set of claims."""
     if not command.claim_ids:
-        raise ValueError("reassigning evidence needs at least one claim")
+        raise OverrideRejected("reassigning evidence needs at least one claim")
     edited = _edit(
         articles,
         command,
@@ -362,7 +364,7 @@ def _edit(
 ) -> list[ProposedArticle]:
     """Apply a field update to the named articles."""
     if not command.article_ids:
-        raise ValueError(f"{command.operation.value} needs an article to edit")
+        raise OverrideRejected(f"{command.operation.value} needs an article to edit")
     return [
         article.model_copy(update=update) if article.id in command.article_ids else article
         for article in articles
@@ -438,7 +440,7 @@ def approve_architecture(
     engine *which* architecture is now the approved one.
     """
     if not approved_by:
-        raise ValueError("approved_by is required: an anonymous approval is unreviewable")
+        raise AttributionRequired("approved_by is required: an anonymous approval is unreviewable")
 
     execution = context.engine.begin_stage("approve_architecture", impl_version="1.0")
     context.recorder.record_user_intervention(
@@ -481,7 +483,7 @@ def override_architecture(
     requires before an approved architecture may be superseded.
     """
     if not requested_by:
-        raise ValueError("requested_by is required: an anonymous override is unreviewable")
+        raise AttributionRequired("requested_by is required: an anonymous override is unreviewable")
 
     edited, warnings = apply_overrides(proposal, commands)
     execution = context.engine.begin_stage(OVERRIDE_STAGE, impl_version="1.0")

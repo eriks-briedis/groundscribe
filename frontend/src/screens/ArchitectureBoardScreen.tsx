@@ -142,7 +142,9 @@ interface EditFormProps {
   path: string;
   method: string;
   operations: readonly string[];
-  concepts: readonly { id: string; title: string }[];
+  //: `ref` as well as `id`, because an edit names the proposal's label and a
+  //: link names the row. Neither is derivable from the other.
+  concepts: readonly { id: string; ref: string; title: string }[];
   actor: string;
   onDone: () => void;
 }
@@ -201,17 +203,20 @@ function EditForm({ path, method, operations, concepts, actor, onDone }: EditFor
 
       <fieldset>
         <legend>Which articles</legend>
+        {/* Selected by `ref`, not by `id`. An override is applied to the
+            proposal document, whose articles are A1…An; the row id addresses
+            the article the proposal opened and means nothing to the edit. */}
         {concepts.map((concept) => (
           <label key={concept.id}>
             <input
               type="checkbox"
-              value={concept.id}
-              checked={selected.includes(concept.id)}
+              value={concept.ref}
+              checked={selected.includes(concept.ref)}
               onChange={() =>
                 setSelected((current) =>
-                  current.includes(concept.id)
-                    ? current.filter((id) => id !== concept.id)
-                    : [...current, concept.id],
+                  current.includes(concept.ref)
+                    ? current.filter((ref) => ref !== concept.ref)
+                    : [...current, concept.ref],
                 )
               }
             />

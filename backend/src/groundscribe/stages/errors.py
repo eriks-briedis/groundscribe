@@ -36,6 +36,16 @@ class EvidenceError(StageError):
     """
 
 
+class OverrideRejected(StageError):
+    """An architecture edit named something the proposal does not contain.
+
+    Its own type so the message reaches the author. It says which id was not
+    found, which is exactly what someone who has just clicked *remove* needs —
+    raised as a bare ``ValueError`` it was unmapped, and a request that could
+    have explained itself answered "500" instead.
+    """
+
+
 class ArchitectureLocked(StageError):
     """An approved architecture was changed without an override naming who did it."""
 
