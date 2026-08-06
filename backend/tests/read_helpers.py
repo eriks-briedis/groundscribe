@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from golden import golden_json, golden_text, relabel
+from groundscribe.app.advance import selected_article_id
 from groundscribe.domain import models as domain_models
 from groundscribe.domain.enums import ArtifactType
 from groundscribe.jobs.enums import JobStatus
@@ -588,13 +589,16 @@ class Walkthrough:
         return row.id
 
     def first_article(self) -> str:
-        row = self.session.scalars(
-            select(domain_models.Article)
-            .where(domain_models.Article.project_id == self.project_id)
-            .order_by(domain_models.Article.id)
-        ).first()
-        assert row is not None, "approving the architecture should have opened an article"
-        return row.id
+        """The article the run actually drives, which is the one to command.
+
+        Ordering by ``id`` picked a uuid, so the walk sometimes addressed an
+        article approval had opened and the run was not working on — harmless
+        while every article looked alike to the API, and a coin flip once the
+        workspace started offering the next step only to the driven one.
+        """
+        article_id = selected_article_id(self.harness.runtime, self.project_id)
+        assert article_id is not None, "approving the architecture should have opened an article"
+        return article_id
 
     def executions(self, stage: str) -> list[str]:
         """The ids of every execution of one stage in this project, oldest first."""

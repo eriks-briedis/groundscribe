@@ -42,6 +42,7 @@ from groundscribe.app.actions import (
     available_actions,
     resolve,
 )
+from groundscribe.app.advance import selected_article_id
 from groundscribe.app.runtime import Runtime
 from groundscribe.app.views import (
     ActionLink,
@@ -476,8 +477,18 @@ class ProjectionReader:
             action_links=_action_links(
                 position.state, project_id=article.project_id, article_id=article_id
             ),
-            pending_command=_pending_command(
-                position.state, project_id=article.project_id, article_id=article_id
+            # Offered only to the article the run is actually driving. The
+            # workflow state is per *project*, so without this every article
+            # approval opened shows the command for wherever the run has got to
+            # — including "start voice aligning" on one that has never been
+            # drafted. The request is accepted, the job fails a minute later in
+            # a worker, and the screen that offered it shows nothing.
+            pending_command=(
+                _pending_command(
+                    position.state, project_id=article.project_id, article_id=article_id
+                )
+                if selected_article_id(self._runtime, article.project_id) == article_id
+                else None
             ),
             brief=self._document(self._brief_snapshot(article_id)),
             current_version=current_view,

@@ -1059,3 +1059,44 @@ async def test_a_failure_the_run_got_past_is_marked_as_answered(
     assert all(item["occurred_at"] for item in dashboard["recent_failures"]), (
         "a failure with no time on it cannot be placed against anything else"
     )
+
+
+async def test_only_the_article_the_run_is_driving_is_offered_the_next_step(
+    walk: Walkthrough, client: TestClient
+) -> None:
+    """The workflow state is per project; the start button is per article.
+
+    Approval opens an article for every approved concept, and the run drives one
+    of them. Without this, each of the others shows the command for wherever the
+    run has got to — "start voice aligning" on an article that has never been
+    drafted. The request is accepted, the job fails a minute later inside a
+    worker, and the screen that offered it shows nothing at all.
+
+    Observed on a live project: five articles, one drafted, and the button on
+    every one of them.
+    """
+    # Stopped at drafting, which is a state that *has* a start command —
+    # `human_approval_required` has none, so walking all the way would assert
+    # nothing about scoping.
+    await walk.open_project()
+    await walk.extract()
+    await walk.architecture()
+    await walk.brief()
+    await walk.draft()
+    assert read(client, f"/projects/{walk.project_id}")["state"] == "substantive_reviewing"
+
+    driven = read(client, f"/articles/{walk.article_id}/workspace")
+    assert driven["pending_command"] is not None, "the driven article keeps its command"
+    others = [
+        item["id"]
+        for item in read(client, f"/projects/{walk.project_id}/dashboard")["articles"]
+        if item["id"] != walk.article_id
+    ]
+    assert others, "approval opens more than one article, or this asserts nothing"
+
+    for article_id in others:
+        workspace = read(client, f"/articles/{article_id}/workspace")
+        assert workspace["pending_command"] is None, (
+            f"{article_id} was offered work the run is not doing to it"
+        )
+    assert driven["state"] == read(client, f"/projects/{walk.project_id}")["state"]
