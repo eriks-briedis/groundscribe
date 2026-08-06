@@ -192,32 +192,54 @@ def auto_advance_enabled(runtime: Runtime, project_id: str) -> bool:
     return True if constraints is None else constraints.auto_advance
 
 
-def startable(step: Step, *, architecture_approved: bool) -> bool:
-    """Whether auto-advance can finish what it is about to start.
+@dataclass(frozen=True)
+class Have:
+    """What the run has produced already.
 
-    The map answers "what is this state waiting for?" from the state alone,
-    which is the whole reason it is readable. This is the one question it cannot
-    answer that way: whether the job it names could succeed given what the run
-    has already approved.
-
-    Proposing an architecture is the case. ``route_revision`` can send a failure
-    to ``architecture_proposing`` at any point, including long after an
-    architecture was approved — and a proposal that lands over an approved one
-    is refused twice over by :meth:`WorkflowEngine._guard_architecture`: it must
-    fork from the approved snapshot, and it must carry an override naming who
-    authorised superseding it. Both are deliberate, and neither is something a
-    job started by nobody can supply. So the job is not merely likely to fail,
-    it cannot succeed, and starting it costs a model call to arrive there.
-
-    Observed on a real run, which routed a factual failure back to the source,
-    followed the map through re-extraction into proposing a second architecture,
-    and failed with ``SilentMutationError`` — leaving the run in
-    ``architecture_proposing``, a state whose only remaining exits are cancel
-    and fail.
+    The map answers "what is this state waiting for?" from the state alone, which
+    is the whole reason it is readable. Two steps cannot be decided that way, and
+    this is what they need to know. Resolved by the caller, because it is
+    database work and this module is the decision.
     """
-    if step.job_type is not JobType.PROPOSE_ARCHITECTURE:
-        return True
-    return not architecture_approved
+
+    #: An architecture is locked, so a proposal over it needs a person.
+    architecture_approved: bool = False
+    #: The current review has been planned from, so the plan is written.
+    revision_plan: bool = False
+
+
+def startable(step: Step, have: Have) -> bool:
+    """Whether auto-advance should start what the map named.
+
+    Two questions the state cannot answer: whether the job *could* succeed, and
+    whether it is *still wanted*. Both are asked here because both have the same
+    answer shape — leave the run alone — and both were learned the same way.
+
+    **Proposing an architecture over an approved one cannot succeed.**
+    ``route_revision`` can send a failure to ``architecture_proposing`` long
+    after an architecture was approved, and a proposal that lands over one is
+    refused twice by :meth:`WorkflowEngine._guard_architecture`: it must fork
+    from the approved snapshot, and it must carry an override naming who
+    authorised superseding it. Neither is something a job nobody asked for can
+    supply. Observed on a real run, which failed with ``SilentMutationError``
+    into a state whose only remaining exits were cancel and fail.
+
+    **Planning a revision that is already planned is not wanted.**
+    ``revision_plan_required`` is the one state in the map whose job does not
+    leave it — the plan is the pipeline's to write and the approval is a
+    person's — so a finished plan returns the run to the state that asked for
+    one, and the completion queues another. Six ran in ninety seconds before
+    anyone noticed, each one a model call replacing a plan waiting to be read.
+
+    That loop was always in the map and had never run, because every route to
+    ``revision_plan_required`` failed at the missing-review guard before the plan
+    stage was reached. Fixing that guard is what let it turn.
+    """
+    if step.job_type is JobType.PROPOSE_ARCHITECTURE:
+        return not have.architecture_approved
+    if step.job_type is JobType.PLAN_REVISION:
+        return not have.revision_plan
+    return True
 
 
 def next_step(state: WorkflowState) -> Step | None:

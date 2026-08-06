@@ -37,7 +37,7 @@ from groundscribe.jobs.enums import JobType
 from groundscribe.provenance.enums import ActorType
 from groundscribe.storage.snapshot_store import SnapshotStore
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
-from groundscribe.workflow.transitions import available_actions
+from groundscribe.workflow.transitions import UNIVERSAL_ACTIONS, available_actions
 from service_helpers import AUTHOR, Harness, build_harness
 from stage_helpers import DEFAULT_CONSTRAINTS
 from test_services import new_project, script_extraction, with_source
@@ -321,11 +321,11 @@ def test_it_will_not_start_a_job_that_cannot_succeed() -> None:
     of that state are ``submit_architecture`` — which needs the proposal that just
     proved impossible — and cancelling.
     """
-    from groundscribe.app.advance import startable
+    from groundscribe.app.advance import Have, startable
 
     propose = NEXT[S.ARCHITECTURE_PROPOSING]
-    assert startable(propose, architecture_approved=False), "the first proposal is ordinary work"
-    assert not startable(propose, architecture_approved=True)
+    assert startable(propose, Have()), "the first proposal is ordinary work"
+    assert not startable(propose, Have(architecture_approved=True))
 
 
 def test_approving_an_architecture_still_starts_the_brief() -> None:
@@ -335,11 +335,56 @@ def test_approving_an_architecture_still_starts_the_brief() -> None:
     architecture, so a check written as "an approved architecture stops
     auto-advance" would park every run at the moment it was approved.
     """
-    from groundscribe.app.advance import startable
+    from groundscribe.app.advance import Have, startable
 
     for state, step in NEXT.items():
         if step.job_type is JobType.PROPOSE_ARCHITECTURE:
             continue
-        assert startable(step, architecture_approved=True), (
+        assert startable(step, Have(architecture_approved=True)), (
             f"{state.value} stopped moving once an architecture was approved"
+        )
+
+
+def test_a_plan_that_exists_is_not_planned_again() -> None:
+    """``revision_plan_required`` is the one state whose job does not leave it.
+
+    Writing the plan is the pipeline's; approving it is a person's. So a finished
+    plan returns the run to the state that asked for one, and the completion
+    queues another — a loop that spends a model call per turn and replaces a plan
+    nobody has read yet.
+
+    It ran eleven times on a real run before anyone noticed. It had never turned
+    before, because every route into ``revision_plan_required`` used to fail at
+    the missing-review guard, so the plan stage was never reached to complete.
+    """
+    from groundscribe.app.advance import Have, startable
+
+    plan = NEXT[S.REVISION_PLAN_REQUIRED]
+    assert startable(plan, Have()), "the first plan is the work the state is waiting for"
+    assert not startable(plan, Have(revision_plan=True))
+
+
+def test_no_step_in_the_map_leaves_the_state_it_starts_from() -> None:
+    """The property the loop broke, asserted over the map rather than one entry.
+
+    Every other step queues work whose completion moves the run somewhere else,
+    which is why auto-advance can be "one step per completion" and still
+    terminate. ``revision_plan_required`` is the exception and is handled by
+    :func:`startable`; a second exception added without one would loop the same
+    way, so this fails when one appears.
+    """
+    from groundscribe.app.advance import Have, startable
+    from groundscribe.workflow.transitions import transitions_from
+
+    for state, step in NEXT.items():
+        moves = [
+            transition
+            for transition in transitions_from(state)
+            if transition.action not in UNIVERSAL_ACTIONS and transition.actor is not ActorType.USER
+        ]
+        if moves:
+            continue  # the job's own exit carries the run out of this state
+        assert not startable(step, Have(architecture_approved=True, revision_plan=True)), (
+            f"{state.value} has no pipeline edge out, so its job returns the run here "
+            "and the completion starts it again"
         )

@@ -36,6 +36,7 @@ from sqlalchemy import select
 from groundscribe.app import rehydrate
 from groundscribe.app.actions import available_actions
 from groundscribe.app.advance import (
+    Have,
     auto_advance_enabled,
     next_step,
     selected_article_id,
@@ -1303,16 +1304,43 @@ class ApplicationService:
         step = next_step(resumed.engine.state)
         if step is None:
             return None
-        if not startable(
-            step, architecture_approved=resumed.engine.approved_architecture is not None
-        ):
+        article_id = selected_article_id(self._runtime, project_id) if step.per_article else None
+        if not startable(step, self._have(resumed, article_id)):
             return None
         if not step.per_article:
             return self._enqueue(project_id, step.job_type, entry=step.entry, payload={})
-        article_id = selected_article_id(self._runtime, project_id)
         if article_id is None:
             return None
         return self._enqueue_for_article(article_id, step.job_type, entry=step.entry)
+
+    def _have(self, resumed: Resumed, article_id: str | None) -> Have:
+        """What the run has produced already, for the steps that turn on it.
+
+        Read here rather than in :mod:`~groundscribe.app.advance` because it is
+        database work, and that module is the decision it feeds.
+        """
+        return Have(
+            architecture_approved=resumed.engine.approved_architecture is not None,
+            revision_plan=self._revision_plan_exists(article_id),
+        )
+
+    def _revision_plan_exists(self, article_id: str | None) -> bool:
+        """Whether the current review has already been planned from.
+
+        Asked of the *review* rather than the article: a plan belongs to the
+        review it reconciles, so a new review is a new thing to plan and an
+        existing one is a plan already waiting to be read.
+        """
+        if article_id is None:
+            return False
+        session = self._runtime.session
+        try:
+            version = rehydrate.latest_version(session, article_id)
+            review = rehydrate.latest_review(session, version.id)
+            rehydrate.latest_plan(session, review.id)
+        except rehydrate.MissingInput:
+            return False
+        return True
 
     def _act(
         self,
