@@ -40,6 +40,7 @@ from groundscribe.workflow.engine import RecordedRoute, WorkflowEngine
 from groundscribe.workflow.machine import RewriteApproval
 from groundscribe.workflow.stagnation import ScoreRound
 from groundscribe.workflow.states import WorkflowAction, WorkflowState
+from groundscribe.workflow.transitions import available_actions
 
 
 class EscalationOption(StrEnum):
@@ -64,6 +65,15 @@ class EscalationOption(StrEnum):
 #: The options in the order a person should be offered them: cheapest and least
 #: destructive first, abandoning last.
 ESCALATION_OPTIONS = tuple(EscalationOption)
+
+
+@dataclass(frozen=True)
+class HighWater:
+    """The best version a run produced, and the score that says so."""
+
+    version_id: str
+    overall: float
+    evaluation_id: str
 
 
 @dataclass(frozen=True)
@@ -162,13 +172,26 @@ def route_score(
 
 
 def escalations_for(engine: WorkflowEngine) -> tuple[Escalation, ...]:
-    """Every way out of the run's current state, in the order to offer them.
+    """Every way out of the run's current state, in the order to offer them."""
+    return escalations_at(engine.state)
 
-    Filtered against the machine, so an option shown is one that can be taken. The
-    two that move no edge are always offered: they are answers to "what do I do
-    with this run" that do not depend on where it is parked.
+
+def escalations_at(state: WorkflowState) -> tuple[Escalation, ...]:
+    """The same menu, from a state alone.
+
+    A state is all the filter ever needed — ``available_actions`` is a pure
+    function of one — and taking the engine meant the read side could not ask.
+    That mattered: the projections are deliberately built from rows and a state,
+    on a read-only transaction, so a menu that demanded an engine was a menu no
+    screen could render. Which is why, for two phases, this returned a list to
+    nobody.
+
+    The two options that move no edge are always offered. They are answers to
+    "what do I do with this run" that do not depend on where it is parked, and a
+    menu built only from the transition table would silently drop the two that
+    most often turn out to be right.
     """
-    available = set(engine.available_actions())
+    available = set(available_actions(state))
     return tuple(
         Escalation(option=option, detail=detail, action=action)
         for option, action, detail in _ESCALATIONS
@@ -206,6 +229,46 @@ def score_history(context: PipelineContext) -> tuple[ScoreRound, ...]:
         )
         for ordinal, evaluation in enumerate(evaluations)
     )
+
+
+def high_water_version(context: PipelineContext) -> HighWater | None:
+    """The best-scoring version this run produced, and what it scored.
+
+    Not folded into :class:`ScoreRound`, whose docstring defends being "the
+    subset the six conditions read" — a detector that carried a version id would
+    have to change every time scoring's linkage did. This is a second, smaller
+    question over the same rows.
+
+    It exists because the loop's last round is not its best one. The run of
+    2026-08-06 scored 91.75, 92.05, 91.1, 90.55: the high-water mark was two
+    rounds before the end, and every stage downstream reads
+    ``rehydrate.latest_version``, so a person arriving at a stalled run was shown
+    the worst article the loop had produced and none of the better ones. Each
+    round removed the unsupported claim it was sent back for and churned enough
+    prose to earn fresh voice deductions — a fixed cost in voice for a variable
+    gain in fidelity, which is a losing trade whenever the gain is one clause.
+
+    Ties go to the earlier round. Two rounds scoring the same means the later one
+    bought nothing, and the earlier is the one with fewer rewrites behind it.
+    """
+    best: HighWater | None = None
+    for evaluation in sorted(
+        (
+            evaluation
+            for execution in context.engine.run.stage_executions
+            for evaluation in execution.evaluation_runs
+            if evaluation.evaluator_id == SCORE_STAGE and _version_id(evaluation) is not None
+        ),
+        key=lambda evaluation: evaluation.created_at,
+    ):
+        overall = _overall(evaluation)
+        if best is None or overall > best.overall:
+            version_id = _version_id(evaluation)
+            if version_id is not None:
+                best = HighWater(
+                    version_id=version_id, overall=overall, evaluation_id=evaluation.id
+                )
+    return best
 
 
 def _version_id(evaluation: models.EvaluationRun) -> str | None:
@@ -271,7 +334,10 @@ __all__ = [
     "ESCALATION_OPTIONS",
     "Escalation",
     "EscalationOption",
+    "HighWater",
+    "escalations_at",
     "escalations_for",
+    "high_water_version",
     "route_score",
     "score_history",
 ]

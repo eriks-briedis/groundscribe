@@ -30,6 +30,7 @@ from groundscribe.scoring.loop import (
     ESCALATION_OPTIONS,
     EscalationOption,
     escalations_for,
+    high_water_version,
     route_score,
     score_history,
 )
@@ -41,6 +42,11 @@ from groundscribe.workflow.states import WorkflowAction, WorkflowState
 from pipeline_helpers import AUTHOR
 from test_drafting import Drafted
 from test_scoring import golden_score, score
+
+#: What the golden sheet already scores for factual fidelity. Named so the tie
+#: test says *why* the two rounds tie, rather than repeating a number that would
+#: silently stop tying if the golden data moved.
+GOLDEN_FIDELITY = 88.0
 
 #: Which failure class each of the golden deductions carries, by index.
 ROUTES = {
@@ -284,6 +290,55 @@ async def test_a_stagnant_history_stalls_the_run_and_records_why(
     assert {escalation.option for escalation in escalations_for(drafted.context.engine)} == set(
         EscalationOption
     )
+
+
+async def test_the_best_round_is_the_one_the_run_keeps(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """The loop's last round is not its best one, and the last one is what shipped.
+
+    Measured on the run of 2026-08-06: 91.75, 92.05, 91.1, 90.55. Each round
+    removed the unsupported claim it was sent back for and churned enough prose
+    to earn fresh voice deductions, so the high-water mark was two rounds before
+    the end — and every stage downstream reads `rehydrate.latest_version`, which
+    meant a person arriving at the stalled run was handed the worst article the
+    loop had produced.
+    """
+    drafted, first = await score(db_session, snapshot_store)
+    route_score(drafted.context, first.value)
+    best = await rescore(drafted, db_session, snapshot_store, fidelity=97.0)
+    route_score(drafted.context, best.value)
+    await rescore(drafted, db_session, snapshot_store, fidelity=89.0)
+
+    high_water = high_water_version(drafted.context)
+
+    assert high_water is not None
+    assert high_water.overall == pytest.approx(
+        max(round_.overall for round_ in score_history(drafted.context))
+    )
+    assert high_water.version_id == best.value.evaluation.scores["linkage"]["article_version_id"]
+
+
+async def test_a_tie_goes_to_the_earlier_round(
+    db_session: Session, snapshot_store: SnapshotStore
+) -> None:
+    """Two rounds at the same score means the later one bought nothing.
+
+    And it cost a review, a plan, a rewrite, a voice pass and a score to buy it.
+    The earlier version is the one with fewer rewrites behind it, which is the
+    one less likely to have drifted.
+    """
+    drafted, first = await score(db_session, snapshot_store)
+    route_score(drafted.context, first.value)
+    second = await rescore(drafted, db_session, snapshot_store, fidelity=GOLDEN_FIDELITY)
+
+    high_water = high_water_version(drafted.context)
+    history = score_history(drafted.context)
+
+    assert history[0].overall == pytest.approx(history[1].overall)
+    assert high_water is not None
+    assert high_water.evaluation_id == first.value.evaluation.id
+    assert high_water.evaluation_id != second.value.evaluation.id
 
 
 #: The edges from wherever a route lands back to scoring. Walked rather than

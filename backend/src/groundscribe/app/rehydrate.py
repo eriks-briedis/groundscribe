@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from groundscribe.domain import models as domain_models
-from groundscribe.domain.enums import ArtifactType
+from groundscribe.domain.enums import ArtifactType, SelectionStatus
 from groundscribe.domain.models import ArtifactSnapshot
 from groundscribe.domain.schemas import EditorialConstraints
 from groundscribe.provenance import models
@@ -195,10 +195,26 @@ def concept(session: Session, concept_id: str) -> domain_models.ArticleConcept:
 
 
 def latest_version(session: Session, article_id: str) -> domain_models.ArticleVersion:
-    """The newest version of an article, which is what every later stage works on."""
+    """The newest version of an article that has not been passed over.
+
+    "Newest" was the whole rule until the loop learned to stop at its best round.
+    A run whose score went 91.75, 92.05, 91.1, 90.55 has its answer in the middle,
+    and every stage downstream reads this function — so without the exclusion, a
+    person arriving at a stalled run is handed the worst article the loop
+    produced and shown none of the better ones.
+
+    Rejected rather than selected is what is filtered on, and that is the part
+    worth stating. Keying off ``SELECTED`` would mean a rewrite authorised *after*
+    a stall — a newer, better version, still ``PENDING`` — silently lost to the
+    older one somebody chose two rounds ago. Excluding what was passed over
+    leaves "newest" doing its ordinary job everywhere else, including then.
+    """
     row = session.scalars(
         select(domain_models.ArticleVersion)
-        .where(domain_models.ArticleVersion.article_id == article_id)
+        .where(
+            domain_models.ArticleVersion.article_id == article_id,
+            domain_models.ArticleVersion.selection_status != SelectionStatus.REJECTED,
+        )
         .order_by(domain_models.ArticleVersion.ordinal.desc())
     ).first()
     if row is None:

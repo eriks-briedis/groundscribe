@@ -49,6 +49,7 @@ from groundscribe.domain.enums import (
     AnswerResponse,
     ArtifactType,
     FindingStatus,
+    SelectionStatus,
     SourceFormat,
 )
 from groundscribe.domain.models import ArtifactSnapshot
@@ -80,6 +81,7 @@ from groundscribe.privacy.traces import TraceDeletion, TraceExport, delete_trace
 from groundscribe.privacy.visibility import ProviderVisibility, provider_visibility
 from groundscribe.provenance import models
 from groundscribe.provenance.enums import ActorType, InterventionType
+from groundscribe.scoring.loop import high_water_version, score_history
 from groundscribe.stages.base import PipelineContext, StageRunner
 from groundscribe.stages.ingestion import IngestSource
 from groundscribe.stages.override import (
@@ -953,6 +955,22 @@ class ApplicationService:
                 "pass that stopped on something it would not fix"
             )
 
+        # Asked before routing, because a run that has stopped improving should
+        # not spend the round it is about to be sent on. Phase 05 built the six
+        # conditions and phase 08 built the history they read, and nothing ever
+        # put the two together: `check_stagnation`, `score_history` and
+        # `escalations_for` were reachable from their own tests and from nowhere
+        # else, so the thresholds in `workflow-policy.yaml` had never once
+        # decided anything. On the run of 2026-08-06 they would have. Its overall
+        # moved +0.30, -0.95, -0.55, and `no_improvement` fires on two
+        # consecutive rounds under 2.0 — so the fourth round, five model calls
+        # and ten triage decisions, was already ruled out by a policy nobody
+        # consulted.
+        stagnation = resumed.engine.check_stagnation(score_history(resumed.context))
+        if stagnation.check.stalled:
+            self._select_high_water(resumed)
+            return self._settle(resumed)
+
         resumed.engine.route(
             FailureCategory(routed_as),
             prefer=prefer,
@@ -970,6 +988,66 @@ class ApplicationService:
         )
         settled = self._settle(resumed)
         return self.advance(resumed.context.project_id) or settled
+
+    def _select_high_water(self, resumed: Resumed) -> None:
+        """Choose the best version the run produced, not the last one it made.
+
+        ``selection_status`` has been on ``ArticleVersion`` since phase 02 and
+        nothing has ever set it — every row in the database reads ``pending``.
+        This is what it was for: a branch point where somebody has to say which
+        version is the answer, and the loop stopping is exactly that.
+
+        Marked rather than deleted, and the rejected versions keep their rows.
+        Phase 00's rule is that branching never destroys a branch, and a person
+        overruling this choice needs the versions it passed over to still be
+        there.
+        """
+        best = high_water_version(resumed.context)
+        if best is None:
+            return
+        rows = self._runtime.session.scalars(
+            select(domain_models.ArticleVersion)
+            .join(
+                domain_models.Article,
+                domain_models.Article.id == domain_models.ArticleVersion.article_id,
+            )
+            .where(
+                domain_models.ArticleVersion.article_id
+                == select(domain_models.ArticleVersion.article_id)
+                .where(domain_models.ArticleVersion.id == best.version_id)
+                .scalar_subquery()
+            )
+        ).all()
+        chosen = next((row for row in rows if row.id == best.version_id), None)
+        if chosen is None:
+            return
+        for row in rows:
+            if row.id == best.version_id:
+                row.selection_status = SelectionStatus.SELECTED
+            elif row.ordinal > chosen.ordinal:
+                # Only the rounds *after* the high-water mark are rejected. The
+                # ones before it were superseded on the way up, which is a
+                # different thing from having been passed over.
+                row.selection_status = SelectionStatus.REJECTED
+
+        self._runtime.recorder.record_decision(
+            resumed.engine.execution,
+            decision_type="high_water_selection",
+            decided_by="stagnation",
+            decided_by_type=ActorType.POLICY,
+            outcome=best.version_id,
+            rationale=(
+                f"the loop stopped improving; version {chosen.ordinal} scored "
+                f"{best.overall:.2f}, the best of the run"
+            ),
+            inputs={
+                "version_id": best.version_id,
+                "ordinal": chosen.ordinal,
+                "overall": best.overall,
+                "evaluation_id": best.evaluation_id,
+                "rejected": [row.id for row in rows if row.ordinal > chosen.ordinal],
+            },
+        )
 
     def _blocked_voice_route(self, resumed: Resumed) -> str | None:
         """The route a voice pass asked for, if a voice pass is why we are here.
@@ -1035,6 +1113,70 @@ class ApplicationService:
     def cancel(self, project_id: str, *, cancelled_by: str) -> CommandResult:
         """Stop the run. Always available, so no run can be trapped."""
         return self._act(project_id, A.CANCEL, actor_id=cancelled_by)
+
+    # ------------------------------------------------------------------
+    # The ways out of a stalled run
+    # ------------------------------------------------------------------
+    #
+    # `STALLED` permits four user actions and only two of them could be reached:
+    # override-and-approve, and cancel. A person parked there by the loop running
+    # out was offered "publish it anyway" or "give up" — while the transition
+    # table had said all along that they could also spend another rewrite, reopen
+    # the brief, or reopen the architecture.
+    #
+    # That was survivable while nothing ever stalled a run. Stagnation detection
+    # is wired in now, so runs will park here on purpose, and a stop with two
+    # exits neither of which is "fix it" is worse than not stopping at all.
+    #
+    # Each takes a reason. These are the decisions a person makes when the machine
+    # has said it cannot finish, and a record of *what* was chosen without *why*
+    # is the half nobody can argue with afterwards.
+
+    def authorise_rewrite(
+        self, article_id: str, *, authorised_by: str, reason: str = ""
+    ) -> CommandResult:
+        """Spend another substantive round beyond the configured limit.
+
+        The ledger grants and spends in one motion (``machine._ESCALATION_LIMITS``),
+        so this raises the ceiling by exactly one round rather than lifting it —
+        a person can keep going indefinitely, one deliberate decision at a time,
+        which is the shape the limits were chosen to have.
+        """
+        return self._act(
+            self.project_for_article(article_id),
+            A.AUTHORISE_REWRITE,
+            actor_id=authorised_by,
+            rationale=reason,
+        )
+
+    def return_to_brief(
+        self, article_id: str, *, requested_by: str, reason: str = ""
+    ) -> CommandResult:
+        """Rewrite the contract rather than the article written against it.
+
+        One edge, two reasons a person takes it: the thesis is too wide to argue
+        properly, or the brief itself was wrong. The reason is what tells them
+        apart afterwards, which is why it is asked for rather than inferred.
+        """
+        return self._act(
+            self.project_for_article(article_id),
+            A.RETURN_TO_BRIEF,
+            actor_id=requested_by,
+            rationale=reason,
+        )
+
+    def reopen_architecture(
+        self, project_id: str, *, requested_by: str, reason: str = ""
+    ) -> CommandResult:
+        """Go back to what the source can support: wrong shape, or wrong article.
+
+        Project-scoped, not article-scoped, because that is the level the decision
+        is made at — reopening the architecture reconsiders how the source is
+        divided, and every article of the run is downstream of the answer.
+        """
+        return self._act(
+            project_id, A.REOPEN_ARCHITECTURE, actor_id=requested_by, rationale=reason
+        )
 
     # ------------------------------------------------------------------
     # Voice (phase 10)
