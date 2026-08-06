@@ -125,6 +125,22 @@ _EDITORIAL_TRANSITIONS: tuple[Transition, ...] = (
         "substance is settled, so what is left is how it reads",
     ),
     _user(S.REVISION_PLAN_REQUIRED, A.APPROVE_REVISION_PLAN, S.SUBSTANTIVE_REWRITING),
+    # A review the author dismissed entirely. Triage can change a verdict: the
+    # review asked for a plan because it found something blocking, and if every
+    # finding is then rejected it has found nothing to act on — which is what
+    # `accept_review` already means from `substantive_reviewing`. The same action,
+    # taken by a person rather than by the stage, because deciding is theirs.
+    #
+    # Without it a dismissed review still had to be planned and rewritten around:
+    # an empty plan passes `check_plan`, a rewrite that applies nothing passes
+    # `check_rewrite`, and three model calls produce the draft that already
+    # existed.
+    _user(
+        S.REVISION_PLAN_REQUIRED,
+        A.ACCEPT_REVIEW,
+        S.VOICE_ALIGNING,
+        "every finding was decided and none of them needs a rewrite",
+    ),
     _user(
         S.REVISION_PLAN_REQUIRED,
         A.RETURN_TO_BRIEF,

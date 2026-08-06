@@ -692,7 +692,49 @@ class ApplicationService:
                 "a finding is accepted, rejected, or accepted with an edit"
             )
         self._runtime.recorder.complete_stage(ledger.execution)
-        return self._settle(resumed, detail={"ref": finding.ref, "status": decision.value})
+        settled = self._settle(resumed, detail={"ref": finding.ref, "status": decision.value})
+        review = session.get(domain_models.Review, finding.review_id)
+        if review is None:
+            return settled
+        return self._after_triage(resumed, review, decided_by=decided_by) or settled
+
+    def _after_triage(
+        self, resumed: Resumed, review: domain_models.Review, *, decided_by: str
+    ) -> CommandResult | None:
+        """Move the run on once every finding has been decided, and not before.
+
+        Deciding is the last thing a person owes this review, so asking them to
+        press something afterwards is asking them to confirm a decision they
+        just made — the same reasoning that makes approving a brief queue the
+        draft.
+
+        Which way it moves depends on what they decided, and both answers are the
+        author's rather than the machine's:
+
+        *Something was accepted.* The plan is the pipeline's work and
+        ``advance`` starts it, now that ``startable`` can see a triaged review.
+
+        *Nothing was.* The review asked for a plan because it found something
+        blocking, and the author has disagreed with all of it — so after triage
+        it has found nothing to act on, which is what ``accept_review`` means.
+        Planning anyway costs three model calls to reproduce the draft that
+        exists: an empty plan satisfies ``check_plan``, and a rewrite applying
+        nothing satisfies ``check_rewrite``.
+
+        Silent while anything is still undecided. An author works down a queue,
+        and a run that jumped at the first rejection would be acting on half an
+        opinion.
+        """
+        if resumed.engine.state is not WorkflowState.REVISION_PLAN_REQUIRED:
+            return None
+        if any(issue.status is FindingStatus.PROPOSED for issue in review.issues):
+            return None
+
+        if not any(issue.status.is_actionable for issue in review.issues):
+            resumed.engine.apply(A.ACCEPT_REVIEW, actor_id=decided_by, actor_type=ActorType.USER)
+            settled = self._settle(resumed)
+            return self.advance(resumed.context.project_id) or settled
+        return self.advance(resumed.context.project_id)
 
     def _article_of(self, finding: domain_models.ReviewIssue) -> str | None:
         """Which article a finding belongs to, so one cannot be decided from another."""

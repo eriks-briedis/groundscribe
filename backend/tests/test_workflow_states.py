@@ -94,6 +94,9 @@ EXPECTED_ACTIONS: dict[WorkflowState, set[WorkflowAction]] = {
     WorkflowState.REVISION_PLAN_REQUIRED: {
         WorkflowAction.APPROVE_REVISION_PLAN,
         WorkflowAction.RETURN_TO_BRIEF,
+        # A review the author dismissed entirely: after triage it found nothing
+        # to act on, which is what `accept_review` means everywhere else.
+        WorkflowAction.ACCEPT_REVIEW,
     },
     WorkflowState.SUBSTANTIVE_REWRITING: {WorkflowAction.SUBMIT_REWRITE},
     WorkflowState.VOICE_ALIGNING: {

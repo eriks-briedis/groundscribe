@@ -976,3 +976,68 @@ async def test_only_a_voice_block_routes_from_a_voice_complaint(harness: Harness
     # state by a different door.
     transition(WorkflowAction.REJECT_FINAL, WorkflowState.REVISION_REQUIRED)
     assert harness.service._blocked_voice_route(resumed) is None
+
+
+async def test_a_review_the_author_dismissed_skips_the_plan(harness: Harness) -> None:
+    """Triage can change a verdict, and dismissing everything is a verdict.
+
+    The review asked for a plan because it found something blocking. If the
+    author disagrees with all of it, the review has found nothing to act on —
+    which is what ``accept_review`` means everywhere else in the machine.
+
+    Planning anyway costs three model calls to reproduce the draft that already
+    exists: an empty plan satisfies ``check_plan`` because "address every
+    accepted finding" is trivially true of none, and a rewrite that applies
+    nothing satisfies ``check_rewrite`` for the same reason.
+    """
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    project_id = harness.service.project_for_article(article_id)
+    assert harness.service.project_state(project_id).state is S.REVISION_PLAN_REQUIRED
+
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+    for issue in review.issues:
+        harness.service.decide_finding(
+            article_id,
+            finding_id=issue.id,
+            decision=FindingStatus.REJECTED,
+            decided_by=AUTHOR,
+            reason="the brief's number is a target, not a measurement",
+        )
+
+    assert harness.service.project_state(project_id).state is S.VOICE_ALIGNING
+
+
+async def test_deciding_the_last_finding_starts_the_plan_when_one_is_wanted(
+    harness: Harness,
+) -> None:
+    """The other half: accepting something is a request for the plan.
+
+    Every other action a person takes queues what follows it — approving a brief
+    starts the draft, because asking somebody to press *draft* immediately after
+    is asking them to confirm a decision they just made. Deciding findings was
+    the exception, and left the run holding everything it needed and nothing
+    queued.
+    """
+    from groundscribe.domain.enums import FindingStatus
+
+    _, article_id = await reviewed_article(harness)
+    project_id = harness.service.project_for_article(article_id)
+    version = rehydrate.latest_version(harness.runtime.session, article_id)
+    review = rehydrate.latest_review(harness.runtime.session, version.id)
+
+    for index, issue in enumerate(review.issues):
+        result = harness.service.decide_finding(
+            article_id,
+            finding_id=issue.id,
+            decision=FindingStatus.ACCEPTED if index == 0 else FindingStatus.REJECTED,
+            decided_by=AUTHOR,
+            reason="" if index == 0 else "not a real problem",
+        )
+        if index < len(review.issues) - 1:
+            assert result.job is None, "it waited for the rest of the queue"
+
+    assert harness.service.project_state(project_id).state is S.REVISION_PLAN_REQUIRED
+    assert harness.runtime.queue.pending_count() == 1, "the plan the author asked for"
