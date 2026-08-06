@@ -1,0 +1,88 @@
+Score this article version. Judge the dimensions; do not decide the outcome.
+
+The article:
+{{ draft }}
+
+The brief it is bound by:
+{{ brief }}
+
+The source model — the only thing it may state as fact:
+{{ source_model }}
+
+The voice profile it was written under:
+{{ voice }}
+
+Score each of these dimensions from 0 to 100, with a rationale for each:
+{{ dimensions }}
+
+What the dimensions mean:
+
+- factual_fidelity: every claim traces to the source model, and every claim the
+  source qualifies is stated with its conditions.
+- thesis_and_focus: the article argues one thing, and every section serves it.
+- structure_and_coherence: the sections build in an order that earns itself.
+- evidence_and_specificity: concrete over general; claims carry what supports them.
+- reader_value: the reader the brief names finishes better off in the way it promised.
+- scope_discipline: nothing the brief excluded or reserved, nothing that quietly
+  became a second article.
+- voice_adherence: it reads as the voice profile, without the phrases it avoids.
+
+For every material deduction, return an entry under `deductions` giving the
+dimension, how many points it cost, its severity, the passage it points at, the
+source or brief requirement that passage fails, how it fails it, the correction
+you would make, the route that would fix it, and your confidence.
+
+What the routes mean. The route names the stage that would correct the
+deduction, so pick the one that can actually fix it:
+
+- factual_gap: the article needs a fact the source model does not contain. The
+  correction happens upstream — re-read the source, or ask the author for what
+  is missing. Choose this only when getting the claim right requires material
+  the source does not yet have.
+- architecture_issue: the article is built wrong — wrong sections, wrong order,
+  wrong shape for the argument it is making. Reopening the architecture is the
+  correction.
+- substantive_issue: the material is fine and the words are wrong. This is the
+  route for a claim the source does not support: the correction is to cut that
+  claim or qualify it down to what the source does support. It is also the route
+  for a thin argument, a dropped qualification, or a section that does not earn
+  its place.
+- style_issue: the substance is settled and only how it reads is wrong.
+- minor_local: one passage, correctable where it stands, with nothing else
+  depending on it.
+
+The distinction most often got wrong is the first against the third. An article
+that says *more* than the source supports is substantive_issue, not factual_gap.
+Nothing upstream has to change to fix it — the surplus is in the prose, and
+re-reading the same source would produce the same source model and leave the
+sentence exactly as it was. Reserve factual_gap for what is genuinely absent.
+
+Rules for deductions:
+
+- The deductions for a dimension may not add up to more than that dimension lost.
+  You are not required to itemise every point — small things need no entry — but a
+  deduction claiming more than the score lost describes a different article.
+- Severity is how bad the problem is, not how much you dislike it. `blocking`
+  means you would stop publication. `optional` is a preference, and a preference
+  does not buy a rewrite.
+- Set `rubric_required` only for a clause the brief lists under its definition
+  of done, or a rule the voice profile states outright. It promotes a preference
+  into something that must be fixed whatever the article scored, and that is the
+  project's judgement rather than yours.
+
+  A number in the brief is not such a clause. `target_length_words` is what the
+  author asked for, not a condition the article must hit — length is checked
+  after you, against a deliberately generous tolerance, because the target is a
+  brief's estimate rather than a measurement. Do not deduct for a draft landing
+  near it, and never mark that required. If the brief wanted an exact length it
+  would say so under its definition of done, and then it would be a clause.
+
+List under `unsupported_claims` the id of any claim the article states as fact
+that the source model does not support. This is asked separately because it is a
+publication condition on its own, not a deduction to be weighed against others.
+
+Do not return an overall score and do not say whether the article passes. Neither
+is yours to decide, and a number you invent for them would be indistinguishable
+from one the rubric computed.
+
+Return a single JSON object matching the required schema.

@@ -621,3 +621,39 @@ def test_the_brief_prompt_asks_for_a_worked_example_only_where_it_belongs() -> N
     assert "padding" in rendered
     # A criterion the source cannot supply is a contract the draft cannot meet.
     assert "reserved for other articles" in rendered
+
+
+def test_the_scoring_prompt_does_not_let_a_target_become_a_requirement() -> None:
+    """`rubric_required` fails an article whatever it scored, so its scope matters.
+
+    It is for a clause the brief lists under its definition of done. A number the
+    brief carries is not that: `target_length_words` is what the author asked
+    for, and length is checked afterwards against a 25% tolerance because the
+    target is an estimate rather than a measurement.
+
+    Observed on a live run: a 1759-word draft against a 1800-word target was
+    marked required and failed, on a brief that contained no length clause at
+    all. The scorer had inferred a requirement from a bare parameter — and the
+    article it stopped was the better of the two the pipeline had produced.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = (
+        PromptStore(prompts_root())
+        .render(
+            SCORE_STAGE,
+            {
+                "draft": "{}",
+                "brief": "{}",
+                "source_model": "{}",
+                "voice": "{}",
+                "dimensions": ["factual_fidelity"],
+            },
+        )
+        .rendered_prompt
+    )
+
+    assert "definition\n  of done" in rendered or "definition of done" in rendered
+    assert "target_length_words" in rendered
+    assert "never mark that required" in rendered

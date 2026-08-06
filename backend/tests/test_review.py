@@ -369,3 +369,27 @@ def test_the_review_prompt_describes_the_field_the_guard_checks() -> None:
 
     for field in ("source_ref", "brief_ref", "evidence"):
         assert field in rendered.rendered_prompt, f"the reviewer fills {field} without being told"
+
+
+def test_the_review_prompt_does_not_block_publication_over_length() -> None:
+    """The reviewer stops publication; length is not a reason to.
+
+    `target_length_words` is what the author asked for, checked afterwards
+    against a deliberately generous tolerance. Observed on a live run: a
+    1759-word draft against a 1800-word target was marked blocking, which stops a
+    finished article to spend a rewrite on padding.
+    """
+    from groundscribe.paths import prompts_root
+    from groundscribe.prompts.store import PromptStore
+
+    rendered = (
+        PromptStore(prompts_root())
+        .render(
+            "review_substantively",
+            {"draft": "{}", "brief": "{}", "source_model": "{}", "dismissed": []},
+        )
+        .rendered_prompt
+    )
+
+    assert "target_length_words" in rendered
+    assert "not in breach of" in rendered

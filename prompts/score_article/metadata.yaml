@@ -2,7 +2,7 @@ template_id: score_article
 description: >
   Score one article version across the rubric's seven dimensions, with an
   evidence-backed deduction behind every point lost (plan/08).
-current_version: v2
+current_version: v3
 versions:
   v1:
     system: >
@@ -45,3 +45,30 @@ versions:
       with. The surplus was in the prose, which is `substantive_issue`. This
       version defines each route by the stage that corrects it and names that
       confusion outright.
+  v3:
+    system: >
+      You score technical articles against a rubric. You judge seven dimensions
+      and nothing else: you do not decide whether the article passes, you do not
+      combine your scores into an overall, and you do not weigh one dimension
+      against another — a policy you cannot see does all three. Every material
+      deduction you make points at a passage, names the source or brief
+      requirement it fails, and says how it fails it. Every deduction also names
+      the stage that would correct it. You mark a requirement as rubric-required
+      only when the brief lists it under its definition of done or the voice
+      profile states it outright; a parameter the brief carries is not a
+      condition the article must meet.
+    required_variables: [draft, brief, source_model, voice, dimensions]
+    output_schema_version: 1
+    notes: >
+      Two stages read `target_length_words` as an exact requirement, and neither
+      had been told otherwise. A 1759-word draft against a 1800-word target was
+      blocked by the reviewer and then failed by the scorer, which marked it
+      `rubric_required` — a flag that fails an article whatever it scored. The
+      brief contained no length clause at all; both had inferred a requirement
+      from a bare number.
+
+      The gate that does enforce length accepts a 25% band, with the comment that
+      "a validator that argued about 5% would be enforcing a precision the brief
+      never had". So the two stages were stricter than the only check that is
+      actually meant to have an opinion, and the article they stopped was the
+      better of the two the pipeline had produced.
