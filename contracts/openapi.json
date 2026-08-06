@@ -804,6 +804,13 @@
               }
             ]
           },
+          "escalations": {
+            "items": {
+              "$ref": "#/components/schemas/EscalationView"
+            },
+            "title": "Escalations",
+            "type": "array"
+          },
           "findings": {
             "items": {
               "$ref": "#/components/schemas/FindingView"
@@ -1827,6 +1834,54 @@
           }
         },
         "title": "ErrorView",
+        "type": "object"
+      },
+      "Escalate": {
+        "description": "Taking one of the ways out of a run the loop could not finish.\n\n``reason`` is optional to the schema and not to the point. These are the\ndecisions a person makes after the machine has said it cannot finish, and\nevery one of them costs something real \u2014 another round, a rewritten brief, a\nreopened architecture. The reason travels into the transition's rationale, so\nthe decision record answers *why* and not only *what*.",
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id"
+        ],
+        "title": "Escalate",
+        "type": "object"
+      },
+      "EscalationView": {
+        "description": "One way out of a run the loop could not finish, and what taking it means.\n\n``link`` is ``None`` for the two options that change an *input* rather than\nmove the machine \u2014 adding source material, lowering the threshold \u2014 and for\nan action seen from a screen that cannot address it. Both are offered\nregardless, because \"re-score it under a rubric that permits this\" is a real\nanswer to a stalled loop even though no edge represents it, and a menu that\nlisted only the buttons would drop it.\n\n``detail`` is the sentence, not a label. Two of these options take the same\nedge for different reasons \u2014 narrowing a thesis and reopening a brief both\nreturn to the brief \u2014 and a person choosing between them is choosing between\nthe reasons.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "option": {
+            "title": "Option",
+            "type": "string"
+          }
+        },
+        "required": [
+          "option",
+          "detail"
+        ],
+        "title": "EscalationView",
         "type": "object"
       },
       "EvaluationView": {
@@ -5907,6 +5962,56 @@
         "summary": "Approve And Continue"
       }
     },
+    "/articles/{article_id}/authorise-rewrite": {
+      "post": {
+        "description": "Spend another substantive round beyond the limit, on the author's authority.\n\nOne round, not a raised ceiling: the ledger grants and spends together, so\ncontinuing past the limit stays a series of deliberate decisions rather than\na switch somebody flips once.",
+        "operationId": "authorise_rewrite_articles__article_id__authorise_rewrite_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Escalate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorise Rewrite"
+      }
+    },
     "/articles/{article_id}/brief/approve": {
       "post": {
         "description": "Accept the brief, which is what opens drafting.",
@@ -6184,6 +6289,56 @@
           }
         },
         "summary": "Override And Approve"
+      }
+    },
+    "/articles/{article_id}/return-to-brief": {
+      "post": {
+        "description": "Reopen the contract instead of rewriting the article against it again.",
+        "operationId": "return_to_brief_articles__article_id__return_to_brief_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Escalate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Return To Brief"
       }
     },
     "/articles/{article_id}/review": {
@@ -7627,6 +7782,56 @@
           }
         },
         "summary": "Propose Architecture"
+      }
+    },
+    "/projects/{project_id}/architecture/reopen": {
+      "post": {
+        "description": "Reconsider what the source can support: wrong shape, or wrong article.\n\nProject-scoped because the answer divides the source differently, and every\narticle of the run is downstream of it. IMPROVEMENTS \u00a76 filed this as an edge\nwith no way to take it.",
+        "operationId": "reopen_architecture_projects__project_id__architecture_reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Escalate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reopen Architecture"
       }
     },
     "/projects/{project_id}/architecture/{version}": {

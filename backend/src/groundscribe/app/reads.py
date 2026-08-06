@@ -67,6 +67,7 @@ from groundscribe.app.views import (
     DiffView,
     DocumentView,
     ErrorView,
+    EscalationView,
     EvaluationView,
     EventView,
     ExecutionRef,
@@ -123,6 +124,7 @@ from groundscribe.provenance.enums import (
     RetryType,
 )
 from groundscribe.provenance.redaction import PLACEHOLDER
+from groundscribe.scoring.loop import escalations_at
 from groundscribe.scoring.scoring import SCORE_STAGE
 from groundscribe.stages.override import OverrideOperation
 from groundscribe.stages.rewriting import REWRITE_STAGE
@@ -503,6 +505,9 @@ class ProjectionReader:
                 )
                 if selected_article_id(self._runtime, article.project_id) == article_id
                 else None
+            ),
+            escalations=_escalations(
+                position.state, project_id=article.project_id, article_id=article_id
             ),
             brief=self._document(self._brief_snapshot(article_id)),
             current_version=current_view,
@@ -1532,6 +1537,38 @@ def _action_links(
     return links
 
 
+def _escalations(
+    state: WorkflowState, *, project_id: str | None, article_id: str | None
+) -> list[EscalationView]:
+    """The ways out of a stopped run, or nothing at all when it is not stopped.
+
+    Gated on the state rather than always returned, because these are not
+    ordinary actions. Every one of them costs something a person has to mean —
+    another round, a rewritten brief, a reopened architecture, an abandoned run —
+    and offering them beside the normal controls would put "give up" next to
+    "approve the brief" on a run that is going perfectly well.
+
+    ``STALLED`` is where the loop parks a run it cannot finish, and until
+    stagnation detection was wired in nothing ever went there on purpose. Now
+    that it does, this is the screen a person lands on, and it was showing them
+    the two exits that happened to have endpoints.
+    """
+    if state is not WorkflowState.STALLED:
+        return []
+    return [
+        EscalationView(
+            option=escalation.option.value,
+            detail=escalation.detail,
+            link=(
+                _offered(escalation.action, state, project_id=project_id, article_id=article_id)
+                if escalation.action is not None
+                else None
+            ),
+        )
+        for escalation in escalations_at(state)
+    ]
+
+
 def _journey(state: WorkflowState, progress: Progress = UNREAD) -> ProjectJourney:
     """The pipeline at the size a person follows it, from the workflow's own map."""
     return ProjectJourney(
@@ -1555,18 +1592,28 @@ def _pending_command(
     return ActionLink(action=state.value, method=endpoint.method, path=path)
 
 
-def _offered(action: WorkflowAction, state: WorkflowState, *, article_id: str) -> ActionLink | None:
+def _offered(
+    action: WorkflowAction,
+    state: WorkflowState,
+    *,
+    article_id: str | None,
+    project_id: str | None = None,
+) -> ActionLink | None:
     """One action's link, when this state offers it, or nothing.
 
     Named actions get their own field on a view where the screen needs a control
     of its own for them — a choice of destination, a second id. The alternative
     is the interface picking the action out of ``action_links`` by name, which is
     the frontend deciding which action it is looking at.
+
+    ``project_id`` is optional and was not needed until the escalation menu:
+    reopening the architecture is a project-level decision offered from an
+    article screen, so this has to be able to address both.
     """
     if action.value not in available_actions(state):
         return None
     endpoint = ACTION_ENDPOINTS.get(action)
-    path = resolve(endpoint, project_id=None, article_id=article_id)
+    path = resolve(endpoint, project_id=project_id, article_id=article_id)
     if endpoint is None or path is None:
         return None
     return ActionLink(

@@ -92,6 +92,19 @@ class ActorAction(BaseModel):
     actor_id: str
 
 
+class Escalate(ActorAction):
+    """Taking one of the ways out of a run the loop could not finish.
+
+    ``reason`` is optional to the schema and not to the point. These are the
+    decisions a person makes after the machine has said it cannot finish, and
+    every one of them costs something real — another round, a rewritten brief, a
+    reopened architecture. The reason travels into the transition's rationale, so
+    the decision record answers *why* and not only *what*.
+    """
+
+    reason: str = ""
+
+
 class ReviseArticle(ActorAction):
     """Asking the policy to route a failed score, optionally naming which way.
 

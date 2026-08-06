@@ -49,6 +49,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/articles/{article_id}/authorise-rewrite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorise Rewrite
+         * @description Spend another substantive round beyond the limit, on the author's authority.
+         *
+         *     One round, not a raised ceiling: the ledger grants and spends together, so
+         *     continuing past the limit stays a series of deliberate decisions rather than
+         *     a switch somebody flips once.
+         */
+        post: operations["authorise_rewrite_articles__article_id__authorise_rewrite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/articles/{article_id}/brief/approve": {
         parameters: {
             query?: never;
@@ -171,6 +195,26 @@ export interface paths {
          * @description Accept an article the score refused, on a person's explicit say-so.
          */
         post: operations["override_and_approve_articles__article_id__override_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/articles/{article_id}/return-to-brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return To Brief
+         * @description Reopen the contract instead of rewriting the article against it again.
+         */
+        post: operations["return_to_brief_articles__article_id__return_to_brief_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -917,6 +961,30 @@ export interface paths {
          * @description Queue a proposal of the article or series the source supports.
          */
         post: operations["propose_architecture_projects__project_id__architecture_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/architecture/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Architecture
+         * @description Reconsider what the source can support: wrong shape, or wrong article.
+         *
+         *     Project-scoped because the answer divides the source differently, and every
+         *     article of the run is downstream of it. IMPROVEMENTS §6 filed this as an edge
+         *     with no way to take it.
+         */
+        post: operations["reopen_architecture_projects__project_id__architecture_reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1810,6 +1878,8 @@ export interface components {
             continue_command?: components["schemas"]["ActionLink"] | null;
             current_version?: components["schemas"]["VersionView"] | null;
             diff?: components["schemas"]["DiffView"] | null;
+            /** Escalations */
+            escalations?: components["schemas"]["EscalationView"][];
             /** Findings */
             findings?: components["schemas"]["FindingView"][];
             lineage: components["schemas"]["LineageGraph"];
@@ -2321,6 +2391,48 @@ export interface components {
             message?: string | null;
             /** Type */
             type?: string | null;
+        };
+        /**
+         * Escalate
+         * @description Taking one of the ways out of a run the loop could not finish.
+         *
+         *     ``reason`` is optional to the schema and not to the point. These are the
+         *     decisions a person makes after the machine has said it cannot finish, and
+         *     every one of them costs something real — another round, a rewritten brief, a
+         *     reopened architecture. The reason travels into the transition's rationale, so
+         *     the decision record answers *why* and not only *what*.
+         */
+        Escalate: {
+            /** Actor Id */
+            actor_id: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * EscalationView
+         * @description One way out of a run the loop could not finish, and what taking it means.
+         *
+         *     ``link`` is ``None`` for the two options that change an *input* rather than
+         *     move the machine — adding source material, lowering the threshold — and for
+         *     an action seen from a screen that cannot address it. Both are offered
+         *     regardless, because "re-score it under a rubric that permits this" is a real
+         *     answer to a stalled loop even though no edge represents it, and a menu that
+         *     listed only the buttons would drop it.
+         *
+         *     ``detail`` is the sentence, not a label. Two of these options take the same
+         *     edge for different reasons — narrowing a thesis and reopening a brief both
+         *     return to the brief — and a person choosing between them is choosing between
+         *     the reasons.
+         */
+        EscalationView: {
+            /** Detail */
+            detail: string;
+            link?: components["schemas"]["ActionLink"] | null;
+            /** Option */
+            option: string;
         };
         /** EvaluationView */
         EvaluationView: {
@@ -4392,6 +4504,41 @@ export interface operations {
             };
         };
     };
+    authorise_rewrite_articles__article_id__authorise_rewrite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Escalate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     approve_brief_articles__article_id__brief_approve_post: {
         parameters: {
             query?: never;
@@ -4573,6 +4720,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    return_to_brief_articles__article_id__return_to_brief_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Escalate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5685,6 +5867,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_architecture_projects__project_id__architecture_reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Escalate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

@@ -126,6 +126,21 @@ ACTION_ENDPOINTS: Mapping[WorkflowAction, Endpoint] = {
     WorkflowAction.OVERRIDE_AND_APPROVE: Endpoint(
         "POST", "/articles/{article_id}/override-approve", ARTICLE, requires_actor=True
     ),
+    # The three ways out of `STALLED` that the table has always permitted and
+    # nothing could reach. Until stagnation detection was wired in nothing ever
+    # parked a run there on purpose, so the gap read as unused rather than
+    # unreachable; now that the loop stops itself, a stalled run offering only
+    # "publish it anyway" and "give up" would be a worse outcome than not
+    # stopping. `reopen_architecture` is IMPROVEMENTS §6, closed here.
+    WorkflowAction.AUTHORISE_REWRITE: Endpoint(
+        "POST", "/articles/{article_id}/authorise-rewrite", ARTICLE, requires_actor=True
+    ),
+    WorkflowAction.RETURN_TO_BRIEF: Endpoint(
+        "POST", "/articles/{article_id}/return-to-brief", ARTICLE, requires_actor=True
+    ),
+    WorkflowAction.REOPEN_ARCHITECTURE: Endpoint(
+        "POST", "/projects/{project_id}/architecture/reopen", PROJECT, requires_actor=True
+    ),
 }
 
 #: The command that hands an answered round of questions back to the pipeline.

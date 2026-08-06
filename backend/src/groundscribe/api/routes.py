@@ -533,6 +533,76 @@ def override_and_approve(
 
 
 # ----------------------------------------------------------------------
+# The ways out of a stalled run (phase 17)
+#
+# `STALLED` has permitted four user actions since phase 05 and two of them had a
+# URL. That was invisible while nothing stalled a run on purpose; stagnation
+# detection is wired in now, so a run stopping is a normal outcome and the exits
+# have to be real. Without these three, "the loop stopped improving" offers a
+# person publishing it anyway or abandoning it, and neither is what they came to
+# do.
+# ----------------------------------------------------------------------
+
+
+@router.post(
+    "/articles/{article_id}/authorise-rewrite",
+    response_model=schemas.CommandResponse,
+    status_code=202,
+)
+def authorise_rewrite(
+    article_id: str,
+    body: schemas.Escalate,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Spend another substantive round beyond the limit, on the author's authority.
+
+    One round, not a raised ceiling: the ledger grants and spends together, so
+    continuing past the limit stays a series of deliberate decisions rather than
+    a switch somebody flips once.
+    """
+    return render(
+        service.authorise_rewrite(article_id, authorised_by=body.actor_id, reason=body.reason)
+    )
+
+
+@router.post(
+    "/articles/{article_id}/return-to-brief",
+    response_model=schemas.CommandResponse,
+    status_code=202,
+)
+def return_to_brief(
+    article_id: str,
+    body: schemas.Escalate,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Reopen the contract instead of rewriting the article against it again."""
+    return render(
+        service.return_to_brief(article_id, requested_by=body.actor_id, reason=body.reason)
+    )
+
+
+@router.post(
+    "/projects/{project_id}/architecture/reopen",
+    response_model=schemas.CommandResponse,
+    status_code=202,
+)
+def reopen_architecture(
+    project_id: str,
+    body: schemas.Escalate,
+    service: Service,
+) -> schemas.CommandResponse:
+    """Reconsider what the source can support: wrong shape, or wrong article.
+
+    Project-scoped because the answer divides the source differently, and every
+    article of the run is downstream of it. IMPROVEMENTS §6 filed this as an edge
+    with no way to take it.
+    """
+    return render(
+        service.reopen_architecture(project_id, requested_by=body.actor_id, reason=body.reason)
+    )
+
+
+# ----------------------------------------------------------------------
 # Reads: one per screen (phase 11)
 #
 # Every one of these is a ``GET`` that touches nothing. They exist because the

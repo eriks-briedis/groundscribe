@@ -101,6 +101,27 @@ class ActionLink(BaseModel):
     taken_by: str = "pipeline"
 
 
+class EscalationView(BaseModel):
+    """One way out of a run the loop could not finish, and what taking it means.
+
+    ``link`` is ``None`` for the two options that change an *input* rather than
+    move the machine — adding source material, lowering the threshold — and for
+    an action seen from a screen that cannot address it. Both are offered
+    regardless, because "re-score it under a rubric that permits this" is a real
+    answer to a stalled loop even though no edge represents it, and a menu that
+    listed only the buttons would drop it.
+
+    ``detail`` is the sentence, not a label. Two of these options take the same
+    edge for different reasons — narrowing a thesis and reopening a brief both
+    return to the brief — and a person choosing between them is choosing between
+    the reasons.
+    """
+
+    option: str
+    detail: str
+    link: ActionLink | None = None
+
+
 class UsageSummary(BaseModel):
     """What a set of model calls consumed.
 
@@ -729,6 +750,11 @@ class ArticleWorkspace(BaseModel):
     available_actions: list[str] = Field(default_factory=list)
     action_links: list[ActionLink] = Field(default_factory=list)
     pending_command: ActionLink | None = None
+    #: Present only when the run has stopped and needs a person to decide what
+    #: happens to it — which since stagnation detection was wired in is a normal
+    #: outcome rather than a rare one. Empty everywhere else, so a screen never
+    #: offers a way out of a run that is going somewhere.
+    escalations: list[EscalationView] = Field(default_factory=list)
     brief: dict[str, Any] | None = None
     current_version: VersionView | None = None
     previous_version: VersionView | None = None

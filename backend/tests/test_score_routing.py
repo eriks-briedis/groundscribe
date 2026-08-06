@@ -29,6 +29,7 @@ from groundscribe.provenance.enums import ActorType
 from groundscribe.scoring.loop import (
     ESCALATION_OPTIONS,
     EscalationOption,
+    escalations_at,
     escalations_for,
     high_water_version,
     route_score,
@@ -290,6 +291,81 @@ async def test_a_stagnant_history_stalls_the_run_and_records_why(
     assert {escalation.option for escalation in escalations_for(drafted.context.engine)} == set(
         EscalationOption
     )
+
+
+def test_every_escalation_that_moves_the_machine_has_somewhere_to_send_it() -> None:
+    """An option a person is offered and cannot take is worse than one withheld.
+
+    `STALLED` has permitted four user actions since phase 05 and two of them had
+    a URL, so the menu — when anything had rendered it — would have shown six
+    options of which four went nowhere. That was invisible while nothing stalled
+    a run on purpose. Stagnation detection is wired in now, so this is the state
+    a person actually lands in.
+
+    Asserted against `ACTION_ENDPOINTS` rather than against a list of paths: the
+    failure being guarded is an action added to the menu without an endpoint, and
+    a test naming the endpoints would have to be edited by whoever added it.
+    """
+    from groundscribe.app.actions import ACTION_ENDPOINTS
+
+    unreachable = [
+        escalation.option.value
+        for escalation in escalations_at(WorkflowState.STALLED)
+        if escalation.action is not None and escalation.action not in ACTION_ENDPOINTS
+    ]
+
+    assert not unreachable, f"offered with no endpoint: {', '.join(unreachable)}"
+
+
+def test_a_run_that_is_going_somewhere_is_offered_no_way_out() -> None:
+    """The menu is gated on the run having stopped, and that is not fussiness.
+
+    Every option costs something a person has to mean — another round, a
+    rewritten brief, a reopened architecture, an abandoned run. Offering them
+    beside the ordinary controls would put "give up" next to "approve the brief"
+    on a run going perfectly well.
+    """
+    from groundscribe.app.reads import _escalations
+
+    assert _escalations(WorkflowState.STALLED, project_id="p", article_id="a")
+    for state in (
+        WorkflowState.SCORING,
+        WorkflowState.REVISION_REQUIRED,
+        WorkflowState.BRIEF_REVIEW_REQUIRED,
+        WorkflowState.HUMAN_APPROVAL_REQUIRED,
+    ):
+        assert _escalations(state, project_id="p", article_id="a") == [], state
+
+
+def test_reopening_the_architecture_is_addressed_at_the_project() -> None:
+    """A project-level decision offered from an article screen.
+
+    Reopening reconsiders how the source is divided, and every article of the run
+    is downstream of the answer — so the link has to carry a project id from a
+    view built around an article. IMPROVEMENTS §6 filed this edge as one with no
+    way to take it.
+    """
+    from groundscribe.app.reads import _escalations
+
+    offered = {
+        view.option: view
+        for view in _escalations(WorkflowState.STALLED, project_id="proj", article_id="art")
+    }
+
+    reopen = offered[EscalationOption.REOPEN_ARCHITECTURE.value]
+    assert reopen.link is not None
+    assert reopen.link.path == "/projects/proj/architecture/reopen"
+    assert reopen.link.requires_actor is True
+
+    rewrite = offered[EscalationOption.AUTHORISE_REWRITE.value]
+    assert rewrite.link is not None
+    assert rewrite.link.path == "/articles/art/authorise-rewrite"
+
+    # The two that change an input rather than move the machine keep a null link
+    # and their sentence, which is the whole reason they are in the menu.
+    for option in (EscalationOption.ADD_SOURCE_MATERIAL, EscalationOption.LOWER_THRESHOLD):
+        assert offered[option.value].link is None
+        assert offered[option.value].detail
 
 
 async def test_the_best_round_is_the_one_the_run_keeps(
